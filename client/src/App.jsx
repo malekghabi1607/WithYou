@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+/*import { useEffect, useRef, useState } from 'react';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 
@@ -160,4 +160,43 @@ export default function App() {
       </p>
     </div>
   );
+}*/
+
+import { Link, Route, Routes, Navigate } from "react-router-dom";
+import RegisterPage from "./pages/RegisterPage";
+import LoginPage from "./pages/LoginPage";
+import MePage from "./pages/MePage";
+
+function App() {
+  const isLoggedIn = !!localStorage.getItem("token");
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-white">
+      <header className="bg-slate-800 px-6 py-3 flex justify-between items-center">
+        <div className="font-bold text-xl">WithU (MVP)</div>
+        <nav className="flex gap-4 text-sm">
+          <Link to="/register" className="hover:underline">
+            Register
+          </Link>
+          <Link to="/login" className="hover:underline">
+            Login
+          </Link>
+          <Link to="/me" className="hover:underline">
+            Me
+          </Link>
+        </nav>
+      </header>
+
+      <main>
+        <Routes>
+          <Route path="/" element={<Navigate to="/register" />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/me" element={<MePage />} />
+        </Routes>
+      </main>
+    </div>
+  );
 }
+
+export default App;

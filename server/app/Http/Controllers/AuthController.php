@@ -6,11 +6,13 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 class AuthController extends Controller
 {
+    /**
+     * REGISTER
+     */
     public function register(Request $request)
     {
         $data = $request->validate([
@@ -26,6 +28,7 @@ class AuthController extends Controller
         $user->password_hash = Hash::make($data['password']);
         $user->save();
 
+        // Crée un token JWT
         $token = JWTAuth::fromUser($user);
 
         return response()->json([
@@ -34,5 +37,58 @@ class AuthController extends Controller
         ], 201);
     }
 
-    // login / me / logout / refresh 
+    /**
+     * LOGIN
+     */
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'email'    => 'required|email',
+            'password' => 'required|string',
+        ]);
+
+        // JWTAuth::attempt utilise getAuthPassword() => password_hash
+        if (! $token = JWTAuth::attempt($credentials)) {
+            return response()->json([
+                'message' => 'Email ou mot de passe incorrect',
+            ], 401);
+        }
+
+        return response()->json([
+            'user'  => auth()->user(),
+            'token' => $token,
+        ]);
+    }
+
+    /**
+     * UTILISATEUR CONNECTÉ
+     */
+    public function me()
+    {
+        return response()->json(auth()->user());
+    }
+
+    /**
+     * LOGOUT
+     */
+    public function logout()
+    {
+        JWTAuth::invalidate(JWTAuth::getToken());
+
+        return response()->json([
+            'message' => 'Déconnecté',
+        ]);
+    }
+
+    /**
+     * REFRESH TOKEN
+     */
+    public function refresh()
+    {
+        $newToken = JWTAuth::refresh(JWTAuth::getToken());
+
+        return response()->json([
+            'token' => $newToken,
+        ]);
+    }
 }
