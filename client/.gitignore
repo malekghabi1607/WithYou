@@ -1,3 +1,21 @@
+# Projet : WithYou – Plateforme de visionnage collaboratif
+# Fichier : .gitignore
+#
+# Description :
+# Fichier listant tout ce qui ne doit PAS être versionné dans Git.
+# Empêche d'envoyer sur GitHub :
+#   - node_modules/
+#   - .env
+#   - fichiers temporaires
+#   - logs
+#
+# Essentiel pour garder un dépôt propre et sécurisé.
+
+
+
+
+
+
 # Logs
 logs
 *.log
