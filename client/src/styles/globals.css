@@ -1,0 +1,14 @@
+/*
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : styles/globals.css
+ *
+ * Description :
+ * Fichier contenant tous les styles globaux du projet.
+ * Il charge les couches Tailwind CSS :
+ *    @tailwind base;
+ *    @tailwind components;
+ *    @tailwind utilities;
+ *
+ * Ce fichier remplace entièrement App.css et index.css.
+ * Tous les styles personnalisés globaux doivent être définis ici.
+ */
