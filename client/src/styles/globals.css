@@ -12,3 +12,7 @@
  * Ce fichier remplace entièrement App.css et index.css.
  * Tous les styles personnalisés globaux doivent être définis ici.
  */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
