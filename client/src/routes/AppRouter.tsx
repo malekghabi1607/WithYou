@@ -16,12 +16,18 @@
 
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LandingPage from "../pages/LandingPage";
+import TestUser from "../pages/test-user(yanis)";
+import TestSalon from "../pages/test-salon(yanis)";
+import TestPageSalon from "../pages/test-page-salon(yanis)";
 
 export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/tu" element={<TestUser />} />
+        <Route path="/ts" element={<TestSalon />} />
+        <Route path="/tps" element={<TestPageSalon />} />
       </Routes>
     </BrowserRouter>
   );

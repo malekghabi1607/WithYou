@@ -11,29 +11,31 @@ class Salon extends Model
 
     public $incrementing = false;
     protected $keyType = 'string';
-    public $timestamps = false; // pas created_at / updated_at
+    public $timestamps = false; 
 
     protected $fillable = [
+        'id_salon',
         'name',
         'date_created',
         'owner_id',
         'current_video_id',
     ];
 
+    /***** Relations *****/
+    
     // Salon appartient à un propriétaire (User)
     public function owner()
     {
         return $this->belongsTo(User::class, 'owner_id', 'id_user');
     }
 
-    // Membres du salon (relation many-to-many)
+    // Membres du salon
     public function members()
     {
-        return $this->belongsToMany(User::class, 'salon_member', 'salon_id', 'user_id')
-                    ->withPivot(['join_date', 'is_active']);
+        return $this->belongsToMany(User::class, 'salon_member', 'salon_id', 'user_id')->withPivot(['join_date', 'is_active']);
     }
 
-    // Messages du salon (chat)
+    // Messages du salon 
     public function messages()
     {
         return $this->hasMany(Message::class, 'salon_id', 'id_salon');
