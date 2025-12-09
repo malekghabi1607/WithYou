@@ -11,13 +11,13 @@
  *
  * Fichier essentiel exécuté en premier par Vite.
  */
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import App from "./routes/AppRouter.tsx";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";   // PAS ./routes/AppRouter.tsx
 import "./styles/globals.css";
 
-createRoot(document.getElementById("root")).render(
-  <StrictMode>
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
     <App />
-  </StrictMode>
+  </React.StrictMode>
 );
