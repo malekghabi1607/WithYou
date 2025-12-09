@@ -1,11 +1,116 @@
-/**
- * Projet : WithYou
- * Fichier : pages/EmailSentPage.tsx
- *
- * Description :
- * Page affichée après l'envoi d'un email :
- *    - Réinitialisation du mot de passe
- *    - Confirmation d’inscription
- *
- * Contient un message de confirmation et des instructions.
- */
+import { Button } from "../components/ui/button";
+import { Logo } from "../components/ui/Logo";
+import { Mail, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
+
+interface EmailSentPageProps {
+  email: string;
+  onNavigate: (page: string) => void;
+  theme?: "light" | "dark";
+  onThemeToggle?: () => void;
+}
+
+export function EmailSentPage({ email, onNavigate, theme = "dark", onThemeToggle }: EmailSentPageProps) {
+  const handleResendEmail = () => {
+    toast.success("Email de confirmation renvoyé !");
+  };
+
+  const handleDemoConfirm = () => {
+    toast.success("Compte confirmé en mode démo !");
+    onNavigate("account-confirmed");
+  };
+
+  return (
+    <div className={`min-h-screen flex items-center justify-center ${theme === "dark" ? "bg-black" : "bg-gray-50"}`}>
+      {/* Theme Toggle Button */}
+      {onThemeToggle && (
+        <button
+          onClick={onThemeToggle}
+          className={`fixed top-4 right-4 z-50 p-3 rounded-full ${
+            theme === "dark" 
+              ? "bg-zinc-800 hover:bg-zinc-700 text-yellow-400" 
+              : "bg-white hover:bg-gray-100 text-gray-700 shadow-lg"
+          } transition-all duration-300`}
+        >
+          {theme === "dark" ? "☀️" : "🌙"}
+        </button>
+      )}
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 max-w-xl">
+        <div className={`rounded-3xl shadow-2xl p-8 md:p-12 text-center ${
+          theme === "dark" 
+            ? "bg-zinc-900 border border-zinc-800" 
+            : "bg-white border border-gray-200"
+        }`}>
+          {/* Email Icon with Glow Effect */}
+          <div className="relative w-32 h-32 mx-auto mb-8">
+            {/* Glow Effect */}
+            <div className="absolute inset-0 bg-red-600 rounded-full blur-2xl opacity-50"></div>
+            {/* Icon Container */}
+            <div className="relative w-32 h-32 bg-gradient-to-br from-red-600 to-red-800 rounded-full flex items-center justify-center shadow-xl shadow-red-600/50">
+              <Mail className="w-16 h-16 text-white" strokeWidth={2} />
+            </div>
+          </div>
+
+          <h1 className={`text-2xl md:text-3xl mb-6 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+            Vérifiez votre email
+          </h1>
+          
+          <p className={`mb-3 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+            Un lien de confirmation a été envoyé à :
+          </p>
+          
+          <p className={`mb-8 text-lg ${theme === "dark" ? "text-red-500" : "text-red-600"}`}>
+            {email}
+          </p>
+
+          {/* Next Steps Box */}
+          <div className={`rounded-xl p-6 mb-8 text-left ${
+            theme === "dark" ? "bg-black" : "bg-gray-50"
+          }`}>
+            <p className={`mb-4 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+              Prochaines étapes :
+            </p>
+            <ol className={`space-y-2 list-none ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+              <li>1. Ouvrez votre boîte email</li>
+              <li>2. Cliquez sur le lien de confirmation</li>
+              <li>3. Votre compte sera activé automatiquement</li>
+            </ol>
+          </div>
+
+          {/* Resend Email Link */}
+          <button
+            onClick={handleResendEmail}
+            className="text-red-500 hover:text-red-600 transition-colors mb-6"
+          >
+            Renvoyer l&apos;email
+          </button>
+
+          <p className={`text-sm mb-2 ${theme === "dark" ? "text-gray-500" : "text-gray-600"}`}>
+            Vous n&apos;avez pas reçu d&apos;email ? Vérifiez vos spams ou{" "}
+            <button
+              onClick={handleResendEmail}
+              className="text-red-500 hover:text-red-600 transition-colors underline"
+            >
+              renvoyez-le
+            </button>
+          </p>
+
+          {/* Demo Mode Section */}
+          <div className="mt-8 pt-8 border-t border-zinc-800">
+            <p className={`text-sm mb-4 ${theme === "dark" ? "text-gray-500" : "text-gray-600"}`}>
+              Mode démo : Simuler la confirmation
+            </p>
+            <Button
+              onClick={handleDemoConfirm}
+              className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 text-base shadow-lg shadow-red-600/30"
+            >
+              Confirmer le compte (demo)
+            </Button>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
