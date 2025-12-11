@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test WebSocket Reverb</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        #log { background:#eee; padding:10px; white-space:pre-wrap; }
+    </style>
+</head>
+<body>
+
+<h2>🔌 Test WebSocket Reverb</h2>
+
+<button onclick="startWS()">Connecter WebSocket</button>
+<button onclick="sendTest()">Envoyer Test</button>
+
+<h3>Résultat :</h3>
+<div id="log">Aucun message…</div>
+
+<script>
+let ws;
+
+function log(msg){
+    document.getElementById("log").textContent += "\n" + msg;
+}
+
+function startWS() {
+    log("Connexion WebSocket…");
+
+    ws = new WebSocket("ws://127.0.0.1:8080/app/test?channel=test-channel");
+
+    ws.onopen = () => log("✅ WS CONNECTÉ !");
+    ws.onerror = () => log("❌ ERREUR WEBSOCKET");
+    ws.onmessage = (e) => log("📩 Message reçu : " + e.data);
+}
+
+function sendTest() {
+    fetch("http://127.0.0.1:8000/ws-test")
+        .then(r => r.text())
+        .then(t => log("📤 Test envoyé depuis Laravel"));
+}
+</script>
+
+</body>
+</html>

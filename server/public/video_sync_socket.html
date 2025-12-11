@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Test Synchronisation YouTube (Socket.io)</title>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    button { margin: 4px; }
+  </style>
+</head>
+<body>
+
+<h2>🎬 Test Synchronisation YouTube (Socket.io)</h2>
+
+Salon ID :
+<input id="salon" value="test123"><br><br>
+
+Video ID YouTube :
+<input id="yt" value="dQw4w9WgXcQ"><br><br>
+
+<button onclick="loadVideo()">Charger</button>
+<button onclick="playVideo()">Play</button>
+<button onclick="pauseVideo()">Pause</button>
+<button onclick="syncTime()">Sync time</button>
+
+<hr>
+
+<div id="player"></div>
+
+<script>
+let socket = io("http://localhost:3000");
+let player = null;
+let salonId = null;
+
+// -----------------------
+// YOUTUBE PLAYER
+// -----------------------
+function onYouTubeIframeAPIReady() {
+    player = new YT.Player("player", {
+        height: "360",
+        width: "640",
+        videoId: "",
+    });
+}
+
+// -----------------------
+// SOCKET.IO
+// -----------------------
+socket.on("connect", () => {
+    console.log("🟢 Connecté au serveur Socket.io");
+});
+
+socket.on("video_update", (data) => {
+    console.log("📡 Reçu du serveur :", data);
+
+    if (!player) return;
+
+    if (data.action === "load") player.loadVideoById(data.videoId);
+    if (data.action === "play") player.playVideo();
+    if (data.action === "pause") player.pauseVideo();
+    if (data.action === "sync" && data.time !== undefined)
+        player.seekTo(data.time, true);
+});
+
+// -----------------------
+// REJOINDRE LE SALON
+// -----------------------
+function joinSalon() {
+    salonId = document.getElementById("salon").value;
+    socket.emit("join_salon", salonId);
+    console.log("➡️ Salon rejoint :", salonId);
+}
+
+joinSalon();
+
+// -----------------------
+// BOUTONS
+// -----------------------
+function loadVideo() {
+    const vid = document.getElementById("yt").value;
+    socket.emit("video_action", { salon: salonId, action: "load", videoId: vid });
+}
+
+function playVideo() {
+    socket.emit("video_action", { salon: salonId, action: "play" });
+}
+
+function pauseVideo() {
+    socket.emit("video_action", { salon: salonId, action: "pause" });
+}
+
+function syncTime() {
+    const t = Math.floor(player.getCurrentTime());
+    socket.emit("video_action", { salon: salonId, action: "sync", time: t });
+}
+</script>
+
+</body>
+</html>
