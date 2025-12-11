@@ -11,18 +11,20 @@ class VideoSyncEvent implements ShouldBroadcast
     use SerializesModels;
 
     public string $salon_id;
-    public string $video_status;
-    public ?int $video_time;
+    public string $action;
+    public ?string $youtube_id;
+    public ?int $time;
 
-    public function __construct($salon_id, $video_status, $video_time = null)
+    public function __construct($salon_id, $action, $youtube_id = null, $time = null)
     {
-        $this->salon_id = $salon_id;
-        $this->video_status = $video_status;
-        $this->video_time = $video_time;
+        $this->salon_id  = $salon_id;
+        $this->action    = $action;
+        $this->youtube_id = $youtube_id;
+        $this->time      = $time;
     }
 
     public function broadcastOn()
     {
-        return new Channel('salon.' . $this->salon_id);
+        return new Channel("salon." . $this->salon_id);
     }
 }
