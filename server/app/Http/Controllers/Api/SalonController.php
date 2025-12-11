@@ -65,7 +65,7 @@ class SalonController extends Controller
     public function show(Request $request, Salon $salon)
     {
         $user = $request->user();
-
+  
         // Vérifie que l'utilisateur est bien membre du salon
         $isMember = $salon->members()->where('user_id', $user->id_user)->exists();
 

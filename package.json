@@ -1,5 +1,29 @@
 {
   "dependencies": {
-    "react-router-dom": "^7.10.0"
-  }
+    "express": "^5.2.1",
+    "react-router-dom": "^7.10.0",
+    "socket.io": "^4.8.1"
+  },
+  "name": "projet-watchtogether",
+  "version": "1.0.0",
+  "description": "Plateforme collaborative de visionnage synchronisé permettant à plusieurs utilisateurs de regarder des vidéos ensemble et d’interagir en temps réel.",
+  "main": "index.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malekghabi1607/projet-watchtogether.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/malekghabi1607/projet-watchtogether/issues"
+  },
+  "homepage": "https://github.com/malekghabi1607/projet-watchtogether#readme"
 }

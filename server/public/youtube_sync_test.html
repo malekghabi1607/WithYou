@@ -1,143 +1,136 @@
-<!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<title>Test Synchro YouTube (Automatique WebSocket)</title>
-
-<!-- API YouTube -->
-<script src="https://www.youtube.com/iframe_api"></script>
-
-<style>
-body { font-family: Arial; padding: 20px; }
-input, button { margin: 5px; }
-#result { white-space: pre-wrap; background: #eee; padding: 10px; }
-</style>
+    <meta charset="UTF-8">
+    <title>Test Synchronisation YouTube (Socket.io)</title>
 </head>
 <body>
 
-<h2>🎬 Test Synchro YouTube (Automatique WebSocket)</h2>
+<h2>🎬 Test Synchronisation YouTube (Socket.io)</h2>
 
-ID du salon :  
-<input id="salonId" size="60" value=""><br>
+ID du salon :
+<input id="salonId" value="salon1"><br><br>
 
-Token JWT :  
-<input id="jwt" size="60" value=""><br>
-
-ID YouTube (ex: dQw4w9WgXcQ) :  
-<input id="videoId" value=""><br>
+ID YouTube :
+<input id="videoId" value="dQw4w9WgXcQ"><br><br>
 
 <button onclick="loadVideo()">🎥 Charger vidéo</button>
-<button onclick="pauseVideo()">⏸ Pause</button>
 <button onclick="playVideo()">▶ Play</button>
+<button onclick="pauseVideo()">⏸ Pause</button>
 <button onclick="syncTime()">⏱ Sync time</button>
 
-<h3>Résultat API :</h3>
-<div id="result"></div>
-
-<hr>
+<h3>Résultat :</h3>
+<pre id="log"></pre>
 
 <div id="player"></div>
 
-<!-- 🔥 TOUT TON CODE JS DOIT ÊTRE ICI, DANS CE SCRIPT UNIQUEMENT -->
+<!-- LIBRAIRIES -->
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <script>
-console.log("Script chargé !");
-
+/* ------------------------
+   YOUTUBE PLAYER FIX
+------------------------- */
 let player;
-let ws = null;
-let baseUrl = "http://127.0.0.1:8000/api";
 
-// YouTube API
 function onYouTubeIframeAPIReady() {
     player = new YT.Player("player", {
-        height: "390",
-        width: "640",
+        height: '360',
+        width: '640',
         videoId: "",
+        playerVars: {
+            autoplay: 0,
+            controls: 1
+        },
+        events: {
+            'onReady': onPlayerReady
+        }
     });
 }
 
-// Helper API
-function apiCall(url, method = "POST", data = null) {
-    const xhr = new XMLHttpRequest();
-    xhr.open(method, url, true);
-    xhr.setRequestHeader("Content-Type", "application/json");
-    xhr.setRequestHeader("Authorization", "Bearer " + document.getElementById("jwt").value);
-
-    xhr.onreadystatechange = function () {
-        if (xhr.readyState === 4) {
-            try {
-                let json = JSON.parse(xhr.responseText);
-                document.getElementById("result").textContent =
-                    JSON.stringify(json, null, 2);
-            } catch {
-                document.getElementById("result").textContent =
-                    "❌ ERREUR API : Réponse non JSON";
-            }
-        }
-    };
-
-    xhr.send(data ? JSON.stringify(data) : null);
+function onPlayerReady() {
+    console.log("Player YouTube prêt !");
 }
 
-// Actions API
+/* ------------------------
+   SOCKET.IO
+------------------------- */
+const socket = io("http://localhost:3001");
+
+function log(msg) {
+    document.getElementById("log").innerText += msg + "\n";
+}
+
+socket.on("connect", () => {
+    log("🟢 Connecté au serveur WebSocket !");
+    socket.emit("joinSalon", salonId.value);
+});
+
+/* ------------------------
+   RÉCEPTION
+------------------------- */
+
+socket.on("stateUpdate", (state) => {
+    log("⬅️ État reçu : " + JSON.stringify(state));
+
+    if (!player) return;
+    if (!state.youtube_id) return;
+
+    player.loadVideoById(state.youtube_id);
+    player.seekTo(state.time, true);
+
+    if (state.status === "playing") player.playVideo();
+    else player.pauseVideo();
+});
+
+socket.on("loadVideo", ({ youtube_id }) => {
+    player.loadVideoById(youtube_id);
+});
+
+socket.on("playVideo", () => {
+    player.playVideo();
+});
+
+socket.on("pauseVideo", ({ time }) => {
+    player.seekTo(time, true);
+    player.pauseVideo();
+});
+
+socket.on("syncTime", ({ time }) => {
+    player.seekTo(time, true);
+});
+
+/* ------------------------
+   ENVOI
+------------------------- */
 function loadVideo() {
-    let salon = document.getElementById("salonId").value;
-    let videoId = document.getElementById("videoId").value;
+    socket.emit("loadVideo", {
+        salonId: salonId.value,
+        youtube_id: videoId.value
+    });
+}
 
-    player.loadVideoById(videoId);
-
-    apiCall(`${baseUrl}/salon/${salon}/video/load`, "POST", {
-        youtube_id: videoId
+function playVideo() {
+    socket.emit("playVideo", {
+        salonId: salonId.value
     });
 }
 
 function pauseVideo() {
-    let salon = document.getElementById("salonId").value;
-    player.pauseVideo();
-    apiCall(`${baseUrl}/salon/${salon}/video/pause`, "POST");
-}
-
-function playVideo() {
-    let salon = document.getElementById("salonId").value;
-    player.playVideo();
-    apiCall(`${baseUrl}/salon/${salon}/video/play`, "POST");
-}
-
-function syncTime() {
-    let salon = document.getElementById("salonId").value;
-    let t = player.getCurrentTime();
-    apiCall(`${baseUrl}/salon/${salon}/video/sync`, "POST", {
-        video_time: Math.floor(t)
+    socket.emit("pauseVideo", {
+        salonId: salonId.value,
+        time: player.getCurrentTime()
     });
 }
 
-// WebSocket auto
-window.addEventListener("load", () => {
-    console.log("Tentative connexion WebSocket...");
-    connectWS();
-});
-
-function connectWS() {
-    let salonId = document.getElementById("salonId").value;
-
-    ws = new WebSocket("ws://127.0.0.1:8080/app/test?channel=salon." + salonId);
-
-    ws.onopen = () => console.log("WebSocket connecté ✔");
-    ws.onerror = () => console.log("❌ WebSocket erreur");
-
-    ws.onmessage = (event) => {
-        let data = JSON.parse(event.data);
-        if (!data.event || !data.data) return;
-
-        let ev = data.event;
-
-        console.log("🔵 WS EVENT :", ev, data.data);
-
-        if (ev === "video.play") player.playVideo();
-        if (ev === "video.pause") player.pauseVideo();
-        if (ev === "video.sync") player.seekTo(data.data.time, true);
-        if (ev === "video.load") player.loadVideoById(data.data.youtube_id);
-    };
+function syncTime() {
+    socket.emit("syncTime", {
+        salonId: salonId.value,
+        time: player.getCurrentTime()
+    });
+    
 }
+
 </script>
 
 </body>
