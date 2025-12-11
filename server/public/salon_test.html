@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Salon API</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+    <h2>🏠 Test Création de Salon</h2>
+
+    <label>Token JWT :</label><br>
+    <input id="token" style="width:400px;" placeholder="colle ton token ici"><br><br>
+
+    <label>Nom du salon :</label><br>
+    <input id="salon_name" style="width:200px;" placeholder="Salon Test Wissam"><br><br>
+
+    <button onclick="createSalon()">Créer le salon</button>
+
+    <h3>Résultat :</h3>
+    <pre id="output" style="background:#eee; padding:10px; width:500px;"></pre>
+
+<script>
+const API = "http://127.0.0.1:8000/api";
+
+async function createSalon() {
+    const token = document.getElementById("token").value;
+    const name  = document.getElementById("salon_name").value;
+
+    const res = await fetch(`${API}/salons`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify({ name: name })
+    });
+
+    document.getElementById("output").innerText = await res.text();
+}
+</script>
+
+</body>
+</html>

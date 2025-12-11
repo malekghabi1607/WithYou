@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Synchronisation Vidéo</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+    <h2>🔧 Test Synchronisation Vidéo</h2>
+
+    <label>ID du salon :</label><br>
+    <input id="salon_id" placeholder="Ex: 1234-5678-..." style="width:300px;"><br><br>
+
+    <label>Token JWT :</label><br>
+    <input id="token" placeholder="Colle ton token ici" style="width:300px;"><br><br>
+
+    <button onclick="changeVideo()">Changer vidéo</button>
+    <button onclick="pauseVideo()">Pause</button>
+    <button onclick="playVideo()">Play</button>
+    <button onclick="syncTime()">Sync time</button>
+    <button onclick="getState()">État actuel</button>
+
+    <h3>📡 Résultat :</h3>
+    <pre id="output" style="background:#eee; padding:10px; width:500px;"></pre>
+
+    <script>
+        const baseUrl = "http://127.0.0.1:8000/api";
+
+        async function apiCall(url, method = "GET", body = null) {
+            const salonId = document.getElementById("salon_id").value;
+            const token = document.getElementById("token").value;
+
+            let options = {
+                method,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + token
+                }
+            };
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            const res = await fetch(url.replace("{id}", salonId), options);
+            document.getElementById("output").innerText = await res.text();
+        }
+
+        function changeVideo() {
+            const videoId = prompt("ID de la vidéo ?");
+            apiCall(baseUrl + "/salon/{id}/video/change", "POST", { video_id: videoId });
+        }
+
+        function pauseVideo() {
+            const t = prompt("Time ?");
+            apiCall(baseUrl + "/salon/{id}/video/pause", "POST", { video_time: Number(t) });
+        }
+
+        function playVideo() {
+            const t = prompt("Time ?");
+            apiCall(baseUrl + "/salon/{id}/video/play", "POST", { video_time: Number(t) });
+        }
+
+        function syncTime() {
+            const t = prompt("Time ?");
+            apiCall(baseUrl + "/salon/{id}/video/sync", "POST", { video_time: Number(t) });
+        }
+
+        function getState() {
+            apiCall(baseUrl + "/salon/{id}/video/state", "GET");
+        }
+    </script>
+
+</body>
+</html>
