@@ -11,6 +11,7 @@ use App\Models\Salon;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\SalonController;
 use App\Http\Controllers\VideoSyncController; // ⬅️ AJOUT IMPORTANT
+use App\Http\Controllers\Test\VideoSyncTestController;
 
 
 /* ============================
@@ -53,10 +54,12 @@ Route::middleware('auth:api')->group(function ()
    ============================ */
 Route::middleware('auth:api')->group(function () 
 {
-    Route::post('/salon/{id}/video/change', [VideoSyncController::class, 'changeVideo']);
-    Route::post('/salon/{id}/video/pause',  [VideoSyncController::class, 'pauseVideo']);
-    Route::post('/salon/{id}/video/play',   [VideoSyncController::class, 'playVideo']);
-    Route::post('/salon/{id}/video/sync',   [VideoSyncController::class, 'syncTime']);
-    Route::get('/salon/{id}/video/state',   [VideoSyncController::class, 'getCurrentVideoState']);
+     Route::post('/salon/{salon}/video/load',  [VideoSyncController::class, 'loadVideo']);
+    Route::post('/salon/{salon}/video/play',  [VideoSyncController::class, 'playVideo']);
+    Route::post('/salon/{salon}/video/pause', [VideoSyncController::class, 'pauseVideo']);
+    Route::post('/salon/{salon}/video/sync',  [VideoSyncController::class, 'syncVideoTime']);
+
 });
 
+     Route::get('/dev/salon/{id}/state', [VideoSyncTestController::class, 'state']);
+  // des routes de test pour pouvoir voir le status de la video actuelle en cours 
