@@ -1,103 +1,94 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Salon;
-use App\Models\Video;
+use App\Events\VideoSyncEvent;
 
 class VideoSyncController extends Controller
 {
-    // 1️⃣ Changer la vidéo actuelle du salon
-    public function changeVideo(Request $request, $salonId)
+    // 🔹 Charger une vidéo YouTube
+    public function loadVideo(Request $request, Salon $salon)
     {
         $request->validate([
-            'video_id' => 'required|uuid|exists:video,id_video'
+            'youtube_id' => 'required|string'
         ]);
 
-        $salon = Salon::findOrFail($salonId);
-
-        $salon->current_video_id = $request->video_id;
-        $salon->video_status = 'paused';
+        $salon->current_video_id = $request->youtube_id;
+        $salon->video_status = "playing";
         $salon->video_time = 0;
-        $salon->updated_at = now();
         $salon->save();
 
+        broadcast(new VideoSyncEvent(
+            $salon->id_salon,
+            "load",
+            0
+        ));
+
         return response()->json([
-            'message' => 'Vidéo changée avec succès',
-            'salon' => $salon
+            "message" => "Vidéo changée",
+            "salon" => $salon
         ]);
     }
 
-    // 2️⃣ Mettre la vidéo en pause
-    public function pauseVideo(Request $request, $salonId)
+    // 🔹 Lecture
+    public function playVideo(Request $request, Salon $salon)
+    {
+        $salon->video_status = "playing";
+        $salon->save();
+
+        broadcast(new VideoSyncEvent(
+            $salon->id_salon,
+            "playing",
+            $salon->video_time
+        ));
+
+        return response()->json([
+            "message" => "Vidéo en lecture",
+            "salon" => $salon
+        ]);
+    }
+
+    // 🔹 Pause
+    public function pauseVideo(Request $request, Salon $salon)
+    {
+        $salon->video_status = "paused";
+        $salon->video_time = $request->video_time ?? $salon->video_time;
+        $salon->save();
+
+        broadcast(new VideoSyncEvent(
+            $salon->id_salon,
+            "paused",
+            $salon->video_time
+        ));
+
+        return response()->json([
+            "message" => "Vidéo mise en pause",
+            "salon" => $salon
+        ]);
+    }
+
+    // 🔹 Synchronisation du temps
+    public function syncVideoTime(Request $request, Salon $salon)
     {
         $request->validate([
-            'video_time' => 'required|integer'
+            "video_time" => "required|integer"
         ]);
-
-        $salon = Salon::findOrFail($salonId);
-
-        $salon->video_status = 'paused';
-        $salon->video_time = $request->video_time;
-        $salon->updated_at = now();
-        $salon->save();
-
-        return response()->json([
-            'message' => 'Vidéo mise en pause',
-            'salon' => $salon
-        ]);
-    }
-
-    // 3️⃣ Reprendre la vidéo
-    public function playVideo(Request $request, $salonId)
-    {
-        $request->validate([
-            'video_time' => 'required|integer'
-        ]);
-
-        $salon = Salon::findOrFail($salonId);
-
-        $salon->video_status = 'playing';
-        $salon->video_time = $request->video_time;
-        $salon->updated_at = now();
-        $salon->save();
-
-        return response()->json([
-            'message' => 'Vidéo en lecture',
-            'salon' => $salon
-        ]);
-    }
-
-    // 4️⃣ Synchroniser le temps actuel
-    public function syncTime(Request $request, $salonId)
-    {
-        $request->validate([
-            'video_time' => 'required|integer'
-        ]);
-
-        $salon = Salon::findOrFail($salonId);
 
         $salon->video_time = $request->video_time;
-        $salon->updated_at = now();
         $salon->save();
 
-        return response()->json([
-            'message' => 'Temps synchronisé',
-            'current_time' => $salon->video_time
-        ]);
-    }
-
-    // 5️⃣ Obtenir l’état actuel de la vidéo
-    public function getCurrentVideoState($salonId)
-    {
-        $salon = Salon::findOrFail($salonId);
+        broadcast(new VideoSyncEvent(
+            $salon->id_salon,
+            "sync",
+            $salon->video_time
+        ));
 
         return response()->json([
-            'video_id' => $salon->current_video_id,
-            'status' => $salon->video_status,
-            'time' => $salon->video_time,
-            'last_update' => $salon->updated_at
+            "message" => "Temps synchronisé",
+            "salon" => $salon
         ]);
     }
 }
