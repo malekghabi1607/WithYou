@@ -19,6 +19,8 @@ class Salon extends Model
         'date_created',
         'owner_id',
         'current_video_id',
+        'video_status',
+        'video_time',
     ];
 
     /***** Relations *****/
