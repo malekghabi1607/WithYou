@@ -8,7 +8,7 @@ use App\Models\Video;
 
 class VideoSyncController extends Controller
 {
-    //  Changer la vidéo actuelle du salon
+    // 1️⃣ Changer la vidéo actuelle du salon
     public function changeVideo(Request $request, $salonId)
     {
         $request->validate([
@@ -29,7 +29,7 @@ class VideoSyncController extends Controller
         ]);
     }
 
-    //  Mettre la vidéo en pause
+    // 2️⃣ Mettre la vidéo en pause
     public function pauseVideo(Request $request, $salonId)
     {
         $request->validate([
@@ -49,7 +49,7 @@ class VideoSyncController extends Controller
         ]);
     }
 
-    //  Reprendre la vidéo
+    // 3️⃣ Reprendre la vidéo
     public function playVideo(Request $request, $salonId)
     {
         $request->validate([
@@ -69,7 +69,7 @@ class VideoSyncController extends Controller
         ]);
     }
 
-    // Synchroniser le temps actuel
+    // 4️⃣ Synchroniser le temps actuel
     public function syncTime(Request $request, $salonId)
     {
         $request->validate([
@@ -88,7 +88,7 @@ class VideoSyncController extends Controller
         ]);
     }
 
-    //  Obtenir l’état actuel de la vidéo
+    // 5️⃣ Obtenir l’état actuel de la vidéo
     public function getCurrentVideoState($salonId)
     {
         $salon = Salon::findOrFail($salonId);
