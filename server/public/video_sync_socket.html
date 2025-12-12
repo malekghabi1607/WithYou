@@ -35,6 +35,7 @@ Video ID YouTube :
 let socket = io("http://localhost:3000");
 let player = null;
 let salonId = null;
+let currentVideoId = null; // ⭐ IMPORTANT pour sauvegarde Laravel
 
 // -----------------------
 // YOUTUBE PLAYER
@@ -44,6 +45,13 @@ function onYouTubeIframeAPIReady() {
         height: "360",
         width: "640",
         videoId: "",
+        events: {
+            onReady: () => {
+                YT_READY = true;
+                console.log("🎥 Lecteur YouTube prêt !");
+                loadStateFromLaravel(); // ⭐ CHARGER L’ÉTAT ICI
+            }
+        }
     });
 }
 
@@ -78,25 +86,93 @@ function joinSalon() {
 joinSalon();
 
 // -----------------------
+// SAUVEGARDE LARAVEL
+// -----------------------
+function sendStateToLaravel(status) {
+    const salon = document.getElementById("salon").value;
+
+    fetch(`http://127.0.0.1:8000/api/salon/${salon}/video/state`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + localStorage.getItem("jwt")
+        },
+        body: JSON.stringify({
+            video_id: currentVideoId,
+            time: Math.floor(player.getCurrentTime()),
+            status: status
+        })
+    });
+}
+
+// -----------------------
+// CHARGER L'ÉTAT DE LARAVEL
+// -----------------------
+async function loadStateFromLaravel() {
+    const salon = document.getElementById("salon").value;
+
+    try {
+        let res = await fetch(`http://127.0.0.1:8000/api/salon/${salon}/video/state`, {
+            headers: {
+                "Authorization": "Bearer " + localStorage.getItem("jwt")
+            }
+        });
+
+        let data = await res.json();
+        console.log("📥 État reçu depuis Laravel :", data);
+
+        if (!data.current_video_id) return;
+
+        currentVideoId = data.current_video_id;
+
+        player.loadVideoById(data.current_video_id);
+
+        if (data.video_time) {
+            player.seekTo(data.video_time, true);
+        }
+
+        if (data.video_status === "playing") {
+            player.playVideo();
+        }
+
+    } catch (e) {
+        console.error("Erreur loadStateFromLaravel:", e);
+    }
+}
+
+// -----------------------
 // BOUTONS
 // -----------------------
 function loadVideo() {
-    const vid = document.getElementById("yt").value;
-    socket.emit("video_action", { salon: salonId, action: "load", videoId: vid });
+    currentVideoId = document.getElementById("yt").value;  // ⭐ obligatoire
+    socket.emit("video_action", { salon: salonId, action: "load", videoId: currentVideoId });
+
+    sendStateToLaravel("load"); // sauvegarde Laravel
 }
 
 function playVideo() {
     socket.emit("video_action", { salon: salonId, action: "play" });
+    sendStateToLaravel("play");
 }
 
 function pauseVideo() {
     socket.emit("video_action", { salon: salonId, action: "pause" });
+    sendStateToLaravel("pause");
 }
 
 function syncTime() {
     const t = Math.floor(player.getCurrentTime());
     socket.emit("video_action", { salon: salonId, action: "sync", time: t });
+    sendStateToLaravel("sync");
 }
+
+// -----------------------
+// AU CHARGEMENT
+// -----------------------
+window.onload = function () {
+    joinSalon();           
+};
+
 </script>
 
 </body>

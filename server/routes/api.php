@@ -49,3 +49,12 @@ Route::middleware('auth:api')->group(function () {
 // Debug route
 Route::get('/dev/salon/{id}/state', [VideoSyncTestController::class, 'state']);
 Route::post('/salon/{id}/video/state', [VideoSyncController::class, 'saveState']);
+
+Route::middleware('auth:api')->group(function () {
+
+    // Sauvegarde de l'état vidéo
+    Route::post('/salon/{salon}/video/state', [\App\Http\Controllers\Api\VideoSyncController::class, 'saveState']);
+
+    // Récupération de l'état vidéo
+    Route::get('/salon/{salon}/video/state', [\App\Http\Controllers\Api\VideoSyncController::class, 'getState']);
+});
