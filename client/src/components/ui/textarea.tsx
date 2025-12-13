@@ -3,13 +3,28 @@
  * Fichier : components/ui/textarea.tsx
  *
  * Description :
- * Composant Textarea réutilisable basé sur un élément HTML <textarea>.
- * Il est utilisé pour la saisie de texte multi-ligne dans les formulaires
- * et respecte le design system de l’application (styles, états, accessibilité).
+ * Composant champ de saisie multi-ligne (Textarea) réutilisable
+ * utilisé dans les formulaires de l’application.
+ *
+ * Ce composant permet :
+ *  - la saisie de textes plus longs (descriptions, messages, commentaires)
+ *  - une gestion cohérente du style sur toutes les pages
+ *  - la prise en charge des états focus, disabled et invalid
+ *  - le respect des bonnes pratiques d’accessibilité
+ *
+ * Il s’intègre au design system de WithYou
+ * et s’adapte automatiquement aux thèmes clair et sombre.
+ *
+ * Ce composant est utilisé notamment pour
+ * la description des salons, les messages de chat
+ * et les formulaires de paramètres.
  */
+
+
 import * as React from "react";
 
 import { cn } from "./utils";
+
 
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (

@@ -3,13 +3,20 @@
  * Fichier : components/ui/label.tsx
  *
  * Description :
- * Composant Label réutilisable basé sur Radix UI.
- * Il permet d’associer un libellé accessible à un champ de formulaire,
- * tout en assurant la cohérence visuelle et la gestion des états (disabled).
+ * Composant Label réutilisable utilisé pour les champs de formulaire.
  *
- * Objectif :
- * - Améliorer l’accessibilité des formulaires
- * - Centraliser le style des labels dans le design system
+ * Ce composant permet :
+ *  - d’associer un libellé clair et accessible à un champ (input, textarea, etc.)
+ *  - d’améliorer l’accessibilité des formulaires
+ *  - d’assurer une cohérence visuelle sur l’ensemble de l’application
+ *
+ * Il s’appuie sur Radix UI pour gérer correctement
+ * les comportements d’accessibilité natifs
+ * (focus, disabled, association avec les champs).
+ *
+ * Ce composant est utilisé dans tous les formulaires
+ * de l’application WithYou
+ * (authentification, création de salon, paramètres, recherche).
  */
 "use client";
 

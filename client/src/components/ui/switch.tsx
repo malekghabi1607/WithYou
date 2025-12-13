@@ -3,10 +3,25 @@
  * Fichier : components/ui/switch.tsx
  *
  * Description :
- * Composant Switch réutilisable basé sur Radix UI.
- * Il permet d’activer ou désactiver une option via une interface de type bouton
- * interrupteur, en respectant le design system et l’accessibilité.
+ * Composant interrupteur (Switch) réutilisable utilisé pour activer
+ * ou désactiver des options dans l’interface utilisateur.
+ *
+ * Ce composant permet :
+ *  - de représenter des choix booléens (on / off)
+ *  - d’offrir une interaction claire et intuitive à l’utilisateur
+ *  - de garantir une cohérence visuelle avec le design system
+ *  - de respecter les bonnes pratiques d’accessibilité
+ *
+ * Il s’appuie sur Radix UI pour gérer correctement
+ * les comportements interactifs et les états (checked, disabled, focus).
+ *
+ * Ce composant est principalement utilisé dans
+ * les formulaires de configuration et de paramètres
+ * (création de salon, réglages de permissions, options utilisateur).
  */
+
+
+
 "use client";
 
 import * as React from "react";

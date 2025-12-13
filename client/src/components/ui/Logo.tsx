@@ -5,6 +5,7 @@
  * Description :
  * Composant Logo de l'application WithYou.
  * Logo interactif avec icône Play et texte "WITHYOU".
+ *
  * Gère :
  *  - Trois tailles disponibles (sm, md, lg)
  *  - Effet de glow animé rouge

@@ -3,78 +3,26 @@
  * Fichier : components/ui/button.tsx
  *
  * Description :
- * Composant bouton réutilisable avec variants et tailles personnalisables.
- * Supporte les modes clair et sombre, états hover/disabled, et icônes.
+ * Composant bouton générique et réutilisable utilisé dans toute l’application.
  *
- * Props :
- * - variant : "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"
- * - size : "default" | "sm" | "lg" | "icon"
- * - className : classes CSS additionnelles
- * - asChild : utiliser Slot pour composer avec d'autres composants
- * - disabled : désactiver le bouton
- * - children : contenu du bouton (texte, icônes, etc.)
+ * Ce composant permet :
+ *  - d’afficher des boutons cohérents avec le design global
+ *  - de gérer plusieurs variantes (principal, secondaire, destructif, etc.)
+ *  - de proposer différentes tailles selon le contexte
+ *  - d’intégrer facilement des icônes et du texte
+ *  - de gérer les états d’interaction (hover, focus, disabled)
  *
- * Variants :
- * - default : Bouton principal rouge (bg-red-600, hover:bg-red-700)
- * - destructive : Bouton d'action destructive rouge (suppression, danger)
- * - outline : Bouton avec bordure, fond transparent
- * - secondary : Bouton secondaire gris
- * - ghost : Bouton transparent, hover subtil
- * - link : Bouton style lien avec soulignement
+ * Il s’appuie sur class-variance-authority (CVA)
+ * pour centraliser la gestion des styles
+ * et garantir une cohérence visuelle sur tout le front-end.
  *
- * Tailles :
- * - default : h-9 px-4 (36px hauteur, 16px padding horizontal)
- * - sm : h-8 px-3 (32px hauteur, 12px padding horizontal)
- * - lg : h-10 px-6 (40px hauteur, 24px padding horizontal)
- * - icon : size-9 (36px x 36px, carré pour icônes)
+ * Le bouton supporte également la composition via Slot,
+ * ce qui permet de l’utiliser comme wrapper autour d’autres composants
+ * (liens, icônes, éléments interactifs).
  *
- * États :
- * - Normal : couleur par défaut selon variant
- * - Hover : couleur plus foncée (opacity 90%)
- * - Active : scale-95 (feedback visuel au clic)
- * - Disabled : opacity-50 + pointer-events-none
- * - Focus : ring de focus visible (accessibilité)
- *
- * Utilisé dans :
- * - CreateRoomPage.tsx (bouton "Créer le salon")
- * - SignInPage.tsx (bouton "Se connecter")
- * - SignUpPage.tsx (bouton "S'inscrire")
- * - Header.tsx (boutons navigation, déconnexion)
- * - RoomPage.tsx (boutons Play/Pause, Quitter, Ajouter)
- * - PublicRoomsPage.tsx (boutons "Rejoindre")
- * - SettingsPage.tsx (boutons "Enregistrer", "Annuler")
- * - Et TOUS les autres composants/pages
+ * Utilisé dans la majorité des pages et composants de WithYou
+ * (navigation, formulaires, actions utilisateur, salons, paramètres).
  */
-
-// ==================== STYLES ====================
-//
-// COULEURS :
-// - default : bg-primary (red-600) text-white hover:bg-primary/90
-// - destructive : bg-red-600 text-white hover:bg-red-700
-// - outline : border bg-transparent hover:bg-accent
-// - secondary : bg-gray-200 text-black hover:bg-gray-300
-// - ghost : transparent hover:bg-accent
-// - link : text-red-600 underline
-//
-// MARGES & ESPACEMENTS :
-// - gap : gap-2 (8px) entre icône et texte
-// - px-4 : 16px padding horizontal (default)
-// - px-3 : 12px padding horizontal (sm)
-// - px-6 : 24px padding horizontal (lg)
-//
-// TAILLES :
-// - default : h-9 (36px hauteur)
-// - sm : h-8 (32px hauteur)
-// - lg : h-10 (40px hauteur)
-// - icon : size-9 (36px x 36px)
-//
-// BORDURES & ARRONDIS :
-// - rounded-md : 6px arrondi par défaut
-//
-// ANIMATIONS :
-// - transition-all : transition sur toutes les propriétés (200ms)
-// - hover:scale-105 : légère augmentation au survol (optionnel selon usage)
-// - active:scale-95 : légère réduction au clic
 
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";

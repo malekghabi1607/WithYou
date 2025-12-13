@@ -3,80 +3,24 @@
  * Fichier : components/ui/input.tsx
  *
  * Description :
- * Composant input réutilisable pour les formulaires.
- * Supporte différents types (text, email, password, url, etc.),
- * modes clair et sombre, états focus/disabled/invalid.
+ * Composant champ de saisie (input) réutilisable pour l’ensemble
+ * des formulaires de l’application.
  *
- * Props :
- * - type : "text" | "email" | "password" | "url" | "number" | etc.
- * - className : classes CSS additionnelles
- * - placeholder : texte de placeholder
- * - value : valeur contrôlée
- * - onChange : fonction appelée au changement
- * - disabled : désactiver l'input
- * - required : champ requis
- * - aria-invalid : marquer l'input comme invalide
+ * Ce composant permet :
+ *  - la saisie de données utilisateur (texte, email, mot de passe, URL, nombre, etc.)
+ *  - une gestion cohérente du style entre toutes les pages
+ *  - la prise en charge des états focus, disabled et invalid
+ *  - le respect des bonnes pratiques d’accessibilité
  *
- * Variantes de type :
- * - text : Texte normal (par défaut)
- * - email : Email avec validation navigateur
- * - password : Mot de passe masqué
- * - url : URL avec validation navigateur
- * - number : Nombre avec contrôles +/-
- * - file : Sélection de fichier
+ * Il s’adapte automatiquement aux thèmes clair et sombre
+ * et centralise la logique de style des champs de formulaire,
+ * afin d’éviter la duplication de code.
  *
- * États :
- * - Normal : bordure grise, fond transparent
- * - Focus : ring bleu (3px), bordure rouge
- * - Hover : aucun changement (accessibilité)
- * - Disabled : opacity-50, cursor-not-allowed
- * - Invalid : ring rouge, bordure rouge (aria-invalid)
- *
- * Utilisé dans :
- * - CreateRoomPage.tsx (nom salon, vidéo URL, mot de passe)
- * - JoinRoomPage.tsx (code salon, mot de passe)
- * - SignInPage.tsx (email, mot de passe)
- * - SignUpPage.tsx (nom, email, mot de passe, confirmation)
- * - ForgotPasswordPage.tsx (email)
- * - RoomPage.tsx (message chat)
- * - SettingsPage.tsx (tous les champs de paramètres)
- * - ProfilePage.tsx (nom, bio, etc.)
+ * Ce composant est utilisé dans la majorité des pages
+ * impliquant une interaction utilisateur
+ * (authentification, création de salon, paramètres, chat).
  */
 
-// ==================== STYLES ====================
-//
-// COULEURS :
-// - Fond (dark) : bg-input/30 (#27272A avec 30% opacité)
-// - Fond (light) : bg-white (#FFFFFF)
-// - Bordure : border-input (#3F3F46 dark, #D4D4D8 light)
-// - Bordure focus : border-ring (red-600)
-// - Texte : text-foreground (white dark, black light)
-// - Placeholder : text-muted-foreground (#A1A1AA)
-// - Sélection : bg-primary (red-600) text-white
-// - Ring focus : ring-ring/50 (red-600 avec 50% opacité)
-// - Ring invalid : ring-destructive/20 (red-600 avec 20% opacité)
-//
-// MARGES & ESPACEMENTS :
-// - px-3 : 12px padding horizontal
-// - py-1 : 4px padding vertical
-// - h-9 : 36px hauteur par défaut
-//
-// POLICES & TAILLES :
-// - text-base : 16px sur desktop
-// - text-sm : 14px sur mobile (md:text-sm)
-// - placeholder : même taille que le texte
-//
-// BORDURES & ARRONDIS :
-// - rounded-md : 6px arrondi
-// - border : 1px bordure
-//
-// ÉTATS :
-// - Focus : border-ring + ring-ring/50 (3px ring)
-// - Invalid : border-destructive + ring-destructive/20
-// - Disabled : opacity-50 + pointer-events-none
-//
-// ANIMATIONS :
-// - transition-[color,box-shadow] : transition sur couleur et ring
 
 import * as React from "react";
 
