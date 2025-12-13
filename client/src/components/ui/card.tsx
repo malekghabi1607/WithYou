@@ -1,18 +1,26 @@
 /**
- * Cette page constitue une vue fonctionnelle du système front-end.
- * Elle est responsable de la structuration et de l’orchestration des composants
- * d’interface liés au salon, en s’appuyant sur une architecture modulaire React.
+ * Projet : WithYou
+ * Fichier : components/ui/card.tsx
  *
- * Elle regroupe des composants réutilisables (Card, Header, Content, Footer)
- * afin de garantir la séparation des responsabilités, la lisibilité du code
- * et la maintenabilité de l’application.
+ * Description :
+ * Composant UI générique permettant de structurer du contenu
+ * sous forme de carte.
  *
- * Cette vue enfant s’intègre dans le système de navigation global
- * et peut interagir avec des mécanismes transversaux tels que le routage,
- * la gestion d’état et les actions utilisateur.
+ * Il est utilisé pour organiser visuellement des sections
+ * de l’interface comme :
+ *  - des formulaires
+ *  - des informations de salon
+ *  - des listes ou contenus regroupés
  *
- * L’objectif principal est de fournir une interface cohérente,
- * extensible et conforme aux bonnes pratiques de développement front-end.
+ * Le composant est découpé en sous-composants (Header, Content,
+ * Footer, Title, Description, Action) afin de faciliter
+ * la composition, la lisibilité et la réutilisation.
+ *
+ * Il respecte le thème clair/sombre et s’intègre dans
+ * le design system global de l’application.
+ *
+ * Utilisé dans plusieurs pages et composants du frontend
+ * (pages, settings, panels, formulaires, etc.).
  */
 import * as React from "react";
 
