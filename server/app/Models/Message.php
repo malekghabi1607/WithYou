@@ -3,30 +3,22 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Message extends Model
 {
-    protected $table = 'messages';
-    protected $primaryKey = 'id_message';
-
+    protected $table = "messages";
+    protected $primaryKey = "id_message";
     public $incrementing = false;
-    protected $keyType = 'string';
-    public $timestamps = false; // sent_at géré à la main
+    protected $keyType = "string";
 
-    protected $fillable = [
-        'content',
-        'sent_at',
-        'user_id',
-        'salon_id',
-    ];
+    protected $fillable = ["id_message", "id_user", "id_salon", "message"];
 
-    public function user()
+    protected static function boot()
     {
-        return $this->belongsTo(User::class, 'user_id', 'id_user');
-    }
-
-    public function salon()
-    {
-        return $this->belongsTo(Salon::class, 'salon_id', 'id_salon');
+        parent::boot();
+        static::creating(function ($msg) {
+            $msg->id_message = Str::uuid();
+        });
     }
 }
