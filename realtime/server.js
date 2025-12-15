@@ -41,3 +41,25 @@ io.on("connection", (socket) => {
 server.listen(3000, () => {
     console.log("🔥 Socket.io écoute sur http://localhost:3000");
 });
+
+// ======================
+// VOTES TEMPS RÉEL
+// ======================
+io.on("connection", (socket) => {
+
+    socket.on("join_salon", (salonId) => {
+        socket.join(salonId);
+        console.log("👤 Client rejoint le salon :", salonId);
+    });
+
+    // Vote pour une vidéo
+    socket.on("video_vote", (data) => {
+        console.log("🗳️ Vote reçu :", data);
+
+        // Diffuser à tous les utilisateurs du salon
+        io.to(data.salonId).emit("video_vote_update", {
+            videoId: data.videoId
+        });
+    });
+
+});
