@@ -58,3 +58,9 @@ Route::middleware('auth:api')->group(function () {
     // Récupération de l'état vidéo
     Route::get('/salon/{salon}/video/state', [\App\Http\Controllers\Api\VideoSyncController::class, 'getState']);
 });
+Route::middleware('auth:api')->group(function () {
+
+    Route::post('/chat/send', [ChatController::class, 'send']);
+    Route::get('/chat/{salonId}/history', [ChatController::class, 'history']);
+
+});
