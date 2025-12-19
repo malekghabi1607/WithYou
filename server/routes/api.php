@@ -4,8 +4,14 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\SalonController;
-use App\Http\Controllers\Api\VideoSyncController;
+use App\Http\Controllers\Api\MessageController;
+use App\Http\Controllers\VideoSyncController;
 use App\Http\Controllers\Test\VideoSyncTestController;
+
+use Illuminate\Support\Facades\Broadcast;
+
+Broadcast::routes(['middleware' => ['auth:api']]);
+require base_path('routes/channels.php');
 
 /*
 |--------------------------------------------------------------------------
@@ -53,14 +59,13 @@ Route::post('/salon/{id}/video/state', [VideoSyncController::class, 'saveState']
 Route::middleware('auth:api')->group(function () {
 
     // Sauvegarde de l'état vidéo
-    Route::post('/salon/{salon}/video/state', [\App\Http\Controllers\Api\VideoSyncController::class, 'saveState']);
+    Route::post('/salon/{salon}/video/state', [\App\Http\Controllers\VideoSyncController::class, 'saveState']);
 
     // Récupération de l'état vidéo
-    Route::get('/salon/{salon}/video/state', [\App\Http\Controllers\Api\VideoSyncController::class, 'getState']);
+    Route::get('/salon/{salon}/video/state', [\App\Http\Controllers\VideoSyncController::class, 'getState']);
 });
-Route::middleware('auth:api')->group(function () {
 
-    Route::post('/chat/send', [ChatController::class, 'send']);
-    Route::get('/chat/{salonId}/history', [ChatController::class, 'history']);
-
+// Route chat en direct 
+    Route::middleware('auth:api')->group(function () {
+    Route::get('/salons/{salon}/messages', [MessageController::class, 'index']);
 });
