@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\SalonController;
 use App\Http\Controllers\Api\VideoSyncController;
 use App\Http\Controllers\Test\VideoSyncTestController;
 use App\Http\Controllers\Api\VideoVoteController;
+use App\Http\Controllers\Api\VideoNoteController;
+use App\Http\Controllers\Api\SondageSalonController;
 
 /*
 |--------------------------------------------------------------------------
@@ -64,14 +66,19 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/chat/send', [ChatController::class, 'send']);
     Route::get('/chat/{salonId}/history', [ChatController::class, 'history']);
 
-});
 
 Route::middleware('auth:api')->group(function () {
 
-    // Voter pour une vidéo
-    Route::post('/videos/{video}/vote', [VideoVoteController::class, 'vote']);
+    // 🅰️ Voter / modifier vote
+    Route::post('/sondages/vote', [SondageSalonController::class, 'voter']);
 
-    // Récupérer le nombre de votes
-    Route::get('/videos/{video}/votes', [VideoVoteController::class, 'count']);
+    // 🅱️ Résultats d’une vidéo
+    Route::get('/sondages/{idSalon}/video/{videoId}', [SondageSalonController::class, 'resultatsVideo']);
+
+    // 🅲 Classement du salon
+    Route::get('/sondages/{idSalon}/classement', [SondageSalonController::class, 'classement']);
+
+});
+
 
 });
