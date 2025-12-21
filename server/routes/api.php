@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\SalonController;
 use App\Http\Controllers\Api\VideoSyncController;
 use App\Http\Controllers\Test\VideoSyncTestController;
+use App\Http\Controllers\Api\VideoVoteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -62,5 +63,15 @@ Route::middleware('auth:api')->group(function () {
 
     Route::post('/chat/send', [ChatController::class, 'send']);
     Route::get('/chat/{salonId}/history', [ChatController::class, 'history']);
+
+});
+
+Route::middleware('auth:api')->group(function () {
+
+    // Voter pour une vidéo
+    Route::post('/videos/{video}/vote', [VideoVoteController::class, 'vote']);
+
+    // Récupérer le nombre de votes
+    Route::get('/videos/{video}/votes', [VideoVoteController::class, 'count']);
 
 });
