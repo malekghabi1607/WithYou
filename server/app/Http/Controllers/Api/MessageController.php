@@ -9,7 +9,7 @@ use App\Models\Message;
 class MessageController extends Controller
 {
     /**
-     * GET /api/message
+     * GET /api/salons/{salonId}/messages
      * Retourne la liste des messages qui sont présents dans le salon passé en paramètre.
      */
     public function index($salonId)
@@ -18,5 +18,24 @@ class MessageController extends Controller
             ->where('salon_id', $salonId)
             ->orderBy('sent_at')
             ->get();
+    }
+
+    /**
+     * POST /api/salons/{salonId}/messages
+     * Crée un message dans le salon indiqué par l'URL.
+     */
+    public function store(Request $request, string $salonId)
+    {
+        $request->validate([
+            'content' => 'required|string',
+        ]);
+
+        $message = Message::create([
+            'user_id'  => auth()->user()->id_user,
+            'salon_id' => $salonId,
+            'content'  => $request->content,
+        ]);
+
+        return $message;
     }
 }
