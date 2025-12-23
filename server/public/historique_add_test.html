@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Ajout Historique</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+<h2>📝 Ajouter une entrée d'historique</h2>
+
+Salon ID : <br>
+<input id="salon" style="width:400px;"><br><br>
+
+YouTube ID : <br>
+<input id="yt" style="width:400px;"><br><br>
+
+Titre : <br>
+<input id="titre" style="width:400px;"><br><br>
+
+Action (load / ended / auto_next) : <br>
+<input id="action" value="load" style="width:400px;"><br><br>
+
+<button onclick="addHistorique()">Ajouter</button>
+
+<script>
+async function addHistorique() {
+    const salon = document.getElementById("salon").value;
+    const youtube_id = document.getElementById("yt").value;
+    const titre = document.getElementById("titre").value;
+    const action = document.getElementById("action").value;
+
+    const res = await fetch(`/api/salons/${salon}/historique`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            youtube_id,
+            titre,
+            action
+        })
+    });
+
+    const data = await res.json();
+    alert(JSON.stringify(data, null, 2));
+}
+</script>
+
+</body>
+</html>

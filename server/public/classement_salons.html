@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Classement des salons</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+<h2>🏆 Meilleurs salons de la semaine</h2>
+
+<ul id="classement"></ul>
+
+<script>
+async function chargerClassement() {
+    const res = await fetch('/api/classement/hebdo');
+    const data = await res.json();
+
+    const ul = document.getElementById("classement");
+    ul.innerHTML = "";
+
+    data.forEach((item, index) => {
+        const li = document.createElement("li");
+        li.textContent = `${index + 1}. Salon ${item.id_salon} — ${item.moyenne} ⭐`;
+        ul.appendChild(li);
+    });
+}
+
+chargerClassement();
+</script>
+
+</body>
+</html>

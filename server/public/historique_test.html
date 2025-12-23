@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Historique Vidéos</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+<h2>📜 Test Historique Vidéos</h2>
+
+<label>ID du salon :</label><br>
+<input id="salon" style="width:400px;"><br><br>
+
+<button onclick="loadHistorique()">Charger l'historique</button>
+
+<h3>Résultat :</h3>
+<pre id="output" style="background:#eee; padding:10px; width:600px;"></pre>
+
+<script>
+async function loadHistorique() {
+    const salon = document.getElementById("salon").value;
+
+    const res = await fetch(`/api/salons/${salon}/historique`);
+    const text = await res.text();
+
+    try {
+        const data = JSON.parse(text);
+        document.getElementById("output").textContent =
+            JSON.stringify(data, null, 2);
+    } catch (e) {
+        document.getElementById("output").textContent =
+            "❌ Erreur JSON :\n\n" + text;
+    }
+}
+</script>
+
+</body>
+</html>

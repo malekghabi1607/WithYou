@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Lecture Playlist</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+    <h2>📺 Voir la playlist d’un salon</h2>
+
+    <label>ID du salon :</label><br>
+    <input id="salon_id" style="width:400px;" placeholder="id_salon"><br><br>
+
+    <button onclick="loadPlaylist()">Charger la playlist</button>
+
+    <h3>Résultat :</h3>
+    <pre id="output" style="background:#eee; padding:10px; width:600px;"></pre>
+
+<script>
+const API = "http://127.0.0.1:8000/api";
+
+async function loadPlaylist() {
+    const salon_id = document.getElementById("salon_id").value;
+
+    const res = await fetch(`${API}/salons/${salon_id}/playlist`);
+    const result = await res.json();
+
+    document.getElementById("output").textContent = JSON.stringify(result, null, 2);
+}
+</script>
+
+</body>
+</html>
