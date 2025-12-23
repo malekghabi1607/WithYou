@@ -7,12 +7,19 @@
 
     <h2>🏠 Test Création de Salon</h2>
 
+    <!-- TOKEN -->
     <label>Token JWT :</label><br>
     <input id="token" style="width:400px;" placeholder="colle ton token ici"><br><br>
 
+    <!-- NOM DU SALON -->
     <label>Nom du salon :</label><br>
     <input id="salon_name" style="width:200px;" placeholder="Salon Test Wissam"><br><br>
 
+    <!-- OWNER ID -->
+    <label>ID du propriétaire (owner_id) :</label><br>
+    <input id="owner_id" style="width:400px;" placeholder="UUID du user (ex: id_user de maya)"><br><br>
+
+    <!-- BOUTON -->
     <button onclick="createSalon()">Créer le salon</button>
 
     <h3>Résultat :</h3>
@@ -22,8 +29,9 @@
 const API = "http://127.0.0.1:8000/api";
 
 async function createSalon() {
-    const token = document.getElementById("token").value;
-    const name  = document.getElementById("salon_name").value;
+    const token    = document.getElementById("token").value;
+    const name     = document.getElementById("salon_name").value;
+    const owner_id = document.getElementById("owner_id").value;
 
     const res = await fetch(`${API}/salons`, {
         method: "POST",
@@ -31,7 +39,10 @@ async function createSalon() {
             "Content-Type": "application/json",
             "Authorization": "Bearer " + token
         },
-        body: JSON.stringify({ name: name })
+        body: JSON.stringify({
+            name: name,
+            owner_id: owner_id
+        })
     });
 
     document.getElementById("output").innerText = await res.text();

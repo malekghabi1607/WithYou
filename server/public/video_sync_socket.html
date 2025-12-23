@@ -10,14 +10,16 @@
   <style>
     body { font-family: Arial; padding: 20px; }
     button { margin: 4px; }
+    #historique li { padding: 4px 0; border-bottom: 1px solid #ddd; }
   </style>
 </head>
 <body>
 
 <h2>🎬 Test Synchronisation YouTube (Socket.io)</h2>
+<div id="badge-salon" style="margin: 10px 0; font-size: 20px;"></div>
 
 Salon ID :
-<input id="salon" value="test123"><br><br>
+<input id="salon" value="6e28ab23-b449-4c2f-ba03-bfa7f7b71026"><br><br>
 
 Video ID YouTube :
 <input id="yt" value="dQw4w9WgXcQ"><br><br>
@@ -31,14 +33,42 @@ Video ID YouTube :
 
 <div id="player"></div>
 
+<hr>
+
+<!-- ⭐ NOTATION -->
+<div id="notation">
+    <h3>⭐ Notez cette vidéo</h3>
+    <div id="stars"></div>
+    <p id="note-info"></p>
+</div>
+
+<h3>📃 Playlist</h3>
+
+<input id="urlInput" style="width:420px" placeholder="Coller un lien YouTube ici">
+<button onclick="addToPlaylist()">Ajouter</button>
+
+<ul id="playlist"></ul>
+
+<hr>
+
+<h3>📜 Historique du salon</h3>
+<ul id="historique"></ul>
+
 <script>
 let socket = io("http://localhost:3000");
+
 let player = null;
+let playerReady = false;
 let salonId = null;
-let currentVideoId = null; // ⭐ IMPORTANT pour sauvegarde Laravel
+let currentVideoId = null;
+
+let autoSyncInterval = null;
+let isOwner = true;
+
+let playlistCache = [];
 
 // -----------------------
-// YOUTUBE PLAYER
+// YOUTUBE API
 // -----------------------
 function onYouTubeIframeAPIReady() {
     player = new YT.Player("player", {
@@ -46,13 +76,50 @@ function onYouTubeIframeAPIReady() {
         width: "640",
         videoId: "",
         events: {
-            onReady: () => {
-                YT_READY = true;
-                console.log("🎥 Lecteur YouTube prêt !");
-                loadStateFromLaravel(); // ⭐ CHARGER L’ÉTAT ICI
-            }
+            onReady: () => { playerReady = true; },
+            onStateChange: onPlayerStateChange
         }
     });
+}
+
+function sendStateToLaravel(status) {
+    if (!playerReady || !salonId || !currentVideoId) return;
+
+    fetch(`/api/salons/${salonId}/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            video_id: currentVideoId,
+            status: status,
+            time: Math.floor(player.getCurrentTime())
+        })
+    })
+    .catch(e => console.error("❌ Erreur POST state", e));
+}
+
+function onPlayerStateChange(event) {
+    if (!playerReady) return;
+
+    if (event.data === YT.PlayerState.PLAYING) {
+        sendStateToLaravel("playing");
+    }
+
+    if (event.data === YT.PlayerState.PAUSED) {
+        sendStateToLaravel("paused");
+    }
+
+    if (event.data === YT.PlayerState.ENDED) {
+
+        if (currentVideoId) {
+            addHistoriqueEntry(currentVideoId, "ended");
+        }
+
+        const nextVideo = getNextVideo(currentVideoId);
+
+        if (nextVideo) {
+            playFromPlaylist(nextVideo, "auto_next");
+        }
+    }
 }
 
 // -----------------------
@@ -63,116 +130,380 @@ socket.on("connect", () => {
 });
 
 socket.on("video_update", (data) => {
-    console.log("📡 Reçu du serveur :", data);
-
-    if (!player) return;
+    if (!playerReady) return;
 
     if (data.action === "load") player.loadVideoById(data.videoId);
     if (data.action === "play") player.playVideo();
     if (data.action === "pause") player.pauseVideo();
-    if (data.action === "sync" && data.time !== undefined)
-        player.seekTo(data.time, true);
+
+    if (data.action === "sync" && data.time !== undefined) {
+        const local = Math.floor(player.getCurrentTime());
+        if (Math.abs(local - data.time) > 1) {
+            player.seekTo(data.time, true);
+        }
+    }
 });
 
 // -----------------------
-// REJOINDRE LE SALON
+// SALON
 // -----------------------
 function joinSalon() {
     salonId = document.getElementById("salon").value;
     socket.emit("join_salon", salonId);
-    console.log("➡️ Salon rejoint :", salonId);
 }
-
 joinSalon();
 
 // -----------------------
-// SAUVEGARDE LARAVEL
+// AUTO-SYNC
 // -----------------------
-function sendStateToLaravel(status) {
-    const salon = document.getElementById("salon").value;
+function startAutoSync() {
+    if (!isOwner) return;
 
-    fetch(`http://127.0.0.1:8000/api/salon/${salon}/video/state`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + localStorage.getItem("jwt")
-        },
-        body: JSON.stringify({
-            video_id: currentVideoId,
-            time: Math.floor(player.getCurrentTime()),
-            status: status
-        })
-    });
-}
+    if (autoSyncInterval) clearInterval(autoSyncInterval);
 
-// -----------------------
-// CHARGER L'ÉTAT DE LARAVEL
-// -----------------------
-async function loadStateFromLaravel() {
-    const salon = document.getElementById("salon").value;
+    autoSyncInterval = setInterval(() => {
+        if (!playerReady) return;
 
-    try {
-        let res = await fetch(`http://127.0.0.1:8000/api/salon/${salon}/video/state`, {
-            headers: {
-                "Authorization": "Bearer " + localStorage.getItem("jwt")
-            }
+        socket.emit("video_action", {
+            salon: salonId,
+            action: "sync",
+            time: Math.floor(player.getCurrentTime())
         });
 
-        let data = await res.json();
-        console.log("📥 État reçu depuis Laravel :", data);
-
-        if (!data.current_video_id) return;
-
-        currentVideoId = data.current_video_id;
-
-        player.loadVideoById(data.current_video_id);
-
-        if (data.video_time) {
-            player.seekTo(data.video_time, true);
-        }
-
-        if (data.video_status === "playing") {
-            player.playVideo();
-        }
-
-    } catch (e) {
-        console.error("Erreur loadStateFromLaravel:", e);
-    }
+    }, 2000);
 }
 
 // -----------------------
 // BOUTONS
 // -----------------------
 function loadVideo() {
-    currentVideoId = document.getElementById("yt").value;  // ⭐ obligatoire
-    socket.emit("video_action", { salon: salonId, action: "load", videoId: currentVideoId });
+    if (!playerReady) return;
 
-    sendStateToLaravel("load"); // sauvegarde Laravel
+    const videoId = document.getElementById("yt").value;
+    currentVideoId = videoId;
+
+    player.loadVideoById(videoId);
+
+    socket.emit("video_action", {
+        salon: salonId,
+        action: "load",
+        videoId
+    });
+
+    addHistoriqueEntry(videoId, "load");
+    startAutoSync();
+    afficherEtoiles(videoId);
 }
 
 function playVideo() {
     socket.emit("video_action", { salon: salonId, action: "play" });
-    sendStateToLaravel("play");
 }
 
 function pauseVideo() {
     socket.emit("video_action", { salon: salonId, action: "pause" });
-    sendStateToLaravel("pause");
 }
 
 function syncTime() {
-    const t = Math.floor(player.getCurrentTime());
-    socket.emit("video_action", { salon: salonId, action: "sync", time: t });
-    sendStateToLaravel("sync");
+    socket.emit("video_action", {
+        salon: salonId,
+        action: "sync",
+        time: Math.floor(player.getCurrentTime())
+    });
 }
 
 // -----------------------
-// AU CHARGEMENT
+// HISTORIQUE
 // -----------------------
-window.onload = function () {
-    joinSalon();           
-};
+async function fetchHistorique() {
+    if (!salonId) return;
 
+    try {
+        const res = await fetch(`/api/salons/${salonId}/historique`);
+        const items = await res.json();
+
+        const ul = document.getElementById("historique");
+        ul.innerHTML = "";
+
+        items.forEach(item => {
+            const titre = item.titre ?? item.youtube_id;
+            const vid = item.youtube_id;
+            const action = item.action;
+            const img = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+
+            const li = document.createElement("li");
+            li.style.display = "flex";
+            li.style.alignItems = "center";
+            li.style.marginBottom = "10px";
+
+            li.innerHTML = `
+                <img src="${img}" width="120" style="margin-right:10px; border-radius:6px;">
+                <div>
+                    <strong>${titre}</strong><br>
+                    <small>Action : ${action}</small><br>
+                    <button onclick="rejouerHistorique('${vid}')">🔁 Rejouer</button>
+                    <button style="color:red" onclick="supprimerHistorique('${item.id}')">🗑 Supprimer</button>
+                </div>
+            `;
+
+            ul.appendChild(li);
+        });
+
+    } catch (e) {
+        console.error("Erreur historique :", e);
+    }
+}
+
+async function addHistoriqueEntry(youtubeId, action) {
+    try {
+        const info = playlistCache.find(v => v.youtube_id === youtubeId);
+        const titre = info ? info.titre : "";
+
+        await fetch(`/api/salons/${salonId}/historique`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                youtube_id: youtubeId,
+                titre,
+                action
+            })
+        });
+
+        fetchHistorique();
+
+    } catch (e) {
+        console.error("Erreur ajout historique :", e);
+    }
+}
+
+// -----------------------
+// PLAYLIST
+// -----------------------
+async function fetchPlaylist() {
+    try {
+        const res = await fetch(`/api/salons/${salonId}/playlist`);
+        const items = await res.json();
+
+        playlistCache = items;
+
+        const ul = document.getElementById("playlist");
+        ul.innerHTML = "";
+
+        items.forEach(item => {
+            const vid = item.youtube_id;
+            const titre = item.titre ?? "Sans titre";
+            const img = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+
+            const li = document.createElement("li");
+            li.style.display = "flex";
+            li.style.alignItems = "center";
+            li.style.marginBottom = "10px";
+
+            li.innerHTML = `
+                <img src="${img}" width="120" style="margin-right:10px; border-radius:6px;">
+                <div>
+                    <strong>${titre}</strong><br>
+                    <button onclick="playFromPlaylist('${vid}')">▶ Lire</button>
+                    <button style="color:red" onclick="deleteFromPlaylist('${item.id}')">❌ Supprimer</button>
+                </div>
+            `;
+
+            ul.appendChild(li);
+        });
+
+    } catch (e) {
+        console.error("Erreur playlist :", e);
+    }
+}
+
+function getNextVideo(current) {
+    const index = playlistCache.findIndex(v => v.youtube_id === current);
+    if (index === -1) return null;
+    return playlistCache[index + 1]?.youtube_id || null;
+}
+
+async function addToPlaylist() {
+    const url = document.getElementById("urlInput").value.trim();
+    if (!url) return alert("Ajoute un lien YouTube !");
+
+    const res = await fetch(`/api/salons/${salonId}/playlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+    });
+
+    await res.json();
+    document.getElementById("urlInput").value = "";
+    fetchPlaylist();
+}
+
+function playFromPlaylist(videoId, origin = "load") {
+    currentVideoId = videoId;
+
+    player.loadVideoById(videoId);
+
+    socket.emit("video_action", {
+        salon: salonId,
+        action: "load",
+        videoId
+    });
+
+    startAutoSync();
+
+    fetch(`/api/salons/${salonId}/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            video_id: videoId,
+            status: "playing",
+            time: 0
+        })
+    });
+
+    addHistoriqueEntry(videoId, origin);
+    afficherEtoiles(videoId);
+}
+
+async function deleteFromPlaylist(id) {
+    await fetch(`/api/salons/${salonId}/playlist/${id}`, {
+        method: "DELETE"
+    });
+
+    fetchPlaylist();
+}
+
+// -----------------------
+// REJOUER
+// -----------------------
+function rejouerHistorique(videoId) {
+    currentVideoId = videoId;
+
+    if (playerReady) {
+        player.loadVideoById(videoId);
+    }
+
+    socket.emit("video_action", {
+        salon: salonId,
+        action: "load",
+        videoId
+    });
+
+    startAutoSync();
+
+    fetch(`/api/salons/${salonId}/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            video_id: videoId,
+            status: "playing",
+            time: 0
+        })
+    });
+
+    addHistoriqueEntry(videoId, "rejouer");
+    afficherEtoiles(videoId);
+}
+
+// -----------------------
+// SUPPRIMER HISTORIQUE
+// -----------------------
+async function supprimerHistorique(id) {
+    if (!confirm("Supprimer cette entrée ?")) return;
+
+    try {
+        const res = await fetch(`/api/salons/${salonId}/historique/${id}`, {
+            method: "DELETE"
+        });
+
+        if (!res.ok) return alert("Erreur suppression");
+
+        fetchHistorique();
+
+    } catch (e) {
+        console.error("Erreur suppression historique :", e);
+    }
+}
+
+// -----------------------
+// ⭐ NOTATION ⭐
+// -----------------------
+
+function afficherEtoiles(videoId) {
+    const starsDiv = document.getElementById("stars");
+    starsDiv.innerHTML = "";
+
+    let userNote = 0;
+    const userId = "00000000-0000-0000-0000-000000000001"; // remplace par ton vrai user
+
+    fetch(`/api/salons/${salonId}/notation/${videoId}`)
+        .then(res => res.json())
+        .then(data => {
+            const found = data.notes.find(n => n.id_user === userId);
+            userNote = found ? found.note : 0;
+
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement("span");
+                star.textContent = "⭐";
+                star.style.fontSize = "30px";
+                star.style.cursor = "pointer";
+                star.style.marginRight = "5px";
+                star.style.color = i <= userNote ? "gold" : "gray";
+
+                star.onclick = () => noterVideo(videoId, i);
+
+                starsDiv.appendChild(star);
+            }
+
+            document.getElementById("note-info").textContent =
+                `Moyenne : ${data.moyenne} ⭐ (${data.votes} votes) — Votre note : ${userNote}`;
+        });
+}
+
+async function noterVideo(videoId, note) {
+    const userId = "00000000-0000-0000-0000-000000000001"; // remplace par ton vrai user
+
+    await fetch(`/api/salons/${salonId}/notation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            youtube_id: videoId,
+            id_user: userId,
+            note: note
+        })
+    });
+
+    afficherEtoiles(videoId); // recharge les étoiles avec la nouvelle note
+}
+
+// -----------------------
+// 🏆 BADGE MEILLEUR SALON
+// -----------------------
+async function verifierBadgeSalon() {
+    try {
+        const res = await fetch('/api/classement/hebdo');
+        const data = await res.json();
+
+        if (data.length === 0) return;
+
+        const meilleur = data[0].id_salon;
+
+        if (meilleur === salonId) {
+            document.getElementById("badge-salon").innerHTML =
+                "🏆 <strong>Meilleur salon de la semaine</strong>";
+        }
+    } catch (e) {
+        console.error("Erreur badge salon :", e);
+    }
+}
+
+// -----------------------
+// INIT
+// -----------------------
+window.addEventListener("load", () => {
+    salonId = document.getElementById("salon").value;
+    fetchPlaylist();
+    fetchHistorique();
+    verifierBadgeSalon();
+});
 </script>
 
 </body>
