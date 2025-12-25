@@ -1,3 +1,29 @@
+/**
+ * Projet : WithYou
+ * Fichier : components/room/VideoVotePanel.tsx
+ *
+ * Description :
+ * Composant modal permettant aux utilisateurs de voter pour la
+ * prochaine vidéo à lancer dans un salon.
+ *
+ * Fonctionnalités :
+ * - Affiche la liste des vidéos disponibles avec leur nombre de votes
+ * - Permet à l’utilisateur de sélectionner une seule vidéo
+ * - Enregistre le vote avec une limite d’un vote toutes les 24 heures
+ * - Empêche le revote avant la fin du délai
+ * - Met en évidence la vidéo actuellement en tête des votes
+ *
+ * UX / UI :
+ * - Interface modale avec fond sombre et flou
+ * - Feedback visuel sur la sélection et l’état du vote
+ * - Notifications utilisateur via Sonner (succès / erreur)
+ * - Fermeture automatique après validation du vote
+ *
+ * Objectif :
+ * Favoriser une décision collective et équitable pour choisir
+ * la prochaine vidéo à regarder dans le salon.
+ */
+
 import { X, ThumbsUp, Clock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
