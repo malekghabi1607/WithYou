@@ -1,13 +1,21 @@
 /**
- * DropdownMenu Component
- * ---------------------
- * Ce fichier définit un menu déroulant réutilisable.
- * Il est basé sur Radix UI pour l’accessibilité et la gestion du focus.
- * Il permet d’afficher des actions, options, cases à cocher et sous-menus.
- * Les styles et animations sont gérés avec Tailwind CSS.
- * Utilisable côté client avec Next.js ("use client").
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : DropdownMenu.tsx
+ *
+ * Description :
+ * Composants Dropdown Menu réutilisables pour afficher
+ * des menus contextuels (clic droit / bouton / actions).
+ *
+ * Fonctionnalités :
+ *  - Menu principal et sous-menus
+ *  - Items simples, checkbox et radio
+ *  - Séparateurs, labels et raccourcis
+ *  - Support des actions destructives
+ *
+ * Basé sur :
+ *  - @radix-ui/react-dropdown-menu
  */
-"use client";
+
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";

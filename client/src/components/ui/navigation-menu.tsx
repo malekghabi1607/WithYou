@@ -1,9 +1,19 @@
 /**
- * Composant NavigationMenu permettant de créer un menu de navigation interactif.
- * Basé sur Radix UI pour l’accessibilité et la gestion du focus.
- * Supporte les sous-menus, animations et indicateurs visuels.
- * Styles et comportements gérés avec Tailwind CSS.
- * Utilisable côté client dans une application Next.js.
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : NavigationMenu.tsx
+ *
+ * Description :
+ * Composants de menu de navigation basés sur Radix UI.
+ *
+ * Rôle :
+ *  - Créer un menu de navigation accessible et animé
+ *  - Gérer les sous-menus, indicateurs et transitions
+ *  - Centraliser le style et le comportement du menu
+ *
+ * Technologies :
+ *  - @radix-ui/react-navigation-menu
+ *  - class-variance-authority (cva)
+ *  - Tailwind CSS
  */
 
 import * as NavigationMenuPrimitive from "@radix-ui/react-navigation-menu";

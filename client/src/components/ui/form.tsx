@@ -1,11 +1,21 @@
 /**
- * Utilitaires de formulaire basés sur React Hook Form.
- * Fournit une structure réutilisable : FormField, FormItem, FormLabel, FormControl, etc.
- * Gère automatiquement les erreurs, les messages et les IDs ARIA pour l’accessibilité.
- * Permet de connecter facilement les champs via Controller.
- * Utilisable côté client avec Next.js ("use client").
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Form.tsx
+ *
+ * Description :
+ * Composants utilitaires pour la gestion des formulaires
+ * avec React Hook Form.
+ *
+ * Fonctionnalités :
+ *  - Gestion centralisée des champs (FormField)
+ *  - Labels, messages d’erreur et descriptions accessibles
+ *  - Intégration avec les composants UI du projet
+ *  - Support automatique de la validation et des erreurs
+ *
+ * Basé sur :
+ *  - react-hook-form
+ *  - @radix-ui (Label, Slot)
  */
-"use client";
 
 import * as React from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";

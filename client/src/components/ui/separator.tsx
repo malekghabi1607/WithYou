@@ -1,11 +1,19 @@
 /**
- * Composant Separator permettant de séparer visuellement des sections.
- * Supporte une orientation horizontale ou verticale.
- * Basé sur Radix UI pour l’accessibilité.
- * Stylisé avec Tailwind CSS.
- * Utilisable côté client (Next.js).
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Separator.tsx
+ *
+ * Description :
+ * Composant séparateur visuel basé sur Radix UI.
+ *
+ * Rôle :
+ *  - Séparer visuellement des sections de l’interface
+ *  - Supporter les orientations horizontale et verticale
+ *  - Garantir accessibilité et cohérence visuelle
+ *
+ * Technologies :
+ *  - @radix-ui/react-separator
+ *  - Tailwind CSS
  */
-"use client";
 
 import * as React from "react";
 import * as SeparatorPrimitive from "@radix-ui/react-separator";

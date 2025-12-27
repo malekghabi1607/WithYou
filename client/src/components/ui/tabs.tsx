@@ -1,12 +1,23 @@
 /**
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Tabs.tsx
+ *
+ * Description :
  * Composant Tabs permettant d’afficher du contenu sous forme d’onglets.
- * Basé sur Radix UI pour la gestion des états et de l’accessibilité.
- * Inclut les éléments : Tabs, TabsList, TabsTrigger et TabsContent.
- * Stylisé avec Tailwind CSS pour une interface cohérente.
- * Utilisable côté client avec Next.js ("use client").
+ * Repose sur Radix UI pour la gestion des états, de l’accessibilité
+ * et de la navigation clavier.
+ *
+ * Composants fournis :
+ *  - Tabs : conteneur principal
+ *  - TabsList : liste des onglets
+ *  - TabsTrigger : bouton d’onglet
+ *  - TabsContent : contenu associé à un onglet
+ *
+ * Technologies :
+ *  - @radix-ui/react-tabs
+ *  - Tailwind CSS
+ *  - Next.js (Client Component)
  */
-
-"use client";
 
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";

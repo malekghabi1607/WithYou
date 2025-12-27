@@ -1,11 +1,19 @@
 /**
- * Composant ScrollArea permettant d’afficher du contenu défilable
- * avec des barres de défilement personnalisées.
- * Basé sur Radix UI pour la gestion du scroll et de l’accessibilité.
- * Réutilisable et stylisé avec Tailwind CSS.
- * Compatible avec les interactions côté client (Next.js).
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : ScrollArea.tsx
+ *
+ * Description :
+ * Composant de zone de défilement (scroll) basé sur Radix UI.
+ *
+ * Rôle :
+ *  - Fournir une zone scrollable stylée et accessible
+ *  - Gérer le scroll vertical et horizontal
+ *  - Uniformiser l’apparence des barres de défilement
+ *
+ * Technologies :
+ *  - @radix-ui/react-scroll-area
+ *  - Tailwind CSS
  */
-"use client";
 
 import * as React from "react";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";

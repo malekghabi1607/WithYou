@@ -1,8 +1,21 @@
 /**
- * Composant Accordion réutilisable basé sur Radix UI,
- * avec support de l’accessibilité et animations.
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Accordion.tsx
+ *
+ * Description :
+ * Composants Accordion réutilisables basés sur Radix UI.
+ * Permet d’afficher des sections pliables/dépliables dans l’interface
+ * (ex : paramètres, FAQ, options avancées).
+ *
+ * Composants exportés :
+ *  - Accordion : conteneur principal
+ *  - AccordionItem : section de l’accordéon
+ *  - AccordionTrigger : bouton d’ouverture/fermeture
+ *  - AccordionContent : contenu affiché lors de l’ouverture
+ *
+ * Utilisation :
+ * Améliore la lisibilité de l’UI en organisant les informations par blocs.
  */
-"use client";
 
 import * as React from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";

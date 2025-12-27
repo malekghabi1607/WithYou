@@ -1,8 +1,22 @@
+
 /**
- * Composant Dialog (fenêtre modale) basé sur Radix UI,
- * offrant accessibilité, animations et structure réutilisable.
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Dialog.tsx
+ *
+ * Description :
+ * Composants Dialog (modale) réutilisables pour afficher
+ * des fenêtres contextuelles (pop-up) dans l’application.
+ *
+ * Fonctionnalités :
+ *  - Ouverture / fermeture contrôlée
+ *  - Overlay avec fond assombri
+ *  - Contenu centré et animé
+ *  - Header, Footer, Title et Description
+ *
+ * Basé sur :
+ *  - @radix-ui/react-dialog
  */
-"use client";
+
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";

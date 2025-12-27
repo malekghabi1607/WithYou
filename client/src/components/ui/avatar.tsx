@@ -1,11 +1,19 @@
 /**
- * Composant Avatar permettant d’afficher une image de profil.
- * Inclut une image principale et un fallback en cas d’erreur.
- * Basé sur Radix UI pour une meilleure accessibilité.
- * Stylisé avec Tailwind CSS.
- * Utilisable côté client (Next.js).
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Avatar.tsx
+ *
+ * Description :
+ * Composant Avatar réutilisable pour afficher
+ * la photo de profil d’un utilisateur.
+ *
+ * Fonctionnalités :
+ *  - Image de profil via AvatarImage
+ *  - Fallback avec initiales ou icône via AvatarFallback
+ *  - Style circulaire et responsive
+ *
+ * Basé sur :
+ *  - @radix-ui/react-avatar
  */
-"use client";
 
 import * as React from "react";
 import * as AvatarPrimitive from "@radix-ui/react-avatar";

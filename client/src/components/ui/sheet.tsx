@@ -1,11 +1,20 @@
 /**
- * Composant Sheet permettant d’afficher un panneau latéral (drawer).
- * Basé sur Radix UI pour l’accessibilité et la gestion du focus.
- * Supporte plusieurs positions : droite, gauche, haut ou bas.
- * Animations et styles gérés avec Tailwind CSS.
- * Utilisable côté client avec Next.js ("use client").
+ * Projet : WithYou – Plateforme de visionnage collaboratif
+ * Fichier : Sheet.tsx
+ *
+ * Description :
+ * Composant "Sheet" (panneau latéral / modal glissant) basé sur Radix UI.
+ *
+ * Rôle :
+ *  - Afficher des panneaux latéraux ou verticaux (right, left, top, bottom)
+ *  - Utilisé pour des menus, paramètres ou actions secondaires
+ *  - Gérer overlay, animation et fermeture accessible
+ *
+ * Technologies :
+ *  - @radix-ui/react-dialog
+ *  - Tailwind CSS
+ *  - Lucide Icons
  */
-"use client";
 
 import * as React from "react";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
