@@ -4,6 +4,9 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\SalonController;
+
+use App\Http\Controllers\Api\MessageController;
+
 use App\Http\Controllers\VideoSyncController;
 use App\Http\Controllers\Test\VideoSyncTestController;
 use App\Http\Controllers\Api\SondageSalonController;
@@ -12,6 +15,11 @@ use App\Http\Controllers\HistoriqueController;
 use App\Http\Controllers\NotationController;
 
 // use App\Http\Controllers\Api\ChatController; // décommente si tu as ce controller
+
+use Illuminate\Support\Facades\Broadcast;
+
+Broadcast::routes(['middleware' => ['auth:api']]);
+require base_path('routes/channels.php');
 
 /*
 |--------------------------------------------------------------------------
@@ -69,6 +77,21 @@ Route::post('/salons/{id_salon}/historique', [HistoriqueController::class, 'stor
 Route::get('/salons/{id_salon}/historique', [HistoriqueController::class, 'index']);
 Route::delete('/salons/{id_salon}/historique/{id}', [HistoriqueController::class, 'destroy']);
 
+
 Route::post('/salons/{id_salon}/notation', [NotationController::class, 'store']);
 Route::get('/salons/{id_salon}/notation/{youtube_id}', [NotationController::class, 'show']);
 Route::get('/classement/hebdo', [NotationController::class, 'classementHebdo']);
+
+    // Sauvegarde de l'état vidéo
+    Route::post('/salon/{salon}/video/state', [\App\Http\Controllers\VideoSyncController::class, 'saveState']);
+
+    // Récupération de l'état vidéo
+    Route::get('/salon/{salon}/video/state', [\App\Http\Controllers\VideoSyncController::class, 'getState']);
+
+
+// Route chat en direct 
+    Route::middleware('auth:api')->group(function () {
+    Route::get('/salons/{salon}/messages', [MessageController::class, 'index']);
+    Route::post('/salons/{salon}/messages', [MessageController::class, 'store']);
+});
+

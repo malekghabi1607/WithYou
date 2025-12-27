@@ -9,6 +9,7 @@
 ## 👤 Développeuse 1 — Meriem
 
 ### 📄 Pages
+
 - SignUpPage.tsx
 - SignInPage.tsx
 - ForgotPasswordPage.tsx
@@ -25,19 +26,23 @@
 ---
 
 ### ⚙️ Settings
+
 - RoomPollSettings.tsx
 - RoomPermissionsSettings.tsx
 - RoomMembersSettings.tsx
-
+- fini____________ 
+  
 ---
 
 ### 🧱 Layouts
+
 - Header.tsx
 - Footer.tsx
 
 ---
 
 ### 🎨 UI
+
 Composants UI utilisés dans ses pages, settings et layouts.
 
 - accordion.tsx
@@ -67,6 +72,7 @@ Composants UI utilisés dans ses pages, settings et layouts.
 ---
 
 ### 🔌 API (Frontend)
+
 - client/api/auth.ts
 - client/api/rooms.ts
 - client/api/index.ts
@@ -75,7 +81,8 @@ Composants UI utilisés dans ses pages, settings et layouts.
 
 ## 👤 Développeuse 2 — Malek
 
-### 📄 Pages
+ 📄 Pages
+
 - LandingPage.tsx
 - SalonsPage.tsx
 - PublicRoomsPage.tsx
@@ -83,11 +90,10 @@ Composants UI utilisés dans ses pages, settings et layouts.
 - JoinWithCodePage.tsx
 - CreateRoomPage.tsx
 - RoomPage.tsx
-
-
 - RoomLoadingPage.tsx
 - RoomInfoPage.tsx
 - RoomSettingsPage.tsx
+  
 - ManageVideosPage.tsx
 - AdminVideoManagement.tsx
 - ProfilePage.tsx
@@ -95,6 +101,7 @@ Composants UI utilisés dans ses pages, settings et layouts.
 ---
 
 ### 🏠 Composants Room
+
 - ChatSection.tsx
 - FunctionalChat.tsx
 - EmptyStates.tsx
@@ -110,6 +117,7 @@ Composants UI utilisés dans ses pages, settings et layouts.
 ---
 
 ### 🎨 UI (restants)
+
 Composants UI non utilisés par les pages de la Développeuse 1.
 
 - aspect-ratio.tsx
@@ -142,6 +150,7 @@ Composants UI non utilisés par les pages de la Développeuse 1.
 ---
 
 ### 🧭 App / Global
+
 - AppRouter.tsx
 - App.tsx
 - main.tsx
@@ -150,6 +159,7 @@ Composants UI non utilisés par les pages de la Développeuse 1.
 ---
 
 ### 🛠 Utils
+
 - utils.ts
 - storage.ts
 - roomStorage.ts
@@ -159,18 +169,15 @@ Composants UI non utilisés par les pages de la Développeuse 1.
 ---
 
 ### 🎨 Styles
+
 - globals.css
-
----
-
-### 🧩 Figma
-- ImageWithFallback.tsx
 
 ---
 
 ## 🤝 Travail en commun
 
 ### 🐛 Corrections de bugs
+
 - Chaque développeur corrige les bugs dans ses fichiers
 - Les bugs transversaux sont corrigés conjointement
 - Validation avant merge obligatoire
@@ -181,6 +188,7 @@ Composants UI non utilisés par les pages de la Développeuse 1.
 ---
 
 ### 🧪 Tests
+
 - Tests des pages
 - Tests des composants UI
 - Tests de la logique métier frontend
@@ -192,4 +200,3 @@ Composants UI non utilisés par les pages de la Développeuse 1.
 
 Cette répartition couvre **l’intégralité du frontend** fichier par fichier  
 et garantit une organisation claire, traçable et équitable du travail.
-
