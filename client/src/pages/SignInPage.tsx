@@ -37,6 +37,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Logo } from "../components/ui/Logo";
 import { Mail, Lock, ArrowRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { login } from "../api/auth";
+
 
 interface SignInPageProps {
   onNavigate: (page: string) => void;
@@ -49,15 +51,26 @@ export function SignInPage({ onNavigate, onSignIn, theme = "dark", onThemeToggle
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email && password) {
-      const name = email.split("@")[0];
-      onSignIn(email, name);
-      toast.success("Connexion réussie !");
-      onNavigate("rooms");
-    }
-  };
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!email || !password) return;
+
+  try {
+    const { token } = await login(email, password);
+    localStorage.setItem("token", token);
+
+    const name = email.split("@")[0];
+    onSignIn(email, name);
+
+    toast.success("Connexion réussie !");
+    onNavigate("rooms");
+  } catch (err: any) {
+    toast.error("Erreur de connexion : " + (err?.message || "inconnue"));
+  }
+};
+
+
 
   return (
     <div className={`min-h-screen relative overflow-hidden ${theme === "dark" ? "bg-black" : "bg-gray-50"}`}>

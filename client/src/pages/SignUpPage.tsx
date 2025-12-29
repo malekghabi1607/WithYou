@@ -24,7 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Logo } from "../components/ui/Logo";
 import { User, Mail, Lock, ArrowRight, Sparkles, Check } from "lucide-react";
 import { toast } from "sonner";
-
+import { register } from "../api/auth";
 interface SignUpPageProps {
   onNavigate: (page: string) => void;
   onSignUp: (email: string, name: string) => void;
@@ -41,20 +41,39 @@ export function SignUpPage({ onNavigate, onSignUp, theme = "dark", onThemeToggle
   const passwordStrength = password.length >= 8;
   const passwordsMatch = password === confirmPassword && password.length > 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password !== confirmPassword) {
-      toast.error("Les mots de passe ne correspondent pas");
-      return;
-    }
-    if (password.length < 8) {
-      toast.error("Le mot de passe doit contenir au moins 8 caractères");
-      return;
-    }
-    onSignUp(email, name);
+
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (password !== confirmPassword) {
+    toast.error("Les mots de passe ne correspondent pas");
+    return;
+  }
+  if (password.length < 8) {
+    toast.error("Le mot de passe doit contenir au moins 8 caractères");
+    return;
+  }
+
+  try {
+    // Appel backend
+    const { token } = await register({
+      name: name,
+      email,
+      password,
+      password_confirmation: confirmPassword,
+    });
+
+    // Si le backend renvoie un token, on le garde (optionnel)
+    if (token) localStorage.setItem("token", token);
+
     toast.success("Compte créé avec succès !");
-    onNavigate("email-sent");
-  };
+    onNavigate("email-sent"); // ou "sign-in" si vous préférez
+  } catch (err: any) {
+    toast.error("Erreur d'inscription : " + (err?.message || "inconnue"));
+  }
+};
+
 
   return (
     <div className={`min-h-screen relative overflow-hidden ${theme === "dark" ? "bg-black" : "bg-gray-50"}`}>
