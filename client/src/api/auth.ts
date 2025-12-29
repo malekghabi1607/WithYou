@@ -9,7 +9,7 @@ export type AuthToken = {
 };
 
 export type RegisterPayload = {
-  name: string;
+  username: string;
   email: string;
   password: string;
   password_confirmation: string;
@@ -98,6 +98,31 @@ export async function register(payload: RegisterPayload): Promise<AuthToken> {
   return { token, raw: data };
 }
 
+/** POST /api/auth/forgot-password */
+export async function forgotPassword(email: string) {
+  let res: Response;
+
+  try {
+    res = await fetch(`${API_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+  } catch {
+    throw new Error("Erreur réseau (backend inaccessible)");
+  }
+
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const msg =
+      (data && typeof data === "object" && (data as any).message) ||
+      `Erreur HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return data; // ex: { message: "Email envoyé" }
+}
 /** GET /api/auth/me */
 export async function me(token?: string): Promise<Json> {
   // token optionnel: si pas fourni, on tente localStorage

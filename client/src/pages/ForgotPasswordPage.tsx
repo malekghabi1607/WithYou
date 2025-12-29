@@ -36,7 +36,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Logo } from "../components/ui/Logo";
 import { ArrowLeft, Mail, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
-
+import { forgotPassword } from "../api/auth";
 interface ForgotPasswordPageProps {
   onNavigate: (page: string) => void;
   theme?: "light" | "dark";
@@ -63,13 +63,16 @@ export function ForgotPasswordPage({ onNavigate, theme = "dark" }: ForgotPasswor
     }
 
     setIsLoading(true);
+try {
+  await forgotPassword(email);
 
-    // Simuler l'envoi d'email
-    setTimeout(() => {
-      setIsLoading(false);
-      setEmailSent(true);
-      toast.success("Email envoyé ! Vérifiez votre boîte de réception.");
-    }, 1500);
+  setEmailSent(true);
+  toast.success("Email envoyé ! Vérifiez votre boîte de réception.");
+} catch (err: any) {
+  toast.error("Erreur : " + (err?.message || "inconnue"));
+} finally {
+  setIsLoading(false);
+}
   };
 
   if (emailSent) {
