@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Models\Message;
+use App\Events\MessageSent;
 
 class MessageController extends Controller
 {
@@ -35,6 +36,8 @@ class MessageController extends Controller
             'salon_id' => $salonId,
             'content'  => $request->content,
         ]);
+
+        broadcast(new MessageSent($message))->toOthers();
 
         return $message;
     }

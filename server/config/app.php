@@ -1,5 +1,34 @@
 <?php
 
+/**
+ * --------------------------------------------------------------------------
+ * Application Configuration
+ * --------------------------------------------------------------------------
+ *
+ * Ce fichier définit la configuration globale de l’application Laravel.
+ *
+ * Il contient les paramètres fondamentaux qui influencent le comportement
+ * général du framework, notamment :
+ *  - le nom de l’application
+ *  - l’environnement d’exécution (local, production, testing)
+ *  - le mode debug
+ *  - l’URL principale de l’application
+ *  - la gestion de la langue et du fuseau horaire
+ *  - les mécanismes de chiffrement
+ *  - la gestion du mode maintenance
+ *
+ * Dans le cadre du projet WithU, cette configuration est essentielle pour :
+ *  - le bon fonctionnement de l’API REST
+ *  - la génération correcte des URLs utilisées par Laravel
+ *  - l’authentification JWT
+ *  - l’authentification des canaux de broadcast (/broadcasting/auth)
+ *  - le débogage du temps réel avec Reverb
+ *
+ * Une mauvaise configuration de ce fichier (notamment APP_URL, APP_ENV
+ * ou APP_DEBUG) peut entraîner des dysfonctionnements difficiles à détecter,
+ * en particulier lors de l’utilisation de services temps réel.
+ */
+
 return [
 
     /*
@@ -124,3 +153,4 @@ return [
     ],
 
 ];
+
