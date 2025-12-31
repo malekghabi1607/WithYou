@@ -8,7 +8,6 @@
  * Il permet d’ajouter des questions, de proposer des options
  * et de visualiser les résultats des votes des membres.
  */
-
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
