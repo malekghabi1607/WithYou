@@ -18,7 +18,6 @@
  * Les données sont actuellement simulées (mock) et pourront être
  * remplacées ultérieurement par des données issues de l’API.
  */
-
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -40,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { toast } from "sonner";
+
 interface Member {
   id: string;
   name: string;
