@@ -30,19 +30,18 @@
  */
 
 
-
 import { useState } from "react";
+import { Video, Lock, Globe, Users, Link as LinkIcon, Settings, ArrowRight, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
+import { saveRoom, Room, generateJoinCode } from "../utils/storage";
+import { extractYouTubeId, getYouTubeThumbnail } from "../utils/youtubeUtils";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Textarea } from "../components/ui/textarea";
 import { Switch } from "../components/ui/switch";
+import { Textarea } from "../components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
-import { Header } from "../components/layouts/Header";
-import { Footer } from "../components/layouts/Footer";
-import { Video, Lock, Globe, Users, Link as LinkIcon, Sparkles, ArrowRight } from "lucide-react";
-import { toast } from "sonner";
-import { saveRoom, Room } from "../utils/storage";
+import { Logo } from "../components/ui/Logo";
 
 interface CreateRoomPageProps {
   currentUser: { email: string; name: string };
@@ -91,6 +90,14 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
 
     // Create room object
     const roomId = "room-" + Date.now();
+    const joinCode = generateJoinCode(); // Générer un code unique
+    
+    // Extraire l'ID YouTube et générer la miniature
+    const youtubeId = extractYouTubeId(formData.videoUrl);
+    const thumbnail = youtubeId 
+      ? getYouTubeThumbnail(youtubeId)
+      : "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400"; // Image par défaut
+    
     const newRoom: Room = {
       id: roomId,
       name: formData.name,
@@ -99,11 +106,12 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
       creator: currentUser.name,
       creatorEmail: currentUser.email,
       password: formData.password,
+      joinCode: joinCode, // Code unique pour rejoindre
       maxParticipants: formData.maxParticipants,
       videoUrl: formData.videoUrl,
       participants: 1,
       currentVideo: formData.videoUrl,
-      thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400",
+      thumbnail: thumbnail,
       createdAt: new Date().toISOString(),
       rating: 0
     };
@@ -111,24 +119,37 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
     // Save to localStorage
     saveRoom(newRoom);
 
-    toast.success(`✅ Salon "${formData.name}" créé avec succès !`);
+    toast.success(`✅ Salon \"${formData.name}\" créé avec succès !`, {
+      description: `Code de jointure : ${joinCode}`,
+      duration: 5000,
+    });
     
     // Passer le bon roomId à onCreateRoom et onNavigate
-    onCreateRoom({ ...formData, id: roomId });
+    onCreateRoom({ ...formData, id: roomId, joinCode });
     onNavigate("room-loading", { roomId });
   };
 
   return (
-    <div className={`min-h-screen flex flex-col ${theme === "dark" ? "bg-black" : "bg-white"}`}>
-      <Header 
-        currentUser={currentUser}
-        currentPage="create-room"
-        onNavigate={onNavigate}
-        theme={theme}
-      />
+    <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-gray-50"}`}>
+      {/* Header */}
+      <header className={`${theme === "dark" ? "bg-black/95 border-b border-red-900/20" : "bg-white/95 border-b border-gray-200"} backdrop-blur-md shadow-lg sticky top-0 z-50`}>
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <Logo size="sm" />
+            <Button
+              variant="ghost"
+              onClick={() => onNavigate("rooms")}
+              className={theme === "dark" ? "text-gray-300 hover:text-white" : "text-gray-700 hover:text-black"}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Retour
+            </Button>
+          </div>
+        </div>
+      </header>
 
-      <main className="flex-1 py-12">
-        <div className="container mx-auto px-4 max-w-3xl">
+      <main className="container mx-auto px-4 py-12">
+        <div className="max-w-3xl mx-auto">
           <Card className={`${theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-white border-gray-200"} shadow-2xl`}>
             <CardHeader className="text-center space-y-4 pb-8">
               <div className="flex justify-center mb-2">
@@ -141,13 +162,13 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                   CRÉER UN SALON
                 </CardTitle>
                 <CardDescription className={`text-base ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-                  Configurez votre salon de visionnage collaboratif
+                  Configurez votre espace de visionnage collaboratif
                 </CardDescription>
               </div>
               
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-red-600 to-transparent"></div>
-                <Sparkles className="w-5 h-5 text-red-500 animate-pulse" />
+                <Settings className="w-5 h-5 text-red-500" />
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-red-600 to-transparent"></div>
               </div>
             </CardHeader>
@@ -237,12 +258,12 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                         </p>
                       </div>
                     </div>
-                    <Switch 
-                    checked={formData.isPublic} 
-                    onCheckedChange={(checked: boolean) =>
-                      setFormData({ ...formData, isPublic: checked })
-                      }
-                    />
+                    <Switch
+                    checked={formData.isPublic}
+                    onCheckedChange={(checked) =>
+                      setFormData(prev => ({ ...prev, isPublic: Boolean(checked) }))
+                    }
+                  />
                   </div>
 
                   {!formData.isPublic && (
@@ -302,48 +323,19 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                   >
                     Annuler
                   </Button>
-                  <Button
-                    type="submit"
-                    className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50"
-                  >
-                    Créer le salon
-                    <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button>
+                <Button
+                  type="submit"
+                  onClick={() => console.log("CLICK CREATE")}
+                  className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50"
+                >
+                  Créer le salon
+                </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
-
-          {/* Tips */}
-          <div className={`mt-8 grid md:grid-cols-2 gap-4 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-            <Card className={`${theme === "dark" ? "bg-zinc-900/50 border-red-900/20" : "bg-white border-gray-200"}`}>
-              <CardContent className="p-4">
-                <h4 className={`flex items-center gap-2 mb-2 ${theme === "dark" ? "text-white" : "text-black"}`}>
-                  <Sparkles className="w-4 h-4 text-red-500" />
-                  Astuce
-                </h4>
-                <p className="text-sm">
-                  Choisissez un nom accrocheur avec des emojis pour attirer plus de participants !
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className={`${theme === "dark" ? "bg-zinc-900/50 border-red-900/20" : "bg-white border-gray-200"}`}>
-              <CardContent className="p-4">
-                <h4 className={`flex items-center gap-2 mb-2 ${theme === "dark" ? "text-white" : "text-black"}`}>
-                  <Users className="w-4 h-4 text-red-500" />
-                  Conseil
-                </h4>
-                <p className="text-sm">
-                  Les salons publics attirent plus de monde, mais les privés offrent plus d'intimité.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
         </div>
       </main>
-
-      <Footer onNavigate={onNavigate} theme={theme} />
     </div>
   );
 }
