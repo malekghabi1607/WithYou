@@ -13,6 +13,7 @@
  * Ce composant utilise des champs de formulaire contrôlés
  * et déclenche une action de sauvegarde des paramètres.
  */
+
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -104,7 +105,7 @@ export function RoomInfoSettings({ roomId }: RoomInfoSettingsProps) {
           <Switch
             id="isPublic"
             checked={formData.isPublic}
-            onCheckedChange={(checked: boolean) => {}}
+            onCheckedChange={(checked) => setFormData({ ...formData, isPublic: checked })}
           />
         </div>
 
