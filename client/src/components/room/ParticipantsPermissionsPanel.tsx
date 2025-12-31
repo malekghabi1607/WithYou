@@ -24,8 +24,6 @@
  * - L’administrateur possède toutes les permissions par défaut
  * - Les membres peuvent avoir des permissions limitées
  */
-
-
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { X, MessageSquare, Video, Trash2, Crown, Users as UsersIcon } from "lucide-react";
@@ -34,6 +32,7 @@ interface Participant {
   id: string;
   name: string;
   role: "admin" | "member";
+  status?: "online" | "offline";
   avatar: string;
   permissions: {
     chat: boolean;
@@ -43,13 +42,31 @@ interface Participant {
 }
 
 interface ParticipantsPermissionsPanelProps {
+  participants: Array<{
+    id: string;
+    name: string;
+    role: "admin" | "member";
+    status?: "online" | "offline";
+    avatar: string;
+    permissions?: {
+      chat: boolean;
+      video: boolean;
+      kick: boolean;
+    };
+  }>;
   onClose: () => void;
-  participants: Participant[];
-  onUpdateParticipants?: (participants: Participant[]) => void;
+  onUpdatePermissions?: (participants: any[]) => void;
   theme?: "light" | "dark";
+  isReadOnly?: boolean;
 }
 
-export function ParticipantsPermissionsPanel({ onClose, participants: initialParticipants, onUpdateParticipants, theme = "dark" }: ParticipantsPermissionsPanelProps) {
+export function ParticipantsPermissionsPanel({ 
+  participants: initialParticipants, 
+  onClose, 
+  onUpdatePermissions, 
+  theme = "dark",
+  isReadOnly = false
+}: ParticipantsPermissionsPanelProps) {
   const [participants, setParticipants] = useState<Participant[]>(
     initialParticipants.map(p => ({
       ...p,
@@ -68,8 +85,12 @@ export function ParticipantsPermissionsPanel({ onClose, participants: initialPar
   const kickParticipant = (id: string) => {
     const updatedParticipants = participants.filter(p => p.id !== id);
     setParticipants(updatedParticipants);
-    if (onUpdateParticipants) {
-      onUpdateParticipants(updatedParticipants);
+    if (onUpdatePermissions) {
+      // Filtrer l'utilisateur courant avant de passer au parent
+      const participantsWithoutCurrentUser = updatedParticipants.filter(p => 
+        !p.id.startsWith('current-user-')
+      );
+      onUpdatePermissions(participantsWithoutCurrentUser);
     }
   };
 
@@ -86,18 +107,16 @@ export function ParticipantsPermissionsPanel({ onClose, participants: initialPar
             </div>
             <div>
               <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
-                Gestion des permissions
+                {isReadOnly ? 'Permissions du salon' : 'Gestion des permissions'}
               </h2>
               <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
-                {participants.length} participants
+                {participants.length} participants {isReadOnly && '• Lecture seule'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-zinc-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
-            }`}
+            className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-zinc-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'}`}
           >
             <X className="w-5 h-5" />
           </button>
@@ -174,6 +193,7 @@ export function ParticipantsPermissionsPanel({ onClose, participants: initialPar
                             : theme === 'dark' ? "bg-zinc-700 text-gray-500" : "bg-gray-200 text-gray-400"
                         }`}
                         title="Chat"
+                        disabled={isReadOnly}
                       >
                         <MessageSquare className="w-4 h-4" />
                       </button>
@@ -187,6 +207,7 @@ export function ParticipantsPermissionsPanel({ onClose, participants: initialPar
                             : theme === 'dark' ? "bg-zinc-700 text-gray-500" : "bg-gray-200 text-gray-400"
                         }`}
                         title="Contrôle vidéo"
+                        disabled={isReadOnly}
                       >
                         <Video className="w-4 h-4" />
                       </button>
@@ -196,6 +217,7 @@ export function ParticipantsPermissionsPanel({ onClose, participants: initialPar
                         onClick={() => kickParticipant(participant.id)}
                         className="w-10 h-10 bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all"
                         title="Retirer du salon"
+                        disabled={isReadOnly}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
