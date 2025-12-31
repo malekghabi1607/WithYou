@@ -21,8 +21,6 @@
  * - Les données sont simulées (mock) pour le développement front-end
  * - Les actions utilisateur déclenchent des notifications via Sonner
  */
-
-
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
