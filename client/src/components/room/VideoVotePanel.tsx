@@ -37,9 +37,11 @@ interface Video {
   votes: number;
 }
 
-interface VideoVotePanelProps {
-  onClose: () => void;
+export interface VideoVotePanelProps {
   videos: Video[];
+  onClose: () => void;
+  onVote: (videoId: string) => void;
+  theme?: "light" | "dark";
 }
 
 export function VideoVotePanel({ onClose, videos }: VideoVotePanelProps) {
