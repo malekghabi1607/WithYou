@@ -12,8 +12,6 @@
  * - Éviter les écrans vides
  * - Guider l’utilisateur sur l’action à effectuer
  */
-
-
 import { Video, MessageCircle, Users, Play } from "lucide-react";
 
 interface EmptyStateProps {
