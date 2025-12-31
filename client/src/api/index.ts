@@ -7,3 +7,6 @@
  * Regroupe et exporte toutes les fonctions d'API afin de
  * centraliser les imports dans l’application.
  */
+// src/api/index.ts
+
+export const API_URL = `${import.meta.env.VITE_API_URL}/api`;
