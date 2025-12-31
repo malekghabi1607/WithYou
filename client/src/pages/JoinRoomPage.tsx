@@ -28,9 +28,6 @@
  * avant l’accès à l’interface de visionnage.
  */
 
-
-
-
 import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -51,6 +48,7 @@ import {
   Key
 } from "lucide-react";
 import { toast } from "sonner";
+import { getRoomByJoinCode } from "../utils/storage";
 
 interface JoinRoomPageProps {
   onNavigate: (page: string, data?: any) => void;
@@ -71,33 +69,51 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
       return;
     }
 
-    if (roomCode.length < 6) {
-      toast.error("Le code doit contenir au moins 6 caractères");
+    if (roomCode.length < 4) {
+      toast.error("Le code doit contenir au moins 4 caractères");
       return;
     }
 
     setIsSearching(true);
 
-    // Simuler une recherche
+    // Recherche réelle dans les salons sauvegardés
     setTimeout(() => {
-      // Mock room data
-      const mockRoom = {
-        id: roomCode,
-        name: "🎬 Soirée Cinéma Privée",
-        description: "Un salon privé pour regarder des films entre amis",
-        host: "CinePhile",
-        participants: 5,
-        maxParticipants: 20,
-        isPublic: false,
-        hasPassword: roomCode.includes("private"),
-        thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=600",
-        rating: 4.8
+      const room = getRoomByJoinCode(roomCode);
+      
+      if (!room) {
+        setIsSearching(false);
+        setFoundRoom(null);
+        toast.error("❌ Aucun salon trouvé avec ce code");
+        return;
+      }
+
+      // Vérifier si le salon n'est pas complet (UNIQUEMENT pour les salons privés)
+      if (!room.isPublic && room.participants >= room.maxParticipants) {
+        setIsSearching(false);
+        setFoundRoom(null);
+        toast.error("⚠️ Ce salon est complet");
+        return;
+      }
+
+      // Convertir le salon en format pour l'affichage
+      const roomData = {
+        id: room.id,
+        name: room.name,
+        description: room.description,
+        host: room.creator,
+        participants: room.participants,
+        maxParticipants: room.maxParticipants,
+        isPublic: room.isPublic,
+        hasPassword: !room.isPublic && !!room.password,
+        thumbnail: room.thumbnail,
+        rating: room.rating,
+        password: room.password
       };
 
-      setFoundRoom(mockRoom);
+      setFoundRoom(roomData);
       setIsSearching(false);
 
-      if (mockRoom.hasPassword) {
+      if (roomData.hasPassword) {
         setShowPasswordField(true);
         toast.info("🔒 Ce salon est protégé par un mot de passe");
       } else {
@@ -119,7 +135,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
 
     // Vérifier si le mot de passe est correct (simulation)
     if (foundRoom.hasPassword) {
-      if (roomPassword !== "1234") {
+      if (roomPassword !== foundRoom.password) {
         toast.error("❌ Mot de passe incorrect");
         return;
       }
@@ -162,7 +178,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
             <h1 className={`text-4xl mb-4 font-display ${theme === "dark" ? "text-white" : "text-black"}`}>
               REJOINDRE UN SALON
             </h1>
-            <p className={`text-lg ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+            <p className={`text-lg ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
               Entrez le code d'invitation pour rejoindre un salon privé
             </p>
           </div>
@@ -206,8 +222,8 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                       maxLength={12}
                     />
                   </div>
-                  <p className={`text-xs mt-1 ${theme === "dark" ? "text-gray-500" : "text-gray-600"}`}>
-                    Le code est sensible à la casse
+                  <p className={`text-xs mt-1 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                    Les codes sont automatiquement convertis en majuscules
                   </p>
                 </div>
 
@@ -376,7 +392,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                       <h4 className={`mb-1 ${theme === "dark" ? "text-white" : "text-black"}`}>
                         Obtenez le code
                       </h4>
-                      <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                      <p className={`text-sm ${theme === "dark" ? "text-gray-200" : "text-gray-600"}`}>
                         Demandez le code d'invitation à l'administrateur du salon que vous souhaitez rejoindre.
                       </p>
                     </div>
@@ -391,7 +407,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                       <h4 className={`mb-1 ${theme === "dark" ? "text-white" : "text-black"}`}>
                         Entrez le code
                       </h4>
-                      <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                      <p className={`text-sm ${theme === "dark" ? "text-gray-200" : "text-gray-600"}`}>
                         Saisissez le code dans le champ ci-contre et cliquez sur "Rechercher le salon".
                       </p>
                     </div>
@@ -406,7 +422,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                       <h4 className={`mb-1 ${theme === "dark" ? "text-white" : "text-black"}`}>
                         Mot de passe (optionnel)
                       </h4>
-                      <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                      <p className={`text-sm ${theme === "dark" ? "text-gray-200" : "text-gray-600"}`}>
                         Si le salon est protégé, entrez le mot de passe fourni par l'administrateur.
                       </p>
                     </div>
@@ -421,7 +437,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                       <h4 className={`mb-1 ${theme === "dark" ? "text-white" : "text-black"}`}>
                         Rejoignez !
                       </h4>
-                      <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                      <p className={`text-sm ${theme === "dark" ? "text-gray-200" : "text-gray-600"}`}>
                         Cliquez sur "Rejoindre" et profitez du visionnage collaboratif en temps réel !
                       </p>
                     </div>
@@ -440,7 +456,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
 
           {/* Quick Actions */}
           <div className="mt-12 text-center">
-            <p className={`mb-4 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+            <p className={`mb-4 ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
               Vous n'avez pas de code ?
             </p>
             <div className="flex gap-4 justify-center flex-wrap">
