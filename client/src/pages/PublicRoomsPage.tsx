@@ -25,9 +25,6 @@
  * via le routeur de l’application.
  */
 
-
-
-
 import { useState, useEffect } from "react";
 import { getRooms } from "../utils/storage";
 import { Button } from "../components/ui/button";
@@ -150,19 +147,23 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
   // Load saved rooms from localStorage
   useEffect(() => {
     const savedRooms = getRooms();
-    // Merge mock rooms with saved rooms
-    const combinedRooms = [...mockRooms, ...savedRooms.map(r => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      participants: r.participants,
-      maxParticipants: r.maxParticipants,
-      isPublic: r.isPublic,
-      currentVideo: r.currentVideo,
-      host: r.creator, // Use creator name as host
-      thumbnail: r.thumbnail,
-      rating: r.rating
-    }))];
+    // Merge mock rooms with saved rooms (filter to only show public rooms)
+    const publicSavedRooms = savedRooms
+      .filter(r => r.isPublic) // Only show public rooms
+      .map(r => ({
+        id: r.id,
+        name: r.name || "Salon sans nom",
+        description: r.description || "Aucune description",
+        participants: r.participants || 0,
+        maxParticipants: r.maxParticipants || 20,
+        isPublic: r.isPublic,
+        currentVideo: r.currentVideo || r.videoUrl || "Aucune vidéo",
+        host: r.creator || "Anonyme",
+        thumbnail: r.thumbnail || "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400",
+        rating: r.rating || 0
+      }));
+    
+    const combinedRooms = [...mockRooms, ...publicSavedRooms];
     setAllRooms(combinedRooms);
   }, []);
 
