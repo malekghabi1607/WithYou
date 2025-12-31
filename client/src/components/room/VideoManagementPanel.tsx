@@ -27,8 +27,6 @@
  * Donner aux administrateurs un contrôle simple et efficace
  * sur la playlist du salon en temps réel.
  */
-
-
 import { useState } from "react";
 import { X, Plus, Trash2, Video, List, Search } from "lucide-react";
 import { Button } from "../ui/button";
