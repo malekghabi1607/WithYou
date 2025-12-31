@@ -20,6 +20,7 @@ require base_path('routes/channels.php');
 */
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login',    [AuthController::class, 'login']);
+Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
 
 Route::middleware('auth:api')->group(function () {
 

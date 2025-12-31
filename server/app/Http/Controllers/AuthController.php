@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
-
+use Illuminate\Support\Facades\Password;
 class AuthController extends Controller
 {
     /**
@@ -90,5 +90,23 @@ class AuthController extends Controller
         return response()->json([
             'token' => $newToken,
         ]);
+    }
+    /**
+     * MOT DE PASSE OUBLIÉ Meriem Tak
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        // Envoie le lien de réinitialisation (Laravel gère ça tout seul)
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json(['status' => __($status)]);
+        }
+
+        return response()->json(['email' => __($status)], 400);
     }
 }

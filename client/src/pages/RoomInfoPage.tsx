@@ -1,4 +1,4 @@
-/**
+ /**
  * Projet : WithYou
  * Fichier : pages/RoomInfoPage.tsx
  *
@@ -23,7 +23,8 @@ import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
 
 import { Video, Users, Lock, Globe, Star, Crown, Play } from "lucide-react";
-
+import React, { useEffect, useState } from "react";
+import { getRoom, connectRoom, type Room } from "../api/rooms";
 interface RoomInfoPageProps {
   roomId: string;
   currentUser: { email: string; name: string } | null;
@@ -50,21 +51,75 @@ const mockRoomDetails = {
 };
 
 export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, theme = "dark" }: RoomInfoPageProps) {
-  const room = mockRoomDetails[roomId as keyof typeof mockRoomDetails] || mockRoomDetails["1"];
+ const [room, setRoom] = useState<Room | null>(null);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState<string | null>(null);
 
-  const handleJoin = () => {
+useEffect(() => {
+  let alive = true;
+
+  const loadRoom = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await getRoom(roomId);
+      if (!alive) return;
+      setRoom(data);
+    } catch (e: any) {
+      if (!alive) return;
+      setError(e?.message || "Backend inaccessible (mode démo)");
+      setRoom(
+        mockRoomDetails[roomId as keyof typeof mockRoomDetails] ||
+        mockRoomDetails["1"]
+      );
+    } finally {
+      if (!alive) return;
+      setLoading(false);
+    }
+  };
+
+  loadRoom();
+
+  return () => {
+    alive = false;
+  };
+}, [roomId]);
+
+ const handleJoin = async () => {
     if (!currentUser) {
       onNavigate('signin');
       return;
     }
-
+     if (!room) return; 
     if (!room.isPublic) {
       onNavigate('join-with-code', roomId);
       return;
     }
 
-    onJoinRoom(roomId);
+    try {
+  await connectRoom(roomId);
+  onJoinRoom(roomId);
+} catch (e: any) {
+  alert(e?.message || "Impossible de rejoindre le salon");
+}
+
   };
+if (loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      Chargement du salon...
+    </div>
+  );
+}
+
+if (!room) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      Salon introuvable.
+    </div>
+  );
+}
 
   return (
     <div className={`min-h-screen flex flex-col ${theme === "dark" ? "bg-black" : "bg-white"}`}>
@@ -81,7 +136,8 @@ export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, them
             {/* Image */}
             <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-red-900/20">
               <img
-                src={room.thumbnail}
+                src={room.thumbnail || mockRoomDetails["1"].thumbnail}
+
                 alt={room.name}
                 className="w-full h-96 object-cover"
               />
@@ -186,7 +242,8 @@ export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, them
 
               {/* Tags */}
               <div className="flex flex-wrap gap-2">
-                {room.tags.map((tag, index) => (
+                {(room.tags || []).map((tag, index) => (
+
                   <Badge key={index} className={`${theme === "dark" ? "bg-red-900/30 text-red-400" : "bg-red-100 text-red-600"}`}>
                     {tag}
                   </Badge>
@@ -211,6 +268,11 @@ export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, them
           </div>
         </div>
       </main>
+     {error && (
+  <div className="mb-4 p-3 rounded bg-yellow-100 text-yellow-800">
+    ⚠️ {error}
+  </div>
+)}
 
       <Footer onNavigate={onNavigate} theme={theme} />
     </div>
