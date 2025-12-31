@@ -49,7 +49,7 @@ export function AboutPage({
             <h1 className={`text-5xl md:text-6xl mb-6 text-center font-display ${
               theme === "dark" ? "text-white" : "text-gray-900"
             }`}>
-              À PROPOS DE WITHYOU
+              À Propos de  WITHYOU
             </h1>
             <p className={`text-xl text-center mb-16 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
               Notre mission est de rapprocher les gens, où qu&apos;ils soient
