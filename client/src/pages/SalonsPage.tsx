@@ -20,9 +20,6 @@
  * Utilisée dans routes/AppRouter.tsx pour l’accès aux fonctionnalités
  * liées aux salons.
  */
-
-
-
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Plus, DoorOpen } from "lucide-react";
@@ -82,7 +79,7 @@ export function SalonsPage({
                 </div>
                 <CardTitle className="text-2xl">Créer un salon</CardTitle>
                 <CardDescription className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
-                  Créez votre propre salon pour regarder des vidéos avec vos amis
+                  Créez votre propre espace pour regarder des vidéos avec vos amis
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-center">
