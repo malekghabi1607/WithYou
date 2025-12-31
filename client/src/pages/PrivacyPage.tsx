@@ -45,7 +45,7 @@ export function PrivacyPage({
             </div>
             <h1 className="text-4xl mb-4">Politique de Confidentialité</h1>
             <p className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
-              Dernière mise à jour : 8 décembre 2024
+              Dernière mise à jour : 8 décembre 2025
             </p>
           </div>
 
