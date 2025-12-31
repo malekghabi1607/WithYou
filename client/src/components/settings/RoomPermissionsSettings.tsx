@@ -8,7 +8,6 @@
  * la mise en pause, le changement de vidéo ou les invitations.
  */
 
-
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
@@ -94,7 +93,7 @@ export function RoomPermissionsSettings({ roomId }: RoomPermissionsSettingsProps
               <Switch
                 id={item.id}
                 checked={permissions[item.id as keyof typeof permissions]}
-                onCheckedChange={(checked: boolean | "indeterminate") => 
+                onCheckedChange={(checked) => 
                   setPermissions({ ...permissions, [item.id]: checked })
                 }
               />
