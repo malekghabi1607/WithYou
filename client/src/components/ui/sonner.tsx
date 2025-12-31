@@ -12,7 +12,6 @@
  * Ce composant doit être monté une seule fois (souvent dans layout.tsx ou App).
  * Compatible avec Next.js côté client ("use client").
  */
-
 import { Toaster as Sonner, ToasterProps } from "sonner";
 
 const Toaster = ({ ...props }: ToasterProps) => {
