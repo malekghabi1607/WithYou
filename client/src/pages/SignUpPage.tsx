@@ -58,7 +58,7 @@ const handleSubmit = async (e: React.FormEvent) => {
   try {
     // Appel backend
     const { token } = await register({
-      name: name,
+      username: name,
       email,
       password,
       password_confirmation: confirmPassword,
