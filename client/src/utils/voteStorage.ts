@@ -2,6 +2,10 @@
  * Gestion du stockage des votes et notations
  * Limite : 1 vote/notation par jour
  */
+/**
+ * Gestion du stockage des votes et notations
+ * Limite : 1 vote/notation par jour
+ */
 
 interface VoteRecord {
   videoId?: string;
