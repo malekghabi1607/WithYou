@@ -25,8 +25,6 @@
  * depuis la page d’informations du salon
  * et redirige vers l’interface du salon après validation.
  */
-
-
 import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -36,11 +34,10 @@ import { toast } from "sonner";
 
 interface JoinWithCodePageProps {
   roomId: string;
-  onNavigate: (page: string) => void;
+  onNavigate: (page: string, roomId?: string) => void;
   onJoinRoom: (roomId: string) => void;
   theme?: "light" | "dark";
 }
-
 export function JoinWithCodePage({ roomId, onNavigate, onJoinRoom, theme = "dark" }: JoinWithCodePageProps) {
   const [code, setCode] = useState("");
 
@@ -69,7 +66,7 @@ export function JoinWithCodePage({ roomId, onNavigate, onJoinRoom, theme = "dark
       {/* Header */}
       <header className="container mx-auto px-4 py-6 flex justify-between items-center">
         <button 
-        onClick={() => onNavigate('room-info')}   
+          onClick={() => onNavigate('room-info', roomId)}
           className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
