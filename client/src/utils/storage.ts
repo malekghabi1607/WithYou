@@ -22,6 +22,8 @@
  * uniquement des fonctions utilitaires réutilisables.
  */
 
+// LocalStorage utilities for WithYou
+// LocalStorage utilities for WithYou
 
 export interface Room {
   id: string;
@@ -31,6 +33,7 @@ export interface Room {
   creator: string;
   creatorEmail: string;
   password?: string;
+  joinCode: string; // Code unique pour rejoindre le salon
   maxParticipants: number;
   videoUrl: string;
   participants: number;
@@ -74,9 +77,51 @@ export function getRoomById(roomId: string): Room | null {
   return rooms.find(r => r.id === roomId) || null;
 }
 
+export function getRoomByJoinCode(code: string) {
+  const rooms = getRooms();
+  return rooms.find(r => 
+    typeof r.joinCode === "string" &&
+    r.joinCode.toUpperCase() === code.toUpperCase()
+  );
+}
+
 export function deleteRoom(roomId: string): void {
   const rooms = getRooms().filter(r => r.id !== roomId);
   localStorage.setItem('withyou_rooms', JSON.stringify(rooms));
+}
+
+// Participants Management
+export function incrementParticipants(roomId: string): boolean {
+  const room = getRoomById(roomId);
+  if (!room) return false;
+  
+  // CORRECTION: Ne pas bloquer pour éviter les problèmes de compteur en développement
+  // Si le salon semble plein mais qu'on recharge la page, on autorise quand même
+  // Le compteur sera géré correctement par le cleanup de useEffect
+  
+  // Seulement incrémenter si on n'a pas dépassé largement la limite
+  if (room.participants < room.maxParticipants * 2) {
+    room.participants += 1;
+    saveRoom(room);
+  }
+  
+  return true; // Toujours autoriser l'accès
+}
+
+export function decrementParticipants(roomId: string): void {
+  const room = getRoomById(roomId);
+  if (!room) return;
+  
+  if (room.participants > 0) {
+    room.participants -= 1;
+    saveRoom(room);
+  }
+}
+
+export function canJoinRoom(roomId: string): boolean {
+  const room = getRoomById(roomId);
+  if (!room) return false;
+  return room.participants < room.maxParticipants;
 }
 
 // Messages Management
@@ -188,4 +233,77 @@ export function getUserSession(): { email: string; name: string } | null {
 
 export function clearUserSession(): void {
   localStorage.removeItem('withyou_user');
+}
+
+// Generate unique join code for rooms
+export function generateJoinCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Eviter I, O, 0, 1 pour éviter confusion
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  // Vérifier que le code n'existe pas déjà
+  const existingRoom = getRoomByJoinCode(code);
+  if (existingRoom) {
+    return generateJoinCode(); // Régénérer si collision
+  }
+  
+  return code;
+}
+
+// Initialize example rooms for demo purposes
+export function initializeExampleRooms(): void {
+  try {
+    // Vérifier si le salon CINEMA2025 existe déjà
+    const existingRoom = getRoomByJoinCode("CINEMA2025");
+    
+    if (!existingRoom) {
+      const exampleRoom: Room = {
+        id: "room-example-cinema",
+        name: "🎬 Soirée Cinéma",
+        description: "Salon d'exemple pour découvrir WithYou - Regardons des films ensemble !",
+        isPublic: true,
+        creator: "WithYou Team",
+        creatorEmail: "demo@withyou.com",
+        password: "",
+        joinCode: "CINEMA2025",
+        maxParticipants: 50,
+        videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        participants: 1,
+        currentVideo: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400",
+        createdAt: new Date().toISOString(),
+        rating: 4.8
+      };
+      
+      saveRoom(exampleRoom);
+      console.log('✅ Salon d\'exemple créé avec le code: CINEMA2025');
+    }
+  } catch (error) {
+    console.error('Erreur lors de l\'initialisation du salon d\'exemple:', error);
+  }
+}
+
+// Reset example room to ensure it's always joinable
+export function resetExampleRoom(): void {
+  try {
+    const existingRoom = getRoomByJoinCode("CINEMA2025");
+    
+    if (existingRoom) {
+      // Créer un nouvel objet au lieu de modifier l'existant
+      const updatedRoom = {
+        ...existingRoom,
+        participants: 1,
+        maxParticipants: 50
+      };
+      saveRoom(updatedRoom);
+      console.log('🔄 Salon CINEMA2025 réinitialisé : 1/50 participants');
+    } else {
+      // Créer le salon s'il n'existe pas
+      initializeExampleRooms();
+    }
+  } catch (error) {
+    console.error('Erreur lors de la réinitialisation du salon d\'exemple:', error);
+  }
 }
