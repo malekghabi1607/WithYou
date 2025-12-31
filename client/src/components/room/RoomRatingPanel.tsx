@@ -23,9 +23,6 @@
  * - Encourager l’interaction et le feedback des utilisateurs
  * - Valoriser les salons et administrateurs les mieux notés
  */
-
-
-
 import { X, Star, Trophy, Clock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -39,12 +36,13 @@ interface TopAdmin {
 }
 
 interface RoomRatingPanelProps {
-  onClose: () => void;
-  topAdmins: TopAdmin[];
   roomId: string;
+  onClose: () => void;
+  theme?: "light" | "dark";
+  topAdmins?: TopAdmin[];
 }
 
-export function RoomRatingPanel({ onClose, topAdmins, roomId }: RoomRatingPanelProps) {
+export function RoomRatingPanel({ roomId, onClose, theme = "dark", topAdmins = [] }: RoomRatingPanelProps) {
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [hasAlreadyRated, setHasAlreadyRated] = useState(false);
@@ -75,6 +73,30 @@ export function RoomRatingPanel({ onClose, topAdmins, roomId }: RoomRatingPanelP
       onClose();
     }, 2000);
   };
+
+  // Mock data si pas de topAdmins fournis
+  const defaultTopAdmins: TopAdmin[] = [
+    {
+      name: "Admin Pro",
+      rating: 4.9,
+      avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%23F59E0B'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E",
+      rank: 1
+    },
+    {
+      name: "Superhost",
+      rating: 4.8,
+      avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%238B5CF6'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E",
+      rank: 2
+    },
+    {
+      name: "EliteOrga",
+      rating: 4.7,
+      avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%2310B981'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E",
+      rank: 3
+    }
+  ];
+
+  const adminsToShow = topAdmins.length > 0 ? topAdmins : defaultTopAdmins;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -123,7 +145,7 @@ export function RoomRatingPanel({ onClose, topAdmins, roomId }: RoomRatingPanelP
               Top Administrateurs
             </h3>
             <div className="space-y-3">
-              {topAdmins.map((admin) => (
+              {adminsToShow.map((admin) => (
                 <div
                   key={admin.rank}
                   className="flex items-center gap-3 bg-zinc-800/50 rounded-lg p-3 hover:bg-zinc-800 transition-colors"
