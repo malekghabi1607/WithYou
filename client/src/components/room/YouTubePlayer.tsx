@@ -1,33 +1,13 @@
-
-
 /**
  * Projet : WithYou
- * Fichier : components/room/VideoVotePanel.tsx
+ * Fichier : components/room/YoutubePlayer.tsx
  *
- * Description :
- * Panneau modal permettant aux participants de voter pour la prochaine
- * vidéo à lancer dans le salon.
- *
- * Fonctionnalités principales :
- * - Affichage de la liste des vidéos disponibles avec leur nombre de votes
- * - Sélection d’une seule vidéo par utilisateur
- * - Enregistrement du vote avec une limite de 24h par vidéo
- * - Indication visuelle de la vidéo en tête des votes
- * - Désactivation du vote si l’utilisateur a déjà voté
- *
- * UX :
- * - Interface modale centrée avec fond flouté
- * - Feedback visuel sur la sélection
- * - Notifications de succès / erreur via Sonner
- * - Fermeture automatique après validation du vote
- *
- * Objectif :
- * Faciliter une prise de décision collective et démocratique
- * pour choisir la prochaine vidéo à regarder dans le salon.
+ * Lecteur YouTube sécurisé :
+ * - iframe simple (pas d’API JS)
+ * - youtube-nocookie
+ * - origin obligatoire
+ * - évite les blocages "trafic exceptionnel"
  */
-
-
-
 import { useState, useEffect, useRef } from "react";
 import { Badge } from "../ui/badge";
 import { Play, Pause } from "lucide-react";
@@ -42,29 +22,50 @@ interface YouTubePlayerProps {
 export function YouTubePlayer({ videoId, isPlaying, onPlayPause, theme = "dark" }: YouTubePlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
   const playerRef = useRef<any>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Charger l'API YouTube IFrame
-    const tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    // Vérifier si l'API YouTube est déjà chargée
+    if ((window as any).YT && (window as any).YT.Player) {
+      initPlayer();
+    } else {
+      // Charger l'API YouTube IFrame si pas encore chargée
+      if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      }
 
-    // Fonction appelée quand l'API est prête
-    (window as any).onYouTubeIframeAPIReady = () => {
-      playerRef.current = new (window as any).YT.Player(iframeRef.current, {
-        videoId: videoId,
-        playerVars: {
-          autoplay: 0,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1,
-        },
-        events: {
-          onReady: () => setPlayerReady(true),
-        },
-      });
+      // Fonction appelée quand l'API est prête
+      (window as any).onYouTubeIframeAPIReady = () => {
+        initPlayer();
+      };
+    }
+
+    function initPlayer() {
+      if (containerRef.current && !playerRef.current) {
+        playerRef.current = new (window as any).YT.Player(containerRef.current, {
+          videoId: videoId,
+          playerVars: {
+            autoplay: 0,
+            controls: 1,
+            rel: 0,
+            modestbranding: 1,
+          },
+          events: {
+            onReady: () => setPlayerReady(true),
+          },
+        });
+      }
+    }
+
+    return () => {
+      // Cleanup
+      if (playerRef.current && playerRef.current.destroy) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
     };
   }, [videoId]);
 
@@ -85,15 +86,7 @@ export function YouTubePlayer({ videoId, isPlaying, onPlayPause, theme = "dark" 
       </Badge>
       
       <div className="relative w-full aspect-video">
-        <iframe
-          ref={iframeRef}
-          className="w-full h-full"
-          src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=1&rel=0&modestbranding=1`}
-          title="YouTube video player"
-          frameBorder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
+        <div ref={containerRef} className="w-full h-full" />
       </div>
       
       {/* Contrôle overlay (optionnel) */}
