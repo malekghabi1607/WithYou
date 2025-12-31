@@ -14,8 +14,6 @@
  * Cette page est utilisée par l’administrateur
  * pour gérer la playlist du salon.
  */
-
-
 import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -158,7 +156,7 @@ export function ManageVideosPage({ onBack, theme = "dark" }: ManageVideosPagePro
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-3 gap-6">
           {/* Left Panel - Add Video */}
           <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-gray-50 border-gray-200'} border rounded-xl p-6 h-fit`}>
             <div className="flex items-center gap-3 mb-6">
