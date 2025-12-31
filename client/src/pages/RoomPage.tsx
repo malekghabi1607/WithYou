@@ -18,7 +18,7 @@
  * Utilisé dans routes/AppRouter.tsx via RoomPageWrapper.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
@@ -28,21 +28,21 @@ import {
   Pause,
   RotateCcw,
   LogOut,
-  Video,
   Heart,
-  ThumbsUp,
-  Smile,
   MessageCircle,
   Users,
   Plus,
   Send,
   Menu,
-  Info,
   Crown,
-  BarChart3,
   Sun,
   Moon,
-  Shield
+  Info,
+  ThumbsUp,
+  BarChart3,
+  Shield,
+  History,
+  Share2
 } from "lucide-react";
 import { LeaveRoomDialog } from "./LeaveRoomDialog";
 import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
@@ -50,9 +50,13 @@ import { RoomRatingPanel } from "../components/room/RoomRatingPanel";
 import { VideoVotePanel } from "../components/room/VideoVotePanel";
 import { ParticipantsPermissionsPanel } from "../components/room/ParticipantsPermissionsPanel";
 import { VideoManagementPanel } from "../components/room/VideoManagementPanel";
+import { VideoHistoryPanel } from "../components/room/VideoHistoryPanel";
+import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
 import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { saveRoomData, loadRoomData } from "../utils/roomStorage";
+import { getRoomById, incrementParticipants, decrementParticipants } from "../utils/storage";
+import { extractYouTubeId, getYouTubeThumbnail } from "../utils/youtubeUtils";
 import { toast } from "sonner";
 
 // Placeholders d'images locales (SVG inline)
@@ -90,6 +94,16 @@ interface VideoInPlaylist {
   isCurrent?: boolean;
   votes?: number;
   isFavorite?: boolean;
+}
+
+interface VideoHistoryEntry {
+  id: string;
+  youtubeId?: string;
+  title: string;
+  thumbnail: string;
+  duration: string;
+  playedAt: string;
+  playedBy: string;
 }
 
 interface RoomPageProps {
@@ -216,12 +230,6 @@ const mockPlaylist: VideoInPlaylist[] = [
 
 const reactions = ["❤️", "😂", "👍", "🔥", "😮", "🎉"];
 
-const topAdmins = [
-  { name: "CinePhile", rating: 4.95, avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100", rank: 1 },
-  { name: "GamerPro", rating: 4.85, avatar: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100", rank: 2 },
-  { name: "MusicFan", rating: 4.76, avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100", rank: 3 },
-];
-
 export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigate, theme = "dark", onThemeToggle }: RoomPageProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -231,15 +239,79 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showMenu, setShowMenu] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(mockParticipants);
   const [playlist, setPlaylist] = useState<VideoInPlaylist[]>(mockPlaylist);
+  const [videoHistory, setVideoHistory] = useState<VideoHistoryEntry[]>([]);
   const [showRoomInfo, setShowRoomInfo] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [showVideoVote, setShowVideoVote] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [showVideoManagement, setShowVideoManagement] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [roomCode, setRoomCode] = useState<string>("");
+  
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = roomCreator ? currentUser.email === roomCreator : false;
-  const participantCount = participants.filter(p => p.status === "online").length + 1;
+  
+  // Filtrer les participants pour éviter que l'admin soit dans la liste
+  const otherParticipants = participants.filter(p => 
+    p.id !== currentUser.id && 
+    p.id !== currentUser.email &&
+    p.name !== currentUser.name
+  );
+  
+  const participantCount = otherParticipants.filter(p => p.status === "online").length + 1; // +1 pour l'utilisateur courant
   const currentVideo = playlist.find(v => v.isCurrent);
+
+  // Charger le code du salon
+  useEffect(() => {
+    const room = getRoomById(roomId);
+    if (room) {
+      setRoomCode(room.joinCode);
+    }
+  }, [roomId]);
+
+  // Charger la vidéo initiale du salon créé
+  useEffect(() => {
+    const room = getRoomById(roomId);
+    if (room && room.videoUrl) {
+      const youtubeId = extractYouTubeId(room.videoUrl);
+      if (youtubeId) {
+        const initialVideo: VideoInPlaylist = {
+          id: 'initial-' + Date.now(),
+          youtubeId: youtubeId,
+          title: 'Vidéo initiale du salon',
+          thumbnail: getYouTubeThumbnail(youtubeId),
+          duration: '0:00',
+          isCurrent: true,
+          votes: 0,
+          isFavorite: false
+        };
+        
+        // Vérifier si cette vidéo n'est pas déjà dans la playlist
+        setPlaylist(prev => {
+          const hasInitialVideo = prev.some(v => v.youtubeId === youtubeId);
+          if (!hasInitialVideo) {
+            console.log('📹 Vidéo initiale chargée:', youtubeId);
+            return [initialVideo, ...prev.map(v => ({ ...v, isCurrent: false }))];
+          }
+          return prev;
+        });
+      }
+    }
+  }, [roomId]);
+
+  // Gérer les participants (incrémenter à l'entrée, décrémenter à la sortie)
+  useEffect(() => {
+    incrementParticipants(roomId);
+    console.log('👋 Participant rejoint le salon');
+    
+    // Cleanup: décrémenter quand on quitte le composant
+    return () => {
+      decrementParticipants(roomId);
+      console.log('👋 Participant quitté');
+    };
+  }, [roomId]);
 
   // Charger les données sauvegardées au montage du composant
   useEffect(() => {
@@ -247,8 +319,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       const savedData = loadRoomData(roomId);
       if (savedData) {
         setMessages(savedData.messages);
-        setPlaylist(savedData.playlist);
-        toast.success('Données du salon restaurées ! 📂');
+        // Ne pas écraser la playlist si on a déjà chargé la vidéo initiale
+        setPlaylist(prev => prev.length > mockPlaylist.length ? prev : savedData.playlist);
+        console.log('Données du salon restaurées');
+      }
+      
+      // Charger l'historique des vidéos
+      const savedHistory = localStorage.getItem(`room_${roomId}_videoHistory`);
+      if (savedHistory) {
+        setVideoHistory(JSON.parse(savedHistory));
+        console.log('Historique des vidéos chargé');
       }
     } catch (error) {
       console.error('Erreur lors du chargement des données:', error);
@@ -263,6 +343,21 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       console.error('Erreur lors de la sauvegarde des données:', error);
     }
   }, [roomId, messages, playlist]);
+
+  // Sauvegarder l'historique des vidéos
+  useEffect(() => {
+    try {
+      localStorage.setItem(`room_${roomId}_videoHistory`, JSON.stringify(videoHistory));
+      console.log('Historique des vidéos sauvegardé:', videoHistory.length, 'entrées');
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde de l\'historique:', error);
+    }
+  }, [roomId, videoHistory]);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const handleSendMessage = () => {
     if (!newMessage.trim()) return;
@@ -333,7 +428,24 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
+    console.log('Toggle Play/Pause - Current state:', isPlaying);
+    const newPlayingState = !isPlaying;
+    setIsPlaying(newPlayingState);
+    
+    // Notification avec le nom de l'utilisateur et style riche
+    if (newPlayingState) {
+      toast.success(`${currentUser.name} a lancé la vidéo`, {
+        duration: 3000,
+        icon: '▶️',
+        description: currentVideo?.title || 'Vidéo en cours',
+      });
+    } else {
+      toast.info(`${currentUser.name} a mis la vidéo en pause`, {
+        duration: 3000,
+        icon: '⏸️',
+        description: currentVideo?.title || 'Vidéo en cours',
+      });
+    }
   };
 
   const handleToggleFavorite = (videoId: string) => {
@@ -343,14 +455,29 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleLeaveRoom = () => {
+    console.log('Opening leave dialog');
     setShowLeaveDialog(true);
   };
 
   const confirmLeave = () => {
-    setTimeout(() => onNavigate("salons"), 300);
+    console.log('Leaving room and redirecting to salons...');
+    setShowLeaveDialog(false);
+    // Rediriger vers la page "salons" (liste des salons)
+    onNavigate("salons");
+  };
+
+  const cancelLeave = () => {
+    console.log('Cancelled leaving room');
+    setShowLeaveDialog(false);
+  };
+
+  const handleSync = () => {
+    console.log('Syncing video...');
+    toast.success('🔄 Synchronisation effectuée');
   };
 
   const handleAddVideo = (url: string, title: string, youtubeId?: string) => {
+    console.log('Adding video:', { url, title, youtubeId });
     const newVideo: VideoInPlaylist = {
       id: Date.now().toString(),
       youtubeId: youtubeId,
@@ -364,19 +491,24 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       isFavorite: false
     };
     
-    // Ajouter la vidéo à la playlist
     setPlaylist([...playlist, newVideo]);
+    toast.success(`✅ Vidéo "${title}" ajoutée à la playlist !`);
     
-    // Lancer automatiquement la vidéo ajoutée
     if (youtubeId) {
       setTimeout(() => {
         handlePlayVideo(newVideo);
+        toast.info('▶️ Lecture de la nouvelle vidéo...');
       }, 100);
     }
   };
 
   const handleRemoveVideo = (videoId: string) => {
+    const videoToRemove = playlist.find(v => v.id === videoId);
+    console.log('Removing video:', videoId);
     setPlaylist(prev => prev.filter(v => v.id !== videoId));
+    if (videoToRemove) {
+      toast.success(`🗑️ Vidéo "${videoToRemove.title}" supprimée`);
+    }
   };
 
   const handleUpdatePermissions = (updatedParticipants: Participant[]) => {
@@ -384,42 +516,75 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handlePlayVideo = (video: VideoInPlaylist) => {
+    // Notification : Changement de vidéo
+    toast.success(`Lecture de "${video.title}"`, {
+      duration: 3000,
+      icon: '🎬',
+      description: `Lancée par ${currentUser.name}`,
+    });
+    
+    // Mettre à jour la playlist
     setPlaylist(prev => prev.map(v => 
       v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
     ));
+    
+    // Ajouter à l'historique
+    const historyEntry: VideoHistoryEntry = {
+      id: Date.now().toString(),
+      youtubeId: video.youtubeId,
+      title: video.title,
+      thumbnail: video.thumbnail,
+      duration: video.duration,
+      playedAt: new Date().toLocaleString('fr-FR', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit' 
+      }),
+      playedBy: currentUser.name
+    };
+    
+    setVideoHistory(prev => [historyEntry, ...prev]);
+    console.log('📹 Vidéo ajoutée à l\'historique:', video.title);
   };
 
   return (
-    <div className={`h-screen flex flex-col ${theme === 'dark' ? 'bg-black' : 'bg-white'} overflow-hidden`}>
-      {/* Header - Responsive */}
-      <header className={`${theme === 'dark' ? 'bg-black border-zinc-800' : 'bg-white border-gray-200'} border-b px-3 md:px-6 py-3 flex items-center justify-between shrink-0`}>
-        <div className="flex items-center gap-2 md:gap-6 min-w-0 flex-1">
-          <Logo size="sm" theme={theme} showText={false} className="shrink-0" />
+    <div className={`min-h-screen flex flex-col ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
+      {/* Header Fixed - ne scroll pas */}
+      <header className={`sticky top-0 z-30 ${theme === 'dark' ? 'bg-black border-zinc-800' : 'bg-white border-gray-200'} border-b px-6 py-3 flex items-center justify-between`}>
+        <div className="flex items-center gap-6">
+          <Logo size="sm" theme={theme} showText={true} />
 
-          <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            <h1 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm md:text-base font-semibold truncate`}>
+          <div className="flex items-center gap-3">
+            <h1 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-base font-semibold`}>
               {roomName}
             </h1>
             
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <Users className={`w-4 h-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
               <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
                 {participantCount}
               </span>
             </div>
             
-            <Badge className="bg-red-600 text-white hover:bg-red-600 px-2 md:px-3 py-1 flex items-center gap-1 text-xs shrink-0">
+            <Badge className="bg-red-600 text-white hover:bg-red-600 px-3 py-1 flex items-center gap-1.5">
               <Crown className="w-3 h-3" />
-              <span className="hidden sm:inline">{isAdmin ? 'Admin' : 'Invité'}</span>
+              {isAdmin ? 'Admin' : 'Invité'}
             </Badge>
           </div>
         </div>
 
-        {/* Desktop Controls */}
-        <div className="hidden lg:flex items-center gap-2">
+        <div className="flex items-center gap-2">
           {isAdmin && (
             <Button
-              onClick={() => setShowVideoManagement(true)}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Clicked: Add Video');
+                setShowVideoManagement(true);
+              }}
               size="sm"
               className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs"
             >
@@ -429,7 +594,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           )}
           
           <Button
-            onClick={handlePlayPause}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('Toggle Play/Pause - Current state:', isPlaying);
+              setIsPlaying(!isPlaying);
+            }}
             variant="ghost"
             size="sm"
             className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} text-sm h-9`}
@@ -448,6 +619,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           </Button>
 
           <Button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('Syncing video...');
+            }}
             variant="ghost"
             size="sm"
             className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} text-sm h-9`}
@@ -458,7 +635,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
           {onThemeToggle && (
             <Button
-              onClick={onThemeToggle}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onThemeToggle();
+              }}
               variant="ghost"
               size="sm"
               className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} h-9 px-3`}
@@ -468,7 +650,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           )}
 
           <Button
-            onClick={handleLeaveRoom}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('Opening leave dialog');
+              setShowLeaveDialog(true);
+            }}
             variant="ghost"
             size="sm"
             className="text-red-400 hover:text-red-300 hover:bg-red-100/10 text-sm h-9"
@@ -477,22 +665,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             Quitter
           </Button>
         </div>
-
-        {/* Mobile Menu Button */}
-        <Button
-          onClick={() => setShowMenu(!showMenu)}
-          variant="ghost"
-          size="sm"
-          className={`lg:hidden ${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-black'} h-9 px-2`}
-        >
-          <Menu className="w-5 h-5" />
-        </Button>
       </header>
 
-      {/* Main Content - Responsive Layout */}
-      <div className="flex flex-col lg:flex-row flex-1 gap-2 md:gap-4 p-2 md:p-4 overflow-hidden">
-        {/* Left Column: Video + Playlist */}
-        <div className="flex-1 flex flex-col gap-2 md:gap-4 overflow-hidden min-h-0">
+      {/* Main Content - SCROLL GLOBAL sur toute la page */}
+      <div className="flex gap-4 p-4">
+        {/* LEFT: Video + Playlist - 2/3 de l'écran */}
+        <div className="flex-1 space-y-6">
+          {/* Video Player */}
           {currentVideo && currentVideo.youtubeId ? (
             <YouTubePlayer
               videoId={currentVideo.youtubeId}
@@ -519,28 +698,19 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             </div>
           )}
 
-          <div className={`flex-1 ${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4 overflow-hidden flex flex-col`}>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm flex items-center gap-2`}>
+          {/* Playlist Section - PAS DE SCROLL INTERNE, grille compacte 4 colonnes */}
+          <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-semibold flex items-center gap-2`}>
                 <Menu className="w-4 h-4" />
                 PLAYLIST ({playlist.length})
               </h2>
-              {isAdmin && (
-                <Button
-                  onClick={() => setShowVideoManagement(true)}
-                  size="sm"
-                  className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs"
-                >
-                  <Plus className="w-3 h-3 mr-1.5" />
-                  Ajouter
-                </Button>
-              )}
             </div>
 
             {playlist.length === 0 ? (
               <EmptyState type="videos" theme={theme} />
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto">
+              <div className="grid grid-cols-4 gap-2">
                 {playlist.map((video) => (
                   <div
                     key={video.id}
@@ -549,7 +719,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                         handlePlayVideo(video);
                       }
                     }}
-                    className={`relative group rounded-lg overflow-hidden ${
+                    className={`relative group rounded-lg overflow-hidden ${ 
                       video.isCurrent ? "ring-2 ring-red-600" : ""
                     } ${isAdmin ? 'cursor-pointer hover:ring-2 hover:ring-red-400' : 'cursor-default'} transition-all`}
                   >
@@ -561,16 +731,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     
                     {isAdmin && (
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <div className="flex flex-col items-center gap-2">
-                          <Play className="w-8 h-8 text-white" />
-                          <span className="text-white text-xs font-medium">Lire maintenant</span>
-                        </div>
+                        <Play className="w-6 h-6 text-white" />
                       </div>
                     )}
 
                     {video.isCurrent && (
-                      <div className="absolute top-2 left-2 bg-red-600 rounded p-1">
-                        <Play className="w-2.5 h-2.5 text-white fill-white" />
+                      <div className="absolute top-1.5 left-1.5 bg-red-600 rounded px-1.5 py-0.5 flex items-center gap-1">
+                        <Play className="w-2 h-2 text-white fill-white" />
+                        <span className="text-white text-[10px] font-medium">EN COURS</span>
                       </div>
                     )}
 
@@ -579,14 +747,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                         e.stopPropagation();
                         handleToggleFavorite(video.id);
                       }}
-                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
                     >
-                      <Heart className={`w-3.5 h-3.5 ${video.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
+                      <Heart className={`w-3 h-3 ${video.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
                     </button>
 
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2">
-                      <p className="text-white text-xs truncate">{video.title}</p>
-                      <p className="text-gray-400 text-xs">{video.duration}</p>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
+                      <p className="text-white text-[11px] truncate leading-tight">{video.title}</p>
+                      <p className="text-gray-400 text-[10px] mt-0.5">{video.duration}</p>
                     </div>
                   </div>
                 ))}
@@ -595,8 +763,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           </div>
         </div>
 
-        {/* Right Column: Chat + Participants */}
-        <div className={`w-full lg:w-80 ${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl flex flex-col overflow-hidden lg:shrink-0 max-h-[50vh] lg:max-h-none`}>
+        {/* RIGHT: Chat + Participants - 1/3 de l'écran, hauteur fixe */}
+        <div className={`w-80 ${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl flex flex-col sticky top-20 h-[calc(100vh-6rem)]`}>
           <div className={`flex border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
             <button
               onClick={() => setActiveTab("chat")}
@@ -624,7 +792,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
           {activeTab === "chat" && (
             <>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(100vh - 20rem)' }}>
                 {messages.length === 0 ? (
                   <EmptyState type="messages" theme={theme} />
                 ) : (
@@ -673,15 +841,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     </div>
                   ))
                 )}
+                <div ref={chatEndRef} />
               </div>
 
-              <div className={`px-4 py-3 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
+              <div className={`px-4 py-2 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
                 <div className="flex items-center gap-2 justify-between">
                   {reactions.map((reaction, index) => (
                     <button
                       key={index}
                       onClick={() => handleReactionClick(reaction)}
-                      className="text-xl hover:scale-125 transition-transform"
+                      className="text-lg hover:scale-125 transition-transform"
                     >
                       {reaction}
                     </button>
@@ -705,6 +874,20 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     <Send className="w-4 h-4" />
                   </Button>
                 </div>
+              </div>
+
+              {/* Menu flottant horizontal - SOUS le chat */}
+              <div className="p-3 flex items-center justify-center gap-2">
+                {/* Menu button - rouge - Ouvre le menu de TOUS les boutons */}
+                <button
+                  onClick={() => {
+                    setShowMenu(!showMenu);
+                  }}
+                  className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 shadow-lg flex items-center justify-center transition-all hover:scale-105"
+                  title="Menu principal"
+                >
+                  <Menu className="w-6 h-6 text-white" />
+                </button>
               </div>
             </>
           )}
@@ -732,7 +915,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   </div>
                 </div>
 
-                {participants.map((participant) => (
+                {otherParticipants
+                  .map((participant) => (
                   <div key={participant.id} className={`p-3 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-gray-200'} rounded-lg`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -763,183 +947,218 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </div>
       </div>
 
-      {/* Floating Menu Button */}
-      <button
-        onClick={() => setShowMenu(!showMenu)}
-        className={`fixed bottom-8 right-8 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-40 ${
-          theme === 'dark' ? 'bg-red-600 hover:bg-red-700' : 'bg-red-600 hover:bg-red-700'
-        }`}
-      >
-        <Menu className="w-6 h-6 text-white" />
-      </button>
-
-      {/* Mobile Menu */}
+      {/* Mobile Menu - popup au-dessus des boutons */}
       {showMenu && (
-        <div className="fixed bottom-24 right-4 left-4 lg:left-auto lg:right-8 lg:w-auto flex flex-col gap-3 z-50">
-          {/* Mobile Controls */}
-          <div className="lg:hidden flex flex-col gap-2">
+        <>
+          {/* Overlay pour fermer le menu en cliquant en dehors */}
+          <div 
+            className="fixed inset-0 bg-black/20 z-40"
+            onClick={() => setShowMenu(false)}
+          ></div>
+          
+          {/* Menu contextuel */}
+          <div className={`fixed bottom-24 right-6 w-64 flex flex-col gap-2 z-50 rounded-xl p-3 shadow-2xl ${theme === 'dark' ? 'bg-zinc-800 border border-zinc-700' : 'bg-white border border-gray-300'}`}>
             <Button
               onClick={() => {
-                handlePlayPause();
+                console.log('Opening Share Dialog');
+                setShowShareDialog(true);
                 setShowMenu(false);
               }}
-              className="bg-zinc-700 hover:bg-zinc-600 text-white justify-start"
+              variant="ghost"
+              className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
             >
-              {isPlaying ? (
-                <>
-                  <Pause className="w-4 h-4 mr-2" />
-                  Pause
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  Lecture
-                </>
-              )}
+              <Share2 className="w-4 h-4 mr-2" />
+              Inviter des amis
             </Button>
             
-            {onThemeToggle && (
-              <Button
-                onClick={() => {
-                  onThemeToggle();
-                  setShowMenu(false);
-                }}
-                variant="ghost"
-                className={`justify-start ${theme === 'dark' ? 'bg-zinc-700 hover:bg-zinc-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-black'}`}
-              >
-                {theme === "dark" ? (
-                  <>
-                    <Sun className="w-4 h-4 mr-2" />
-                    Mode clair
-                  </>
-                ) : (
-                  <>
-                    <Moon className="w-4 h-4 mr-2" />
-                    Mode sombre
-                  </>
-                )}
-              </Button>
-            )}
-
             <Button
               onClick={() => {
-                handleLeaveRoom();
+                console.log('Opening Room Info Panel');
+                setShowRoomInfo(true);
                 setShowMenu(false);
               }}
-              className="bg-red-600 hover:bg-red-700 text-white justify-start"
+              variant="ghost"
+              className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+            >
+              <Info className="w-4 h-4 mr-2" />
+              Informations du salon
+            </Button>
+            
+            <Button
+              onClick={() => {
+                console.log('Opening Video Vote Panel');
+                setShowVideoVote(true);
+                setShowMenu(false);
+              }}
+              variant="ghost"
+              className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+            >
+              <ThumbsUp className="w-4 h-4 mr-2" />
+              Voter pour une vidéo
+            </Button>
+            
+            <Button
+              onClick={() => {
+                console.log('Opening Rating Panel');
+                setShowRating(true);
+                setShowMenu(false);
+              }}
+              variant="ghost"
+              className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Noter le salon
+            </Button>
+            
+            <Button
+              onClick={() => {
+                console.log('Opening History Panel');
+                setShowHistory(true);
+                setShowMenu(false);
+              }}
+              variant="ghost"
+              className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+            >
+              <History className="w-4 h-4 mr-2" />
+              Historique des vidéos
+            </Button>
+            
+            {isAdmin && (
+              <>
+                <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
+                
+                <Button
+                  onClick={() => {
+                    console.log('Opening Permissions Panel');
+                    setShowPermissions(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Shield className="w-4 h-4 mr-2" />
+                  Gérer les permissions
+                </Button>
+                
+                <Button
+                  onClick={() => {
+                    console.log('Opening Video Management Panel');
+                    setShowVideoManagement(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Gérer les vidéos
+                </Button>
+              </>
+            )}
+
+            <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
+            
+            <Button
+              onClick={() => {
+                console.log('Opening Leave Dialog');
+                setShowLeaveDialog(true);
+                setShowMenu(false);
+              }}
+              variant="ghost"
+              className="justify-start text-red-400 hover:bg-red-900/20 hover:text-red-300"
             >
               <LogOut className="w-4 h-4 mr-2" />
               Quitter le salon
             </Button>
-
-            <div className={`border-t ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'} my-2`} />
           </div>
-
-          {/* Action Buttons */}
-          <div className="flex lg:flex-col gap-3">
-            <button
-              onClick={() => {
-                setShowRoomInfo(true);
-                setShowMenu(false);
-              }}
-              className="flex-1 lg:w-12 lg:h-12 h-10 bg-gray-700 hover:bg-gray-600 rounded-full shadow-lg flex items-center justify-center lg:justify-center transition-all hover:scale-110"
-              title="Informations"
-            >
-              <Info className="w-5 h-5 text-white" />
-            </button>
-
-            <button
-              onClick={() => {
-                setShowVideoVote(true);
-                setShowMenu(false);
-              }}
-              className="flex-1 lg:w-12 lg:h-12 h-10 bg-yellow-600 hover:bg-yellow-700 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
-              title="Vote vidéo"
-            >
-              <ThumbsUp className="w-5 h-5 text-white" />
-            </button>
-
-            <button
-              onClick={() => {
-                setShowRating(true);
-                setShowMenu(false);
-              }}
-              className="flex-1 lg:w-12 lg:h-12 h-10 bg-purple-600 hover:bg-purple-700 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
-              title="Noter le salon"
-            >
-              <BarChart3 className="w-5 h-5 text-white" />
-            </button>
-
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  setShowPermissions(true);
-                  setShowMenu(false);
-                }}
-                className="flex-1 lg:w-12 lg:h-12 h-10 bg-blue-600 hover:bg-blue-700 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
-                title="Gérer les permissions"
-              >
-                <Shield className="w-5 h-5 text-white" />
-              </button>
-            )}
-          </div>
-        </div>
+        </>
       )}
 
-      {/* Panels */}
+      {showLeaveDialog && (
+        <LeaveRoomDialog
+          onClose={() => setShowLeaveDialog(false)}
+          onConfirm={confirmLeave}
+          onCancel={cancelLeave}
+          theme={theme}
+        />
+      )}
+
       {showRoomInfo && (
         <RoomInfoPanel
+          roomId={roomId}
           onClose={() => setShowRoomInfo(false)}
-          roomData={{
-            name: roomName,
-            admin: isAdmin ? currentUser.name : (roomCreator || currentUser.name),
-            isCurrentUserAdmin: isAdmin,
-            type: "Public",
-            participants: participantCount,
-            maxParticipants: 20,
-          }}
+          theme={theme}
         />
       )}
 
       {showRating && (
         <RoomRatingPanel
-          onClose={() => setShowRating(false)}
-          topAdmins={topAdmins}
           roomId={roomId}
+          onClose={() => setShowRating(false)}
+          theme={theme}
         />
       )}
 
       {showVideoVote && (
         <VideoVotePanel
+          videos={playlist.filter(v => !v.isCurrent).map(v => ({
+            id: v.id,
+            title: v.title,
+            thumbnail: v.thumbnail,
+            votes: v.votes || 0
+          }))}
           onClose={() => setShowVideoVote(false)}
-          videos={playlist}
-        />
-      )}
-
-      {showPermissions && (
-        <ParticipantsPermissionsPanel
-          onClose={() => setShowPermissions(false)}
-          participants={participants}
-          onUpdateParticipants={handleUpdatePermissions}
+          onVote={(videoId: string) => console.log('Vote for:', videoId)}
           theme={theme}
         />
       )}
 
-      {showVideoManagement && (
+      {showPermissions && isAdmin && (
+        <ParticipantsPermissionsPanel
+          participants={[
+            {
+              id: `current-user-${currentUser.email}`,
+              name: currentUser.name,
+              role: isAdmin ? "admin" : "member",
+              status: "online",
+              avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%23DC2626'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E"
+            },
+            ...participants
+          ]}
+          onClose={() => setShowPermissions(false)}
+          onUpdatePermissions={handleUpdatePermissions}
+          theme={theme}
+          isReadOnly={false}
+        />
+      )}
+
+      {showVideoManagement && isAdmin && (
         <VideoManagementPanel
-          onClose={() => setShowVideoManagement(false)}
           videos={playlist}
+          onClose={() => setShowVideoManagement(false)}
           onAddVideo={handleAddVideo}
           onRemoveVideo={handleRemoveVideo}
           theme={theme}
         />
       )}
 
-      <LeaveRoomDialog
-        open={showLeaveDialog}
-        onConfirm={confirmLeave}
-        onCancel={() => setShowLeaveDialog(false)}
-      />
+      {showHistory && (
+        <VideoHistoryPanel
+          history={videoHistory}
+          onClose={() => setShowHistory(false)}
+          theme={theme}
+        />
+      )}
+
+      {/* ShareRoomDialog temporairement désactivé pour debug */}
+      {showShareDialog && roomCode && (
+        <ShareRoomDialog
+          isOpen={showShareDialog}
+          roomCode={roomCode}
+          roomName={roomName || 'Salon'}
+          onClose={() => setShowShareDialog(false)}
+          theme={theme}
+        />
+      )}
     </div>
   );
 }
