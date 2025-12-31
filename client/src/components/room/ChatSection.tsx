@@ -25,7 +25,6 @@
  * Favoriser l’interaction sociale et l’expérience collaborative
  * au sein d’un salon de visionnage.
  */
-
 import { useState, useRef, useEffect } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
