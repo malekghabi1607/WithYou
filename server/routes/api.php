@@ -94,5 +94,7 @@ Route::get('/classement/hebdo', [NotationController::class, 'classementHebdo']);
     Route::middleware('auth:api')->group(function () {
     Route::get('/salons/{salon}/messages', [MessageController::class, 'index']);
     Route::post('/salons/{salon}/messages', [MessageController::class, 'store']);
+    Route::get('/salons/by-code/{invitationCode}', [SalonController::class, 'findByInvitationCode']);
+
 });
 
