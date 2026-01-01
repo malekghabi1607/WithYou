@@ -95,6 +95,7 @@ Route::get('/classement/hebdo', [NotationController::class, 'classementHebdo']);
     Route::get('/salons/{salon}/messages', [MessageController::class, 'index']);
     Route::post('/salons/{salon}/messages', [MessageController::class, 'store']);
     Route::get('/salons/by-code/{invitationCode}', [SalonController::class, 'findByInvitationCode']);
-
+    Route::post('/salons/{roomId}/video-action', [SalonController::class, 'broadcastVideoAction']);
+    
 });
 
