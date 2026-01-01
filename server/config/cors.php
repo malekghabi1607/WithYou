@@ -25,14 +25,18 @@
  * restreintes aux domaines officiels de l’application.
  */
 
+
 return [
-    'paths' => ['api/*', 'broadcasting/*', 'api/csrf-cookie'],
+
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
+        'http://localhost:5174',  // ← AJOUTE CETTE LIGNE
+        'http://127.0.0.1:5174',  // ← ET CELLE-CI
     ],
 
     'allowed_origins_patterns' => [],
@@ -43,5 +47,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => true,
+    'supports_credentials' => false,
+
 ];
