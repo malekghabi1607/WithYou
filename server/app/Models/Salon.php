@@ -1,7 +1,6 @@
 <?php
 
 namespace App\Models;
-namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
@@ -9,14 +8,18 @@ class Salon extends Model
 {
     protected $table = 'salon';
     protected $primaryKey = 'id_salon';
-    public $incrementing = false;
+    public $incrementing = false;      // id_salon = UUID, pas auto-incrément
     protected $keyType = 'string';
+    public $timestamps = false;        // la table n'a pas created_at/updated_at gérés par Laravel
 
-    protected $fillable = ['id_salon', 'name', 'id_playlist'];
+    protected $fillable = [
+        'id_salon',
+        'room_code',
+        'name',
+        'owner_id',
+        'created_at',
+        'updated_at',
+        'invitation_code',  // ← AJOUTE CELLE-CI
 
-    public function playlist()
-    {
-        return $this->belongsTo(Playlist::class, 'id_playlist', 'id_playlist');
-    }
+    ];
 }
-
