@@ -8,14 +8,15 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Password;
-
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Events\PasswordReset;
 class AuthController extends Controller
 {
     /**
      * REGISTER
      */
-    public function register(Request $request)
+  
+public function register(Request $request)
     {
         $data = $request->validate([
             'username' => 'required|string|max:50',
@@ -30,7 +31,8 @@ class AuthController extends Controller
         $user->password_hash = Hash::make($data['password']);
         $user->save();
 
-        // Crée un token JWT
+        event(new Registered($user));
+
         $token = JWTAuth::fromUser($user);
 
         return response()->json([
@@ -38,30 +40,36 @@ class AuthController extends Controller
             'token' => $token,
         ], 201);
     }
-
     /**
      * LOGIN
      */
-    public function login(Request $request)
+public function login(Request $request)
     {
         $credentials = $request->validate([
             'email'    => 'required|email',
             'password' => 'required|string',
         ]);
 
-        // JWTAuth::attempt utilise getAuthPassword() => password_hash
         if (! $token = JWTAuth::attempt($credentials)) {
             return response()->json([
                 'message' => 'Email ou mot de passe incorrect',
             ], 401);
         }
 
+        $user = auth()->user();
+
+        if (!$user->hasVerifiedEmail()) {
+            auth()->logout();
+            return response()->json([
+                'message' => 'Votre email n\'est pas vérifié. Veuillez vérifier votre boîte mail.',
+            ], 403);
+        }
+
         return response()->json([
-            'user'  => auth()->user(),
+            'user'  => $user,
             'token' => $token,
         ]);
     }
-
     /**
      * UTILISATEUR CONNECTÉ
      */

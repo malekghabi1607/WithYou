@@ -13,7 +13,7 @@ use App\Http\Controllers\Api\SondageSalonController;
 use App\Http\Controllers\PlaylistController;
 use App\Http\Controllers\HistoriqueController;
 use App\Http\Controllers\NotationController;
-
+use App\Http\Controllers\VerifyEmailController;
 // use App\Http\Controllers\Api\ChatController; // décommente si tu as ce controller
 
 use Illuminate\Support\Facades\Broadcast;
@@ -31,6 +31,14 @@ Route::post('/auth/login',    [AuthController::class, 'login']);
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
 // Route pour valider le changement de mot de passe
 Route::post('/auth/reset-password', [App\Http\Controllers\AuthController::class, 'reset'])->name('password.update');
+// 1. La route principale
+Route::get('/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify'])
+    ->middleware(['signed', 'throttle:6,1'])
+    ->name('verification.verify');
+// 2. La route pour renvoyer l'email
+Route::post('/email/resend', [VerifyEmailController::class, 'resend'])
+    ->middleware(['auth:api', 'throttle:6,1'])
+    ->name('verification.send');
 
 /*
 |--------------------------------------------------------------------------
