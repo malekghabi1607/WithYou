@@ -41,25 +41,40 @@ interface JoinWithCodePageProps {
 export function JoinWithCodePage({ roomId, onNavigate, onJoinRoom, theme = "dark" }: JoinWithCodePageProps) {
   const [code, setCode] = useState("");
 
-  // Mock valid code for demo
-  const VALID_CODE = "CINEMA2024";
+  
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  if (!code.trim()) {
+    toast.error("Veuillez entrer un code d'invitation");
+    return;
+  }
 
-    if (!code.trim()) {
-      toast.error("Veuillez entrer un code d'invitation");
+  try {
+    const token = localStorage.getItem("token");
+    const API_URL = import.meta.env.VITE_API_URL;
+
+    // Chercher le salon par invitation_code
+    const res = await fetch(`${API_URL}/api/salons/by-code/${code.trim()}`, {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : "",
+      },
+    });
+
+    if (!res.ok) {
+      toast.error("Aucun salon trouvé avec ce code");
       return;
     }
 
-    if (code.toUpperCase() !== VALID_CODE) {
-      toast.error("Code d'invitation invalide");
-      return;
-    }
-
-    toast.success("Code validé ! Accès au salon accordé");
-    onJoinRoom(roomId);
-  };
+    const salon = await res.json();
+    
+    toast.success(`Salon "${salon.name}" trouvé ! Redirection...`);
+    onJoinRoom(salon.room_code);
+  } catch (err) {
+    console.error(err);
+    toast.error("Erreur lors de la recherche du salon");
+  }
+};
 
   return (
     <div className="min-h-screen bg-black">
