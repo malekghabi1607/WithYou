@@ -78,4 +78,23 @@ public function findByInvitationCode($invitationCode)
     ]);
 }
 
+public function broadcastVideoAction(Request $request, $roomId)
+{
+    $request->validate([
+        'action' => 'required|in:play,pause,change',
+        'userName' => 'nullable|string',
+        'videoId' => 'nullable|string',
+    ]);
+
+    event(new \App\Events\VideoUpdated(
+        $roomId,
+        $request->action,
+        $request->userName,
+        $request->videoId
+    ));
+
+    return response()->json(['success' => true]);
+}
+
+
 }
