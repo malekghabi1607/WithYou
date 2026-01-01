@@ -42,6 +42,7 @@ import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Logo } from "../components/ui/Logo";
+import { createSalon, extractYoutubeId } from "../api/rooms";
 
 interface CreateRoomPageProps {
   currentUser: { email: string; name: string };
@@ -60,44 +61,55 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
     maxParticipants: 20
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    if (!formData.name.trim()) {
-      toast.error("Veuillez entrer un nom pour le salon");
-      return;
-    }
+  if (!formData.name.trim()) {
+    toast.error("Veuillez entrer un nom pour le salon");
+    return;
+  }
 
-    if (!formData.description.trim()) {
-      toast.error("Veuillez ajouter une description");
-      return;
-    }
+  if (!formData.description.trim()) {
+    toast.error("Veuillez ajouter une description");
+    return;
+  }
 
-    if (!formData.videoUrl.trim()) {
-      toast.error("Veuillez ajouter une URL de vidéo YouTube");
-      return;
-    }
+  if (!formData.videoUrl.trim()) {
+    toast.error("Veuillez ajouter une URL de vidéo YouTube");
+    return;
+  }
 
-    if (!formData.videoUrl.includes('youtube.com') && !formData.videoUrl.includes('youtu.be')) {
-      toast.error("Veuillez entrer une URL YouTube valide");
-      return;
-    }
+  if (!formData.videoUrl.includes('youtube.com') && !formData.videoUrl.includes('youtu.be')) {
+    toast.error("Veuillez entrer une URL YouTube valide");
+    return;
+  }
 
-    if (!formData.isPublic && !formData.password) {
-      toast.error("Veuillez définir un mot de passe pour un salon privé");
-      return;
-    }
+  if (!formData.isPublic && !formData.password) {
+    toast.error("Veuillez définir un mot de passe pour un salon privé");
+    return;
+  }
 
-    // Create room object
-    const roomId = "room-" + Date.now();
-    const joinCode = generateJoinCode(); // Générer un code unique
-    
-    // Extraire l'ID YouTube et générer la miniature
-    const youtubeId = extractYouTubeId(formData.videoUrl);
-    const thumbnail = youtubeId 
-      ? getYouTubeThumbnail(youtubeId)
-      : "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400"; // Image par défaut
-    
+  // Extraire youtubeId
+const youtubeId = extractYoutubeId(formData.videoUrl);
+  if (!youtubeId) {
+    toast.error("Impossible d'extraire l'ID YouTube de cette URL");
+    return;
+  }
+
+  try {
+    // Importer createSalon depuis api/rooms    
+    // Création du salon côté back avec vidéo initiale
+    const salon = await createSalon({
+      name: formData.name,
+      description: formData.description,
+      youtubeId,
+      title: formData.name,
+    });
+
+    const roomId = salon.room_code;
+const invitationCode = (salon as any).invitation_code;
+
+    // Objet room pour le localStorage
     const newRoom: Room = {
       id: roomId,
       name: formData.name,
@@ -106,28 +118,31 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
       creator: currentUser.name,
       creatorEmail: currentUser.email,
       password: formData.password,
-      joinCode: joinCode, // Code unique pour rejoindre
+      joinCode: invitationCode,
       maxParticipants: formData.maxParticipants,
       videoUrl: formData.videoUrl,
       participants: 1,
       currentVideo: formData.videoUrl,
-      thumbnail: thumbnail,
+      thumbnail: getYouTubeThumbnail(youtubeId),
       createdAt: new Date().toISOString(),
-      rating: 0
+      rating: 0,
     };
 
-    // Save to localStorage
     saveRoom(newRoom);
 
-    toast.success(`✅ Salon \"${formData.name}\" créé avec succès !`, {
-      description: `Code de jointure : ${joinCode}`,
-      duration: 5000,
+    // AFFICHER LE CODE D'INVITATION
+    toast.success(`✅ Salon "${formData.name}" créé avec succès !`, {
+      description: `📋 Code d'invitation : ${invitationCode}`,
+      duration: 10000,
     });
-    
-    // Passer le bon roomId à onCreateRoom et onNavigate
-    onCreateRoom({ ...formData, id: roomId, joinCode });
+
+    onCreateRoom({ ...formData, id: roomId, joinCode: invitationCode });
     onNavigate("room-loading", { roomId });
-  };
+  } catch (err) {
+    console.error(err);
+    toast.error("Erreur lors de la création du salon");
+  }
+};
 
   return (
     <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-gray-50"}`}>
