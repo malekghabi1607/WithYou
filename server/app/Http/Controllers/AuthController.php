@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Password;
+
+use Illuminate\Auth\Events\PasswordReset;
 class AuthController extends Controller
 {
     /**
@@ -108,5 +110,33 @@ class AuthController extends Controller
         }
 
         return response()->json(['email' => __($status)], 400);
+    }/**
+     * REINITIALISATION DU MOT DE PASSE
+     */
+    public function reset(Request $request)
+    {
+        // 1. Validation des données reçues
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:6|confirmed', // "confirmed" oblige à avoir un champ password_confirmation
+        ]);
+
+        // 2. Vérification du token et changement du mot de passe
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->password_hash = Hash::make($password); // Attention : ton champ s'appelle password_hash
+                $user->save();
+            }
+        );
+
+        // 3. Réponse au Frontend
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json(['message' => __($status)]);
+        }
+
+        return response()->json(['email' => __($status)], 400);
     }
+    
 }

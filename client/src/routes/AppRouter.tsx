@@ -58,7 +58,7 @@ import { ContactPage } from '../pages/ContactPage';
 import { FAQPage } from '../pages/FAQPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
 import { TermsPage } from '../pages/TermsPage';
-
+import { ResetPasswordPage } from '../pages/ResetPasswordPage';
 // Wrappers pour les pages avec paramètres d'URL
 function RoomPageWrapper() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -436,6 +436,15 @@ function AppContent() {
               onNavigate={handleNavigate}
               theme={theme}
               onThemeToggle={handleThemeToggle}
+            />
+          } 
+        />
+        <Route 
+          path="/reset-password/:token" 
+          element={
+            <ResetPasswordPage 
+              onNavigate={handleNavigate}
+              theme={theme}
             />
           } 
         />

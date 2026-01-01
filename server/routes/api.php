@@ -29,6 +29,8 @@ require base_path('routes/channels.php');
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login',    [AuthController::class, 'login']);
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
+// Route pour valider le changement de mot de passe
+Route::post('/auth/reset-password', [App\Http\Controllers\AuthController::class, 'reset'])->name('password.update');
 
 /*
 |--------------------------------------------------------------------------

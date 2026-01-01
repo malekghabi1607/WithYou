@@ -123,6 +123,33 @@ export async function forgotPassword(email: string) {
 
   return data; // ex: { message: "Email envoyé" }
 }
+/** POST /api/auth/reset-password */
+export async function resetPassword(payload: any) {
+  // On envoie token, email, password et password_confirmation
+  const res = await fetch(`${API_URL}/auth/reset-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    // Gestion des erreurs Laravel
+    if (data.errors) {
+      // Si Laravel renvoie { errors: { email: ["Message"] } }
+      const firstErrorKey = Object.keys(data.errors)[0];
+      const firstErrorMessage = data.errors[firstErrorKey][0];
+      throw new Error(firstErrorMessage);
+    }
+    throw new Error(data.message || data.email || "Impossible de réinitialiser le mot de passe");
+  }
+
+  return data;
+}
 /** GET /api/auth/me */
 export async function me(token?: string): Promise<Json> {
   // token optionnel: si pas fourni, on tente localStorage
