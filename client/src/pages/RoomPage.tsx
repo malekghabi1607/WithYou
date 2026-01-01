@@ -58,6 +58,7 @@ import { saveRoomData, loadRoomData } from "../utils/roomStorage";
 import { getRoomById, incrementParticipants, decrementParticipants } from "../utils/storage";
 import { extractYouTubeId, getYouTubeThumbnail } from "../utils/youtubeUtils";
 import { toast } from "sonner";
+import { echo } from "../echo";
 
 // Placeholders d'images locales (SVG inline)
 const AVATAR_USER_1 = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%238B5CF6'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E";
@@ -313,6 +314,38 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     };
   }, [roomId]);
 
+// Connexion Echo pour la synchro temps réel
+useEffect(() => {
+  const channel = echo.channel(`salon.${roomId}`);
+  
+  channel.listen('VideoUpdated', (data: any) => {
+    console.log('📡 Événement reçu:', data);
+    
+    if (data.action === 'play') {
+      setIsPlaying(true);
+      toast.info(`${data.userName || 'Un participant'} a lancé la vidéo`);
+    } else if (data.action === 'pause') {
+      setIsPlaying(false);
+      toast.info(`${data.userName || 'Un participant'} a mis en pause`);
+    } else if (data.action === 'change' && data.videoId) {
+      setPlaylist((prev) =>
+        prev.map((v) => ({
+          ...v,
+          isCurrent: v.youtubeId === data.videoId,
+        }))
+      );
+      toast.info(`${data.userName || 'Un participant'} a changé de vidéo`);
+    }
+  });
+
+  console.log(`📡 Connecté au canal salon.${roomId}`);
+
+  return () => {
+    echo.leave(`salon.${roomId}`);
+    console.log(`📡 Déconnecté du canal salon.${roomId}`);
+  };
+}, [roomId]);
+
   // Charger les données sauvegardées au montage du composant
   useEffect(() => {
     try {
@@ -427,26 +460,40 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }));
   };
 
-  const handlePlayPause = () => {
-    console.log('Toggle Play/Pause - Current state:', isPlaying);
-    const newPlayingState = !isPlaying;
-    setIsPlaying(newPlayingState);
+  const handlePlayPause = async () => {
+  const newPlayingState = !isPlaying;
+  setIsPlaying(newPlayingState);
+  
+  const action = newPlayingState ? 'play' : 'pause';
+  console.log('🎬 handlePlayPause appelé, action:', action, 'roomId:', roomId);
+
+  // Broadcaster l'événement via API
+  try {
+    const API_URL = import.meta.env.VITE_API_URL;
+    const token = localStorage.getItem('token');
     
-    // Notification avec le nom de l'utilisateur et style riche
-    if (newPlayingState) {
-      toast.success(`${currentUser.name} a lancé la vidéo`, {
-        duration: 3000,
-        icon: '▶️',
-        description: currentVideo?.title || 'Vidéo en cours',
-      });
-    } else {
-      toast.info(`${currentUser.name} a mis la vidéo en pause`, {
-        duration: 3000,
-        icon: '⏸️',
-        description: currentVideo?.title || 'Vidéo en cours',
-      });
-    }
-  };
+    await fetch(`${API_URL}/api/salons/${roomId}/video-action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({
+        action,
+        userName: currentUser.name,
+      }),
+    });
+  } catch (err) {
+    console.error('Erreur broadcast:', err);
+  }
+  
+  toast.success(
+    newPlayingState 
+      ? `${currentUser.name} a lancé la vidéo` 
+      : `${currentUser.name} a mis en pause`,
+    { icon: newPlayingState ? '▶️' : '⏸️' }
+  );
+};
 
   const handleToggleFavorite = (videoId: string) => {
     setPlaylist(prev => prev.map(v => 
