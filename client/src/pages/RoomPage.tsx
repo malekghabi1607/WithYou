@@ -23,6 +23,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { Logo } from "../components/ui/Logo";
+import { PollSection } from "../components/room/PollSection";
 import { 
   Play, 
   Pause,
@@ -235,7 +236,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [isPlaying, setIsPlaying] = useState(false);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [newMessage, setNewMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"chat" | "participants">("chat");
+ const [activeTab, setActiveTab] = useState<"chat" | "participants" | "polls">("chat");
+  const [backendSalonId, setBackendSalonId] = useState<string>("");
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(mockParticipants);
@@ -271,7 +273,27 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setRoomCode(room.joinCode);
     }
   }, [roomId]);
-
+ // Récupérer l'ID technique du salon pour les sondages
+  useEffect(() => {
+    if (roomCode) {
+      const fetchSalonId = async () => {
+        try {
+          const token = localStorage.getItem('token');
+          // On met l'URL en dur pour éviter ton erreur 'env'
+          const response = await fetch(`http://localhost:8000/api/salons/${roomCode}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setBackendSalonId(data.id);
+          }
+        } catch (error) {
+          console.error("Erreur ID salon", error);
+        }
+      };
+      fetchSalonId();
+    }
+  }, [roomCode]);
   // Charger la vidéo initiale du salon créé
   useEffect(() => {
     const room = getRoomById(roomId);
@@ -469,7 +491,7 @@ useEffect(() => {
 
   // Broadcaster l'événement via API
   try {
-    const API_URL = import.meta.env.VITE_API_URL;
+    const API_URL = 'http://localhost:8000';
     const token = localStorage.getItem('token');
     
     await fetch(`${API_URL}/api/salons/${roomId}/video-action`, {
@@ -834,7 +856,17 @@ useEffect(() => {
             >
               <Users className="w-4 h-4" />
               Participants ({participantCount})
-            </button>
+            </button><button
+            onClick={() => setActiveTab("polls")}
+            className={`flex-1 px-4 py-3 text-sm transition-colors flex items-center justify-center gap-2 ${
+              activeTab === "polls"
+                ? "bg-red-600 text-white"
+                : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Sondages
+          </button>
           </div>
 
           {activeTab === "chat" && (
@@ -991,6 +1023,15 @@ useEffect(() => {
               </div>
             </div>
           )}
+          {activeTab === "polls" && backendSalonId && (
+        <div className="flex-1 overflow-hidden h-full">
+          <PollSection 
+            salonId={backendSalonId} 
+            isAdmin={isAdmin}
+            currentUser={currentUser.name}
+          />
+        </div>
+      )}
         </div>
       </div>
 

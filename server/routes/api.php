@@ -15,7 +15,7 @@ use App\Http\Controllers\HistoriqueController;
 use App\Http\Controllers\NotationController;
 use App\Http\Controllers\VerifyEmailController;
 // use App\Http\Controllers\Api\ChatController; // décommente si tu as ce controller
-
+use App\Http\Controllers\SondageController;
 use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::routes(['middleware' => ['auth:api']]);
@@ -39,7 +39,18 @@ Route::get('/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify']
 Route::post('/email/resend', [VerifyEmailController::class, 'resend'])
     ->middleware(['auth:api', 'throttle:6,1'])
     ->name('verification.send');
-
+// --- Routes des Sondages ---
+Route::middleware('auth:api')->group(function () {
+    // Lister les sondages d'un salon
+    Route::get('/sondages/{salonId}', [SondageController::class, 'index']);
+    
+    // Créer un sondage
+    Route::post('/sondages', [SondageController::class, 'store']);
+    
+    // Voter
+    Route::post('/sondages/{id}/vote', [SondageController::class, 'vote']);
+});
+Route::get('/salons/{code}', [SalonController::class, 'show']);
 /*
 |--------------------------------------------------------------------------
 | VIDEO STATE (debug public si tu veux)

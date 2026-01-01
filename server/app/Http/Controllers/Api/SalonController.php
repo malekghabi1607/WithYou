@@ -95,6 +95,21 @@ public function broadcastVideoAction(Request $request, $roomId)
 
     return response()->json(['success' => true]);
 }
+// AJOUTÉ : Permet au Frontend de récupérer l'ID du salon via son code
+    public function show($code)
+    {
+        // On cherche le salon par son 'room_code' OU son 'invitation_code'
+        $salon = Salon::where('room_code', $code)
+                      ->orWhere('invitation_code', $code)
+                      ->firstOrFail();
 
+        // On renvoie l'ID au format attendu par le frontend { "id": "..." }
+        return response()->json([
+            'id' => $salon->id_salon,
+            'name' => $salon->name,
+            'room_code' => $salon->room_code,
+            'invitation_code' => $salon->invitation_code
+        ]);
+    }
 
 }

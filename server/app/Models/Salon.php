@@ -22,4 +22,10 @@ class Salon extends Model
         'invitation_code',  // ← AJOUTE CELLE-CI
 
     ];
+    // Relation : Un salon possède plusieurs sondages
+    public function sondages()
+    {
+      
+        return $this->hasMany(Sondage::class, 'id_salon', 'id_salon');
+    }
 }
