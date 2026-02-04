@@ -34,6 +34,7 @@
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { Toaster, toast } from "sonner";
+import { supabase } from '../api/supabase';
 
 // Pages
 import LandingPage from "../pages/LandingPage";
@@ -59,6 +60,7 @@ import { FAQPage } from '../pages/FAQPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
 import { TermsPage } from '../pages/TermsPage';
 import { ResetPasswordPage } from '../pages/ResetPasswordPage';
+import { me } from '../api/auth';
 // Wrappers pour les pages avec paramètres d'URL
 function RoomPageWrapper() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -151,7 +153,7 @@ function RoomLoadingPageWrapper() {
 function RoomInfoPageWrapper() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ email: string; name: string; memberSince?: string; id?: string } | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
@@ -195,7 +197,7 @@ function RoomInfoPageWrapper() {
 function RoomSettingsPageWrapper() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const [currentUser, setCurrentUser] = useState<{ email: string; name: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ email: string; name: string; memberSince?: string; id?: string } | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
@@ -302,9 +304,59 @@ function AppContent() {
 
     // Charger l'utilisateur depuis le localStorage
     const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
+    const token = localStorage.getItem('token');
+    if (savedUser && token) {
+      const user = JSON.parse(savedUser);
+      setCurrentUser(user);
+      me(token)
+        .then((data: any) => {
+          console.log("AppRouter me() data:", data); // DEBUG
+          if (data?.email) {
+            const rawDate = data.created_at || data.email_verified_at;
+            // toast.info(`Debug Date: ${rawDate}`); // Visual Debug
+
+            const memberSince = rawDate
+              ? new Date(rawDate).toLocaleDateString("fr-FR")
+              : undefined;
+            console.log("Calculated memberSince:", memberSince); // DEBUG
+
+            const nextUser = {
+              email: data.email,
+              name: data.username || data.email.split('@')[0],
+              memberSince,
+              id: data.id_user || data.id || undefined,
+            };
+            setCurrentUser(nextUser);
+            localStorage.setItem('currentUser', JSON.stringify(nextUser));
+          }
+        })
+        .catch((error: any) => {
+          // Broad check for AbortError
+          if (error.name === 'AbortError' || error.message?.includes('aborted') || error.message?.includes('AbortError')) {
+            return;
+          }
+
+          console.error("Session invalide", error);
+          const msg = error?.message || "";
+          if (msg.includes("Aucun utilisateur") || msg.includes("Auth session missing")) {
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('token');
+            setCurrentUser(null);
+            toast.error("Session expirée, reconnecte-toi.");
+          }
+        });
     }
+
+    // Écouter les changements d'état Supabase (ex: lien magic link, password recovery)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        navigate("/reset-password");
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleNavigate = (page: string, data?: any) => {
@@ -328,7 +380,7 @@ function AppContent() {
       'privacy': '/privacy',
       'terms': '/terms',
     };
-    
+
     // Gérer les routes spéciales avec roomId
     if (page === 'room-info' && data?.roomId) {
       navigate(`/room/${data.roomId}/info`);
@@ -355,6 +407,26 @@ function AppContent() {
     const user = { email, name };
     setCurrentUser(user);
     localStorage.setItem('currentUser', JSON.stringify(user));
+
+    me()
+      .then((data: any) => {
+        if (data?.email) {
+          const memberSince = (data.created_at || data.email_verified_at)
+            ? new Date(data.created_at || data.email_verified_at).toLocaleDateString("fr-FR")
+            : undefined;
+          const nextUser = {
+            email: data.email,
+            name: data.username || data.email.split('@')[0],
+            memberSince,
+            id: data.id_user || data.id || undefined,
+          };
+          setCurrentUser(nextUser);
+          localStorage.setItem('currentUser', JSON.stringify(nextUser));
+        }
+      })
+      .catch((error) => {
+        console.error("Session invalide", error);
+      });
   };
 
   const handleSignUp = (email: string, name: string) => {
@@ -387,138 +459,147 @@ function AppContent() {
       <Toaster position="top-right" richColors />
       <Routes>
         {/* Routes publiques */}
-        <Route 
-          path="/" 
+        <Route
+          path="/"
           element={
-            <LandingPage 
+            <LandingPage
               onNavigate={handleNavigate}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/signin" 
+        <Route
+          path="/signin"
           element={
-            <SignInPage 
+            <SignInPage
               onNavigate={handleNavigate}
               onSignIn={handleSignIn}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/signup" 
+        <Route
+          path="/signup"
           element={
-            <SignUpPage 
+            <SignUpPage
               onNavigate={handleNavigate}
               onSignUp={handleSignUp}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/forgot-password" 
+        <Route
+          path="/forgot-password"
           element={
-            <ForgotPasswordPage 
+            <ForgotPasswordPage
               onNavigate={handleNavigate}
               theme={theme}
             />
-          } 
+          }
         />
-        <Route 
-          path="/email-sent" 
+        <Route
+          path="/email-sent"
           element={
-            <EmailSentPage 
+            <EmailSentPage
               email={pendingEmail}
               onNavigate={handleNavigate}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/reset-password/:token" 
+        <Route
+          path="/reset-password"
           element={
-            <ResetPasswordPage 
+            <ResetPasswordPage
               onNavigate={handleNavigate}
               theme={theme}
             />
-          } 
+          }
         />
-        <Route 
-          path="/account-confirmed" 
+        <Route
+          path="/reset-password/:token"
           element={
-            <AccountConfirmedPage 
+            <ResetPasswordPage
+              onNavigate={handleNavigate}
+              theme={theme}
+            />
+          }
+        />
+        <Route
+          path="/account-confirmed"
+          element={
+            <AccountConfirmedPage
               onNavigate={handleNavigate}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        
+
         {/* Pages légales */}
-        <Route 
-          path="/about" 
+        <Route
+          path="/about"
           element={
-            <AboutPage 
+            <AboutPage
               onNavigate={handleNavigate}
               currentUser={currentUser}
               onLogout={handleLogout}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/contact" 
+        <Route
+          path="/contact"
           element={
-            <ContactPage 
+            <ContactPage
               onNavigate={handleNavigate}
               currentUser={currentUser}
               onLogout={handleLogout}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/faq" 
+        <Route
+          path="/faq"
           element={
-            <FAQPage 
+            <FAQPage
               onNavigate={handleNavigate}
               currentUser={currentUser}
               onLogout={handleLogout}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/privacy" 
+        <Route
+          path="/privacy"
           element={
-            <PrivacyPage 
+            <PrivacyPage
               onNavigate={handleNavigate}
               currentUser={currentUser}
               onLogout={handleLogout}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
-        <Route 
-          path="/terms" 
+        <Route
+          path="/terms"
           element={
-            <TermsPage 
+            <TermsPage
               onNavigate={handleNavigate}
               currentUser={currentUser}
               onLogout={handleLogout}
               theme={theme}
               onThemeToggle={handleThemeToggle}
             />
-          } 
+          }
         />
 
         {/* Routes protégées */}
@@ -526,7 +607,7 @@ function AppContent() {
           path="/salons"
           element={
             isAuthenticated ? (
-              <SalonsPage 
+              <SalonsPage
                 onNavigate={handleNavigate}
                 currentUser={currentUser}
                 onLogout={handleLogout}
@@ -542,7 +623,7 @@ function AppContent() {
           path="/create-room"
           element={
             isAuthenticated && currentUser ? (
-              <CreateRoomPage 
+              <CreateRoomPage
                 currentUser={currentUser}
                 onNavigate={handleNavigate}
                 onCreateRoom={handleCreateRoom}
@@ -557,7 +638,7 @@ function AppContent() {
           path="/join-room"
           element={
             isAuthenticated ? (
-              <JoinRoomPage 
+              <JoinRoomPage
                 onNavigate={handleNavigate}
                 currentUser={currentUser}
                 theme={theme}
@@ -571,7 +652,7 @@ function AppContent() {
           path="/join-with-code"
           element={
             isAuthenticated ? (
-              <JoinWithCodePage 
+              <JoinWithCodePage
                 roomId="1"
                 onNavigate={handleNavigate}
                 onJoinRoom={(roomId) => navigate(`/room-loading/${roomId}`)}
@@ -585,17 +666,13 @@ function AppContent() {
         <Route
           path="/public-rooms"
           element={
-            isAuthenticated ? (
-              <PublicRoomsPage 
-                onNavigate={handleNavigate}
-                currentUser={currentUser}
-                onSignOut={handleLogout}
-                theme={theme}
-                onThemeToggle={handleThemeToggle}
-              />
-            ) : (
-              <Navigate to="/signin" replace />
-            )
+            <PublicRoomsPage
+              onNavigate={handleNavigate}
+              currentUser={currentUser}
+              onSignOut={handleLogout}
+              theme={theme}
+              onThemeToggle={handleThemeToggle}
+            />
           }
         />
         <Route
@@ -621,11 +698,7 @@ function AppContent() {
         <Route
           path="/room/:roomId/info"
           element={
-            isAuthenticated ? (
-              <RoomInfoPageWrapper />
-            ) : (
-              <Navigate to="/signin" replace />
-            )
+            <RoomInfoPageWrapper />
           }
         />
         <Route
@@ -652,10 +725,14 @@ function AppContent() {
           path="/profile"
           element={
             isAuthenticated && currentUser ? (
-              <ProfilePage 
+              <ProfilePage
                 currentUser={currentUser}
                 onNavigate={handleNavigate}
                 onLogout={handleLogout}
+                onUserUpdate={(updatedUser) => {
+                  setCurrentUser(updatedUser);
+                  localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+                }}
                 theme={theme}
               />
             ) : (

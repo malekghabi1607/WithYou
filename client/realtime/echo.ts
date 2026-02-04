@@ -1,9 +1,8 @@
 import Echo from "laravel-echo";
 import Pusher from "pusher-js";
+import { API_BASE_URL } from "../src/api";
 
 (window as any).Pusher = Pusher;
-
-const API_URL = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const REVERB_KEY = import.meta.env.VITE_REVERB_APP_KEY ?? "local";
 const REVERB_HOST = import.meta.env.VITE_REVERB_HOST ?? "127.0.0.1";
@@ -33,7 +32,7 @@ export function makeEcho() {
           try {
             const token = getToken();
 
-            const res = await fetch(`${API_URL}/broadcasting/auth`, {
+            const res = await fetch(`${API_BASE_URL}/broadcasting/auth`, {
               method: "POST",
               headers: {
                 Accept: "application/json",

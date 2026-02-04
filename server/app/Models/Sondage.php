@@ -52,6 +52,6 @@ class Sondage extends Model
     public function salon()
     {
         // On suppose que ton modèle Salon s'appelle 'Salon'
-        return $this->belongsTo(Salon::class, 'id_salon', 'id'); 
+        return $this->belongsTo(Salon::class, 'id_salon', 'id_salon'); 
     }
 }

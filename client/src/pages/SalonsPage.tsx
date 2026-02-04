@@ -20,11 +20,13 @@
  * Utilisée dans routes/AppRouter.tsx pour l’accès aux fonctionnalités
  * liées aux salons.
  */
+import { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
-import { Plus, DoorOpen } from "lucide-react";
+import { Plus, DoorOpen, Play } from "lucide-react";
 import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
+import { fetchMySalons } from "../api/rooms";
 
 interface SalonsPageProps {
   onNavigate: (page: string) => void;
@@ -41,6 +43,16 @@ export function SalonsPage({
   theme = "dark",
   onThemeToggle
 }: SalonsPageProps) {
+  const [mySalons, setMySalons] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchMySalons().then(res => {
+        if (res.salons) setMySalons(res.salons);
+      });
+    }
+  }, [currentUser]);
+
   return (
     <div className={`min-h-screen flex flex-col ${theme === "dark" ? "bg-black text-white" : "bg-white text-black"}`}>
       <Header
@@ -63,18 +75,16 @@ export function SalonsPage({
 
           <div className="grid md:grid-cols-2 gap-6">
             {/* Créer un salon */}
-            <Card 
-              className={`${
-                theme === "dark" 
-                  ? "bg-gradient-to-br from-red-950/30 to-black border-red-900/30 hover:border-red-700/50" 
-                  : "bg-gradient-to-br from-red-50 to-white border-red-200 hover:border-red-400"
-              } transition-all duration-300 cursor-pointer group`}
+            <Card
+              className={`${theme === "dark"
+                ? "bg-gradient-to-br from-red-950/30 to-black border-red-900/30 hover:border-red-700/50"
+                : "bg-gradient-to-br from-red-50 to-white border-red-200 hover:border-red-400"
+                } transition-all duration-300 cursor-pointer group`}
               onClick={() => onNavigate("create-room")}
             >
               <CardHeader className="text-center">
-                <div className={`mx-auto w-20 h-20 rounded-full ${
-                  theme === "dark" ? "bg-red-900/30" : "bg-red-100"
-                } flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                <div className={`mx-auto w-20 h-20 rounded-full ${theme === "dark" ? "bg-red-900/30" : "bg-red-100"
+                  } flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
                   <Plus className={`w-10 h-10 ${theme === "dark" ? "text-red-500" : "text-red-600"}`} />
                 </div>
                 <CardTitle className="text-2xl">Créer un salon</CardTitle>
@@ -83,12 +93,11 @@ export function SalonsPage({
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-center">
-                <Button 
-                  className={`w-full ${
-                    theme === "dark"
-                      ? "bg-red-600 hover:bg-red-700"
-                      : "bg-red-600 hover:bg-red-700"
-                  } text-white`}
+                <Button
+                  className={`w-full ${theme === "dark"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-red-600 hover:bg-red-700"
+                    } text-white`}
                   size="lg"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -102,18 +111,16 @@ export function SalonsPage({
             </Card>
 
             {/* Rejoindre un salon */}
-            <Card 
-              className={`${
-                theme === "dark" 
-                  ? "bg-gradient-to-br from-blue-950/30 to-black border-blue-900/30 hover:border-blue-700/50" 
-                  : "bg-gradient-to-br from-blue-50 to-white border-blue-200 hover:border-blue-400"
-              } transition-all duration-300 cursor-pointer group`}
+            <Card
+              className={`${theme === "dark"
+                ? "bg-gradient-to-br from-blue-950/30 to-black border-blue-900/30 hover:border-blue-700/50"
+                : "bg-gradient-to-br from-blue-50 to-white border-blue-200 hover:border-blue-400"
+                } transition-all duration-300 cursor-pointer group`}
               onClick={() => onNavigate("join-room")}
             >
               <CardHeader className="text-center">
-                <div className={`mx-auto w-20 h-20 rounded-full ${
-                  theme === "dark" ? "bg-blue-900/30" : "bg-blue-100"
-                } flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                <div className={`mx-auto w-20 h-20 rounded-full ${theme === "dark" ? "bg-blue-900/30" : "bg-blue-100"
+                  } flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
                   <DoorOpen className={`w-10 h-10 ${theme === "dark" ? "text-blue-500" : "text-blue-600"}`} />
                 </div>
                 <CardTitle className="text-2xl">Rejoindre un salon</CardTitle>
@@ -122,12 +129,11 @@ export function SalonsPage({
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-center">
-                <Button 
-                  className={`w-full ${
-                    theme === "dark"
-                      ? "bg-blue-600 hover:bg-blue-700"
-                      : "bg-blue-600 hover:bg-blue-700"
-                  } text-white`}
+                <Button
+                  className={`w-full ${theme === "dark"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                    } text-white`}
                   size="lg"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -141,6 +147,33 @@ export function SalonsPage({
             </Card>
           </div>
 
+
+          {/* Mes Salons */}
+          {mySalons.length > 0 && (
+            <div className="mt-12">
+              <h2 className="text-2xl mb-6 pl-2 border-l-4 border-red-600">Vos Salons</h2>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {mySalons.map((salon) => (
+                  <Card key={salon.id_salon} className={`${theme === "dark" ? "bg-zinc-900 border-zinc-800" : "bg-white"} transition-all hover:scale-[1.02]`}>
+                    <CardHeader>
+                      <CardTitle className="truncate">{salon.name}</CardTitle>
+                      <CardDescription className="line-clamp-1 text-xs font-mono">CODE: {salon.id_salon}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button
+                        className="w-full bg-red-600 hover:bg-red-700 text-white"
+                        onClick={() => onNavigate("room", { roomId: salon.id_salon })}
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Rejoindre
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Salons publics */}
           <div className="mt-12">
             <Card className={theme === "dark" ? "bg-gray-900/50 border-gray-800" : "bg-gray-50 border-gray-200"}>
@@ -151,13 +184,12 @@ export function SalonsPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button 
+                <Button
                   variant="outline"
-                  className={`w-full ${
-                    theme === "dark"
-                      ? "border-gray-700 hover:bg-gray-800"
-                      : "border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={`w-full ${theme === "dark"
+                    ? "border-gray-700 hover:bg-gray-800"
+                    : "border-gray-300 hover:bg-gray-100"
+                    }`}
                   onClick={() => onNavigate("public-rooms")}
                 >
                   Voir tous les salons publics

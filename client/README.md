@@ -262,7 +262,7 @@ npm run preview
 Créer un fichier .env à la racine du dossier client :
 
 ```bash
-VITE_API_URL="http://localhost:8000/api"
+VITE_API_URL="http://localhost:8000"
 
 ```
 

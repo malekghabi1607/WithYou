@@ -11,10 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('videos', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('video')) {
+            Schema::create('video', function (Blueprint $table) {
+                $table->string('id_video', 36)->primary();
+                $table->string('youtube_id', 50)->unique();
+                $table->string('titre', 255);
+                $table->timestamp('created_at')->nullable();
+            });
+        }
     }
 
     /**
@@ -22,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('videos');
+        Schema::dropIfExists('video');
     }
 };

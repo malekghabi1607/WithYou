@@ -22,6 +22,7 @@
             'user_id',
             'salon_id',
             'content',
+            'sent_at',
         ];
 
         protected static function boot()

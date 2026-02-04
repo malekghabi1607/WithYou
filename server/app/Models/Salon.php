@@ -16,11 +16,16 @@ class Salon extends Model
         'id_salon',
         'room_code',
         'name',
+        'description',
+        'is_public',
+        'password',
+        'max_participants',
         'owner_id',
+        'current_video_id',
+        'video_status',
+        'video_time',
         'created_at',
-        'updated_at',
-        'invitation_code',  // ← AJOUTE CELLE-CI
-
+        'invitation_code',
     ];
     // Relation : Un salon possède plusieurs sondages
     public function sondages()

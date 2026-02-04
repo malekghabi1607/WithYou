@@ -11,10 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('salon_members', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('salon_member')) {
+            Schema::create('salon_member', function (Blueprint $table) {
+                $table->string('id_salon_member', 36)->primary();
+                $table->string('user_id', 36);
+                $table->string('salon_id', 36);
+                $table->timestamp('join_date')->nullable();
+                $table->boolean('is_active')->default(true);
+            });
+        }
     }
 
     /**
@@ -22,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('salon_members');
+        Schema::dropIfExists('salon_member');
     }
 };

@@ -35,11 +35,11 @@ import { Label } from "../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Logo } from "../components/ui/Logo";
-import { 
-  ArrowLeft, 
-  Hash, 
-  Lock, 
-  Users, 
+import {
+  ArrowLeft,
+  Hash,
+  Lock,
+  Users,
   Crown,
   Globe,
   LogIn,
@@ -48,7 +48,7 @@ import {
   Key
 } from "lucide-react";
 import { toast } from "sonner";
-import { getRoomByJoinCode } from "../utils/storage";
+import { fetchSalonByCode, joinSalon } from "../api/rooms";
 
 interface JoinRoomPageProps {
   onNavigate: (page: string, data?: any) => void;
@@ -63,7 +63,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
   const [foundRoom, setFoundRoom] = useState<any>(null);
   const [showPasswordField, setShowPasswordField] = useState(false);
 
-  const handleSearchRoom = () => {
+  const handleSearchRoom = async () => {
     if (!roomCode.trim()) {
       toast.error("Veuillez entrer un code de salon");
       return;
@@ -75,54 +75,37 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
     }
 
     setIsSearching(true);
-
-    // Recherche réelle dans les salons sauvegardés
-    setTimeout(() => {
-      const room = getRoomByJoinCode(roomCode);
-      
-      if (!room) {
-        setIsSearching(false);
-        setFoundRoom(null);
-        toast.error("❌ Aucun salon trouvé avec ce code");
-        return;
-      }
-
-      // Vérifier si le salon n'est pas complet (UNIQUEMENT pour les salons privés)
-      if (!room.isPublic && room.participants >= room.maxParticipants) {
-        setIsSearching(false);
-        setFoundRoom(null);
-        toast.error("⚠️ Ce salon est complet");
-        return;
-      }
-
-      // Convertir le salon en format pour l'affichage
+    try {
+      const room = await fetchSalonByCode(roomCode.trim());
       const roomData = {
-        id: room.id,
+        id: room.id_salon,
         name: room.name,
-        description: room.description,
-        host: room.creator,
-        participants: room.participants,
-        maxParticipants: room.maxParticipants,
-        isPublic: room.isPublic,
-        hasPassword: !room.isPublic && !!room.password,
-        thumbnail: room.thumbnail,
-        rating: room.rating,
-        password: room.password
+        description: room.description || "Aucune description",
+        host: "Admin",
+        participants: 0,
+        maxParticipants: room.max_participants || 20,
+        isPublic: !!room.is_public,
+        hasPassword: !room.is_public && !!room.has_password,
+        thumbnail: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400",
+        rating: 0,
+        password: undefined,
       };
-
       setFoundRoom(roomData);
       setIsSearching(false);
-
       if (roomData.hasPassword) {
         setShowPasswordField(true);
         toast.info("🔒 Ce salon est protégé par un mot de passe");
       } else {
         toast.success("✅ Salon trouvé !");
       }
-    }, 1500);
+    } catch (error) {
+      setIsSearching(false);
+      setFoundRoom(null);
+      toast.error("❌ Aucun salon trouvé avec ce code");
+    }
   };
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     if (!foundRoom) {
       toast.error("Veuillez d'abord rechercher un salon");
       return;
@@ -133,19 +116,15 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
       return;
     }
 
-    // Vérifier si le mot de passe est correct (simulation)
-    if (foundRoom.hasPassword) {
-      if (roomPassword !== foundRoom.password) {
-        toast.error("❌ Mot de passe incorrect");
-        return;
-      }
+    try {
+      await joinSalon(foundRoom.id, foundRoom.hasPassword ? roomPassword : undefined);
+      toast.success(`Connexion au salon "${foundRoom.name}"...`);
+      setTimeout(() => {
+        onNavigate("room-loading", { roomId: foundRoom.id });
+      }, 500);
+    } catch (error: any) {
+      toast.error(error?.message || "Erreur lors de la connexion au salon");
     }
-
-    toast.success(`Connexion au salon "${foundRoom.name}"...`);
-    
-    setTimeout(() => {
-      onNavigate("room-loading", { roomId: foundRoom.id });
-    }, 1000);
   };
 
   return (
@@ -185,13 +164,13 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
 
           <div className="grid md:grid-cols-2 gap-8">
             {/* Left: Form */}
-            <Card className={theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-white border-gray-200"}>
+            <Card className={theme === "dark" ? "bg-zinc-900 border-red-900/20 text-white" : "bg-white border-gray-200"}>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className={`flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-black"}`}>
                   <Hash className="w-5 h-5 text-red-500" />
                   Code du Salon
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className={theme === "dark" ? "text-gray-300" : "text-gray-600"}>
                   Demandez le code d'invitation à l'administrateur du salon
                 </CardDescription>
               </CardHeader>
@@ -214,11 +193,10 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                         setShowPasswordField(false);
                         setRoomPassword("");
                       }}
-                      className={`pl-11 h-12 text-lg uppercase tracking-wider ${
-                        theme === "dark" 
-                          ? "bg-zinc-800 border-zinc-700 text-white" 
-                          : "bg-white border-gray-300"
-                      }`}
+                      className={`pl-11 h-12 text-lg uppercase tracking-wider ${theme === "dark"
+                        ? "bg-zinc-800 border-zinc-700 text-white"
+                        : "bg-white border-gray-300"
+                        }`}
                       maxLength={12}
                     />
                   </div>
@@ -241,11 +219,10 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                         placeholder="Entrez le mot de passe"
                         value={roomPassword}
                         onChange={(e) => setRoomPassword(e.target.value)}
-                        className={`pl-11 h-12 ${
-                          theme === "dark" 
-                            ? "bg-zinc-800 border-zinc-700 text-white" 
-                            : "bg-white border-gray-300"
-                        }`}
+                        className={`pl-11 h-12 ${theme === "dark"
+                          ? "bg-zinc-800 border-zinc-700 text-white"
+                          : "bg-white border-gray-300"
+                          }`}
                       />
                     </div>
                   </div>
@@ -296,19 +273,19 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
             {foundRoom ? (
               <Card className={theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-white border-gray-200"}>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className={`flex items-center gap-2 ${theme === "dark" ? "text-white" : "text-black"}`}>
                     <CheckCircle className="w-5 h-5 text-green-500" />
                     Salon Trouvé
                   </CardTitle>
-                  <CardDescription>
+                  <CardDescription className={theme === "dark" ? "text-gray-300" : "text-gray-600"}>
                     Voici les détails du salon
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* Room Thumbnail */}
                   <div className="relative rounded-lg overflow-hidden">
-                    <img 
-                      src={foundRoom.thumbnail} 
+                    <img
+                      src={foundRoom.thumbnail}
                       alt={foundRoom.name}
                       className="w-full h-48 object-cover"
                     />

@@ -1,11 +1,11 @@
 // src/api/auth.ts
-import { API_URL } from "./index";
+import { supabase } from "./supabase";
 
 type Json = Record<string, any>;
 
 export type AuthToken = {
   token: string;
-  raw: Json; // on garde la réponse brute au cas où tu veux user/id/etc.
+  raw: Json;
 };
 
 export type RegisterPayload = {
@@ -15,152 +15,124 @@ export type RegisterPayload = {
   password_confirmation: string;
 };
 
-function extractToken(data: Json): string | null {
-  return data?.access_token || data?.token || data?.jwt || null;
-}
-
-function extractErrorMessage(data: any): string {
-  // Laravel renvoie souvent {message: "..."} ou {errors: {...}}
-  if (!data) return "Erreur inconnue";
-
-  if (typeof data === "string") return data;
-  if (typeof data?.message === "string") return data.message;
-
-  // Validation errors: { errors: { field: ["msg"] } }
-  const errors = data?.errors;
-  if (errors && typeof errors === "object") {
-    const firstKey = Object.keys(errors)[0];
-    const firstVal = errors[firstKey];
-    if (Array.isArray(firstVal) && firstVal[0]) return String(firstVal[0]);
-    if (typeof firstVal === "string") return firstVal;
-  }
-
-  try {
-    return JSON.stringify(data);
-  } catch {
-    return "Erreur inconnue";
-  }
-}
-
-async function request<T = any>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(options.headers as Record<string, string> | undefined),
-  };
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers });
-  } catch {
-    // Erreur réseau (backend off, CORS, etc.)
-    throw new Error("Erreur réseau (backend inaccessible)");
-  }
-
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    throw new Error(extractErrorMessage(data) || `Erreur HTTP ${res.status}`);
-  }
-
-  return data as T;
-}
-
-/** POST /api/auth/login */
+/** POST /api/auth/login -> Supabase SignIn */
 export async function login(email: string, password: string): Promise<AuthToken> {
-  const data = await request<Json>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
   });
 
-  const token = extractToken(data);
-  if (!token) throw new Error("Token manquant dans la réponse du backend.");
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const token = data.session?.access_token || "";
+
+  // Set localStorage for compatibility with legacy code
+  localStorage.setItem("token", token);
 
   return { token, raw: data };
 }
 
-/** POST /api/auth/register */
+/** POST /api/auth/register -> Supabase SignUp */
 export async function register(payload: RegisterPayload): Promise<AuthToken> {
-  const data = await request<Json>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  if (payload.password !== payload.password_confirmation) {
+    throw new Error("Les mots de passe ne correspondent pas.");
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: payload.email,
+    password: payload.password,
+    options: {
+      data: {
+        username: payload.username,
+      },
+    },
   });
 
-  // selon backend : il peut renvoyer token direct OU juste user
-  const token = extractToken(data);
-  if (!token) {
-    // Si register ne renvoie pas de token, on laisse raw et on met token vide
-    // (tu pourras enchaîner avec login côté page si besoin)
-    return { token: "", raw: data };
+  if (error) {
+    throw new Error(error.message);
   }
+
+  // Supabase might require email confirmation.
+  // If session is null, user check their email.
+  const token = data.session?.access_token || "";
 
   return { token, raw: data };
 }
 
-/** POST /api/auth/forgot-password */
+/** POST /api/auth/forgot-password -> Supabase Reset Password */
 export async function forgotPassword(email: string) {
-  let res: Response;
-
-  try {
-    res = await fetch(`${API_URL}/auth/forgot-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-  } catch {
-    throw new Error("Erreur réseau (backend inaccessible)");
-  }
-
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    const msg =
-      (data && typeof data === "object" && (data as any).message) ||
-      `Erreur HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-
-  return data; // ex: { message: "Email envoyé" }
-}
-/** POST /api/auth/reset-password */
-export async function resetPassword(payload: any) {
-  // On envoie token, email, password et password_confirmation
-  const res = await fetch(`${API_URL}/auth/reset-password`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    body: JSON.stringify(payload),
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
   });
 
-  const data = await res.json();
+  if (error) throw new Error(error.message);
 
-  if (!res.ok) {
-    // Gestion des erreurs Laravel
-    if (data.errors) {
-      // Si Laravel renvoie { errors: { email: ["Message"] } }
-      const firstErrorKey = Object.keys(data.errors)[0];
-      const firstErrorMessage = data.errors[firstErrorKey][0];
-      throw new Error(firstErrorMessage);
-    }
-    throw new Error(data.message || data.email || "Impossible de réinitialiser le mot de passe");
+  return { message: "Email envoyé" };
+}
+
+/** POST /api/auth/reset-password -> Supabase Update User */
+export async function resetPassword(payload: any) {
+  // Normally requires being logged in or having a recovery token session
+  const { error } = await supabase.auth.updateUser({
+    password: payload.password
+  });
+
+  if (error) throw new Error(error.message);
+
+  return { message: "Mot de passe mis à jour" };
+}
+
+/** GET /api/auth/me -> Supabase Get User */
+export async function me(token?: string): Promise<Json> {
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    throw new Error("Aucun utilisateur connecté.");
   }
 
-  return data;
-}
-/** GET /api/auth/me */
-export async function me(token?: string): Promise<Json> {
-  // token optionnel: si pas fourni, on tente localStorage
-  const t = token || localStorage.getItem("token") || localStorage.getItem("jwt_token") || "";
-  if (!t) throw new Error("Aucun token trouvé (connecte-toi d'abord).");
+  // Fetch real profile from 'users' table
+  const { data: publicProfile } = await supabase
+    .from('users')
+    .select('username')
+    .eq('id_user', user.id)
+    .maybeSingle();
 
-  return request<Json>("/auth/me", { method: "GET" }, t);
+  return {
+    id: user.id,
+    // Prioritize public DB username, then metadata, then email
+    username: publicProfile?.username || user.user_metadata?.username || user.email?.split('@')[0],
+    email: user.email,
+    created_at: user.created_at
+  };
 }
 
-/** Supprime le token côté front (pas besoin du backend) */
-export function logoutLocal() {
+/** PUT /api/auth/profile -> Update User Profile */
+export async function updateProfile(payload: { username: string; email?: string }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Non connecté");
+
+  // 1. Update Supabase Auth (metadata)
+  const { error: authError } = await supabase.auth.updateUser({
+    data: { username: payload.username }
+    // email updates require confirmation flow usually, skipping for now unless simple
+  });
+  if (authError) throw authError;
+
+  // 2. Update Public Users Table
+  const { error: dbError } = await supabase
+    .from('users')
+    .update({ username: payload.username })
+    .eq('id_user', user.id);
+
+  if (dbError) throw dbError;
+
+  return { success: true };
+}
+
+/** Supprime le token côté front (Supabase SignOut) */
+export async function logoutLocal() {
   localStorage.removeItem("token");
-  localStorage.removeItem("jwt_token");
+  await supabase.auth.signOut();
 }

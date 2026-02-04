@@ -23,6 +23,8 @@ import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
 
 import { Video, Users, Lock, Globe, Star, Crown, Play } from "lucide-react";
+import { useEffect, useState } from "react";
+import { fetchSalonByCode } from "../api/rooms";
 
 interface RoomInfoPageProps {
   roomId: string;
@@ -32,25 +34,39 @@ interface RoomInfoPageProps {
   theme?: "light" | "dark";
 }
 
-const mockRoomDetails = {
-  "1": {
-    id: "1",
-    name: "🎬 Soirée Cinéma Classique",
-    description: "Un salon dédié aux plus grands films classiques du cinéma. Nous regardons ensemble les chefs-d'œuvre qui ont marqué l'histoire du 7ème art, avec des discussions passionnées sur la réalisation, les acteurs et l'impact culturel.",
-    creator: "CinePhile",
-    participants: 8,
-    maxParticipants: 20,
-    isPublic: true,
-    currentVideo: "Le Parrain (1972)",
-    thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=1080",
-    createdAt: "Il y a 3 jours",
-    tags: ["Cinéma", "Classique", "Discussion"],
-    rating: 4.8
-  }
-};
+const DEFAULT_THUMBNAIL =
+  "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1080";
 
 export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, theme = "dark" }: RoomInfoPageProps) {
-  const room = mockRoomDetails[roomId as keyof typeof mockRoomDetails] || mockRoomDetails["1"];
+  const [room, setRoom] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await fetchSalonByCode(roomId);
+        setRoom({
+          id: data.room_code,
+          name: data.name,
+          description: data.description || "Aucune description",
+          creator: "Admin",
+          participants: 0,
+          maxParticipants: data.max_participants || 20,
+          isPublic: !!data.is_public,
+          currentVideo: "Aucune vidéo",
+          thumbnail: DEFAULT_THUMBNAIL,
+          createdAt: "Aujourd'hui",
+          tags: ["Salon", "Public"],
+          rating: 0,
+        });
+      } catch (error) {
+        console.error("Erreur chargement salon", error);
+      }
+    };
+
+    load();
+  }, [roomId]);
+
+  if (!room) return null;
 
   const handleJoin = () => {
     if (!currentUser) {

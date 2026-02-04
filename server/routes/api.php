@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\SalonController;
 
 use App\Http\Controllers\Api\MessageController;
+use App\Http\Controllers\Api\FavoriteController;
 
 use App\Http\Controllers\VideoSyncController;
 use App\Http\Controllers\Test\VideoSyncTestController;
@@ -50,7 +51,8 @@ Route::middleware('auth:api')->group(function () {
     // Voter
     Route::post('/sondages/{id}/vote', [SondageController::class, 'vote']);
 });
-Route::get('/salons/{code}', [SalonController::class, 'show']);
+Route::get('/salons/{code}', [SalonController::class, 'show'])
+    ->where('code', '^(?!me$).*');
 /*
 |--------------------------------------------------------------------------
 | VIDEO STATE (debug public si tu veux)
@@ -72,11 +74,13 @@ Route::post('/salon/{id}/video/state', [VideoSyncController::class, 'saveState']
 
     // Salons
     Route::get('/salons', [SalonController::class, 'index']);
-    Route::post('/salons', [SalonController::class, 'store']);
-    Route::post('/salons/join', [SalonController::class, 'join']);
+    Route::post('/salons', [SalonController::class, 'store'])->middleware('auth:api');
+    Route::post('/salons/join', [SalonController::class, 'join'])->middleware('auth:api');
+    Route::get('/salons/me', [SalonController::class, 'mySalons'])->middleware('auth:api');
     Route::get('/salons/{salon}', [SalonController::class, 'show']);
-    Route::post('/salons/{salon}/connect',    [SalonController::class, 'connect']);
-    Route::post('/salons/{salon}/disconnect', [SalonController::class, 'disconnect']);
+    Route::post('/salons/{salon}/connect',    [SalonController::class, 'connect'])->middleware('auth:api');
+    Route::post('/salons/{salon}/disconnect', [SalonController::class, 'disconnect'])->middleware('auth:api');
+    Route::get('/salons/{salon}/participants', [SalonController::class, 'participants'])->middleware('auth:api');
     Route::get('/salons/{id_salon}/state', [VideoSyncController::class, 'getState']);
     Route::post('/salons/{id_salon}/state', [VideoSyncController::class, 'saveState']);
 
@@ -87,12 +91,19 @@ Route::post('/salon/{id}/video/state', [VideoSyncController::class, 'saveState']
     Route::post('/salon/{salon}/video/sync',  [VideoSyncController::class, 'syncVideoTime']);
     Route::post('/salon/{salon}/video/state', [VideoSyncController::class, 'saveState']);
     Route::get('/salon/{salon}/video/state',  [VideoSyncController::class, 'getState']);
-Route::post('/salons', [SalonController::class, 'store']);
-Route::get('/salons/{salon}', [SalonController::class, 'show']);
+Route::get('/salons/{salonCode}/playlist', [PlaylistController::class, 'index'])
+    ->middleware('auth:api')
+    ->withoutMiddleware(\Illuminate\Routing\Middleware\SubstituteBindings::class);
+Route::post('/salons/{salonCode}/playlist', [PlaylistController::class, 'store'])
+    ->middleware('auth:api')
+    ->withoutMiddleware(\Illuminate\Routing\Middleware\SubstituteBindings::class);
+Route::delete('/salons/{salonCode}/playlist/{id}', [PlaylistController::class, 'destroy'])
+    ->middleware('auth:api')
+    ->withoutMiddleware(\Illuminate\Routing\Middleware\SubstituteBindings::class);
 
-Route::get('/salons/{salon}/playlist', [PlaylistController::class, 'index']);
-Route::post('/salons/{salon}/playlist', [PlaylistController::class, 'store']);
-Route::delete('/salons/{salon}/playlist/{id}', [PlaylistController::class, 'destroy']);
+Route::get('/favorites', [FavoriteController::class, 'index'])->middleware('auth:api');
+Route::post('/favorites', [FavoriteController::class, 'store'])->middleware('auth:api');
+Route::delete('/favorites/{youtubeId}', [FavoriteController::class, 'destroy'])->middleware('auth:api');
 
 
 Route::post('/salons/{id_salon}/historique', [HistoriqueController::class, 'store']);
@@ -119,4 +130,3 @@ Route::get('/classement/hebdo', [NotationController::class, 'classementHebdo']);
     Route::post('/salons/{roomId}/video-action', [SalonController::class, 'broadcastVideoAction']);
     
 });
-

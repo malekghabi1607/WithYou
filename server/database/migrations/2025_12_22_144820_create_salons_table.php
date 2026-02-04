@@ -11,10 +11,23 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('salons', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('salon')) {
+            Schema::create('salon', function (Blueprint $table) {
+                $table->string('id_salon', 36)->primary();
+                $table->string('room_code', 20)->unique();
+                $table->string('invitation_code', 20)->unique()->nullable();
+                $table->string('name', 100);
+                $table->text('description')->nullable();
+                $table->boolean('is_public')->default(true);
+                $table->string('password')->nullable();
+                $table->unsignedInteger('max_participants')->default(20);
+                $table->string('owner_id', 36)->nullable();
+                $table->string('current_video_id')->nullable();
+                $table->string('video_status')->nullable();
+                $table->unsignedInteger('video_time')->default(0);
+                $table->timestamp('created_at')->nullable();
+            });
+        }
     }
 
     /**
@@ -22,6 +35,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('salons');
+        Schema::dropIfExists('salon');
     }
 };

@@ -10,6 +10,7 @@ use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\Log;
 class AuthController extends Controller
 {
     /**
@@ -29,9 +30,18 @@ public function register(Request $request)
         $user->username      = $data['username'];
         $user->email         = $data['email'];
         $user->password_hash = Hash::make($data['password']);
+        $user->password_changed_at = now();
+        if (app()->environment('local')) {
+            $user->email_verified_at = now();
+        }
         $user->save();
 
         event(new Registered($user));
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Exception $e) {
+            Log::error('Email verification send failed', ['error' => $e->getMessage()]);
+        }
 
         $token = JWTAuth::fromUser($user);
 
@@ -59,10 +69,15 @@ public function login(Request $request)
         $user = auth()->user();
 
         if (!$user->hasVerifiedEmail()) {
-            auth()->logout();
-            return response()->json([
-                'message' => 'Votre email n\'est pas vérifié. Veuillez vérifier votre boîte mail.',
-            ], 403);
+            if (app()->environment('local')) {
+                $user->email_verified_at = now();
+                $user->save();
+            } else {
+                auth()->logout();
+                return response()->json([
+                    'message' => 'Votre email n\'est pas vérifié. Veuillez vérifier votre boîte mail.',
+                ], 403);
+            }
         }
 
         return response()->json([
@@ -135,6 +150,7 @@ public function login(Request $request)
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
                 $user->password_hash = Hash::make($password); // Attention : ton champ s'appelle password_hash
+                $user->password_changed_at = now();
                 $user->save();
             }
         );

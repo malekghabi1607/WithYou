@@ -11,10 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('video_state', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('video_state')) {
+            Schema::create('video_state', function (Blueprint $table) {
+                $table->string('salon_id', 36)->primary();
+                $table->string('video_id')->nullable();
+                $table->string('status')->nullable();
+                $table->unsignedInteger('time')->default(0);
+                $table->timestamp('updated_at')->nullable();
+            });
+        }
     }
 
     /**

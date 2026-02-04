@@ -6,7 +6,7 @@ import { Label } from "../components/ui/label";
 import { Badge } from "../components/ui/badge";
 import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
-import { 
+import {
   User,
   Mail,
   Calendar,
@@ -26,12 +26,15 @@ import {
   Plus
 } from "lucide-react";
 import { toast } from "sonner";
-import { getRooms, getFavorites } from "../utils/storage";
+import { fetchMySalons } from "../api/rooms";
+import { fetchFavorites, removeFavorite } from "../api/favorites";
+import { updateProfile } from "../api/auth";
 
 interface ProfilePageProps {
-  currentUser: { email: string; name: string };
+  currentUser: { email: string; name: string; memberSince?: string; id?: string };
   onNavigate: (page: string, data?: any) => void;
   onLogout: () => void;
+  onUserUpdate: (user: any) => void;
   theme?: "light" | "dark";
 }
 
@@ -53,107 +56,102 @@ interface FavoriteVideo {
   addedAt: string;
 }
 
-const mockUserRooms: Room[] = [
-  {
-    id: "1",
-    name: "🎬 Soirée Cinéma Classique",
-    description: "Films classiques et discussions",
-    isPublic: true,
-    role: "admin",
-    members: 8,
-    lastActive: "Il y a 5 min",
-    thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400"
-  },
-  {
-    id: "2",
-    name: "🎮 Gaming Sessions",
-    description: "Streams gaming ensemble",
-    isPublic: true,
-    role: "member",
-    members: 15,
-    lastActive: "Il y a 2h",
-    thumbnail: "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400"
-  }
-];
+const DEFAULT_THUMBNAIL = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400";
 
-const mockFavorites: FavoriteVideo[] = [
-  {
-    id: "1",
-    title: "Le Parrain (1972)",
-    thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=300",
-    addedAt: "Il y a 2 jours"
-  },
-  {
-    id: "2",
-    title: "Pulp Fiction (1994)",
-    thumbnail: "https://images.unsplash.com/photo-1574267432644-f74f8ec55d1f?w=300",
-    addedAt: "Il y a 5 jours"
-  },
-  {
-    id: "3",
-    title: "Inception (2010)",
-    thumbnail: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=300",
-    addedAt: "Il y a 1 semaine"
-  }
-];
-
-export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" }: ProfilePageProps) {
+export function ProfilePage({ currentUser, onNavigate, onLogout, onUserUpdate, theme = "dark" }: ProfilePageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(currentUser.name);
-  const [favorites, setFavorites] = useState(mockFavorites);
-  const [userRooms, setUserRooms] = useState<Room[]>(mockUserRooms);
+  const [favorites, setFavorites] = useState<FavoriteVideo[]>([]);
+  const [userRooms, setUserRooms] = useState<Room[]>([]);
 
-  // Load user's rooms and favorites from localStorage
+  // Load user's rooms and favorites from API
   useEffect(() => {
-    const allRooms = getRooms();
-    const savedFavorites = getFavorites(currentUser.email);
-    
-    // Map saved rooms to profile format, determining role based on creatorEmail
-    const mappedRooms: Room[] = allRooms.map(room => ({
-      id: room.id,
-      name: room.name,
-      description: room.description,
-      isPublic: room.isPublic,
-      role: room.creatorEmail === currentUser.email ? "admin" : "member",
-      members: room.participants,
-      lastActive: "En ligne",
-      thumbnail: room.thumbnail
-    }));
+    const loadRooms = async () => {
+      try {
+        const data = await fetchMySalons();
+        // Since api/rooms.ts fetchMySalons returns { salons: [...] } which are owned salons
+        const owned = (data.salons || []).map((room: any) => ({
+          id: room.id_salon,
+          name: room.name,
+          description: room.description || "Aucune description",
+          isPublic: !!room.is_public,
+          role: "admin" as const,
+          members: 0,
+          lastActive: "En ligne",
+          thumbnail: DEFAULT_THUMBNAIL,
+        }));
 
-    // Combine mock rooms with real saved rooms (avoid duplicates)
-    const combinedRooms = [...mockUserRooms];
-    mappedRooms.forEach(room => {
-      if (!combinedRooms.find(r => r.id === room.id)) {
-        combinedRooms.push(room);
-      }
-    });
-    setUserRooms(combinedRooms);
-    
-    // Load favorites
-    if (savedFavorites.length > 0) {
-      const combinedFavorites = [...mockFavorites];
-      savedFavorites.forEach(fav => {
-        if (!combinedFavorites.find(f => f.id === fav.id)) {
-          combinedFavorites.push({
-            id: fav.id,
-            title: fav.title,
-            thumbnail: fav.thumbnail,
-            addedAt: fav.addedAt
-          });
+        // Joined rooms not yet implemented in fetchMySalons
+        const joined: Room[] = [];
+
+        setUserRooms([...owned, ...joined]);
+      } catch (error: any) {
+        if (error.name === 'AbortError') return;
+        console.error("Erreur chargement salons profil", error);
+        const message = String(error?.message || "");
+        if (message.includes("(401)")) {
+          toast.error("Session expirée, reconnecte-toi.");
+          onLogout();
         }
-      });
-      setFavorites(combinedFavorites);
-    }
+      }
+    };
+    const loadFavorites = async () => {
+      try {
+        const data = await fetchFavorites();
+        const mapped = (data || []).map((fav: any) => ({
+          id: fav.youtube_id,
+          title: fav.title,
+          thumbnail: fav.thumbnail || DEFAULT_THUMBNAIL,
+          addedAt: fav.added_at ? new Date(fav.added_at).toLocaleDateString("fr-FR") : "Récemment",
+        }));
+        setFavorites(mapped);
+      } catch (error: any) {
+        console.error("Erreur chargement favoris", error);
+        const message = String(error?.message || "");
+        if (message.includes("(401)")) {
+          toast.error("Session expirée, reconnecte-toi.");
+          onLogout();
+        }
+      }
+    };
+
+    loadRooms();
+    loadFavorites();
   }, [currentUser.email]);
 
-  const handleSave = () => {
-    setIsEditing(false);
-    toast.success("Profil mis à jour !");
+  const handleSave = async () => {
+    try {
+      if (!editedName.trim()) return;
+
+      await updateProfile({ username: editedName });
+
+      // Update local state immediately
+      const updatedUser = {
+        ...currentUser,
+        name: editedName,
+        username: editedName
+      };
+
+      onUserUpdate(updatedUser);
+
+      toast.success("Profil mis à jour !");
+      setIsEditing(false);
+    } catch (error: any) {
+      if (error.name === 'AbortError') return;
+      console.error("Erreur mise à jour profil", error);
+      toast.error("Erreur lors de la mise à jour");
+    }
   };
 
-  const handleRemoveFavorite = (id: string) => {
-    setFavorites(prev => prev.filter(f => f.id !== id));
-    toast.success("Vidéo retirée des favoris");
+  const handleRemoveFavorite = async (id: string) => {
+    try {
+      await removeFavorite(id);
+      setFavorites(prev => prev.filter(f => f.id !== id));
+      toast.success("Vidéo retirée des favoris");
+    } catch (error) {
+      console.error("Erreur suppression favori", error);
+      toast.error("Impossible de retirer le favori");
+    }
   };
 
   const createdRooms = userRooms.filter(r => r.role === "admin");
@@ -161,7 +159,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
 
   return (
     <div className={`min-h-screen flex flex-col ${theme === "dark" ? "bg-black" : "bg-white"}`}>
-      <Header 
+      <Header
         currentUser={currentUser}
         currentPage="profile"
         onNavigate={onNavigate}
@@ -218,7 +216,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
                         </div>
                         <div className="flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-red-500" />
-                          <span>Membre depuis 2024</span>
+                          <span>{`Membre depuis ${currentUser.memberSince ?? "—"}`}</span>
                         </div>
                       </div>
                     </>
@@ -267,7 +265,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
                   </div>
                   <div>
                     <div className={`text-2xl font-display ${theme === "dark" ? "text-white" : "text-black"}`}>
-                      {mockUserRooms.length}
+                      {joinedRooms.length}
                     </div>
                     <div className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
                       Salons rejoints
@@ -301,7 +299,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
             <h2 className={`text-2xl font-display mb-4 ${theme === "dark" ? "text-white" : "text-black"}`}>
               MES SALONS
             </h2>
-            
+
             {/* Created Rooms */}
             <h3 className={`text-lg mb-3 flex items-center gap-2 ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
               <Crown className="w-5 h-5 text-yellow-500" />
@@ -324,49 +322,48 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
             ) : (
               <div className="grid md:grid-cols-2 gap-4 mb-6">
                 {createdRooms.map((room) => (
-                <Card 
-                  key={room.id}
-                  className={`cursor-pointer hover:scale-105 transition-transform ${
-                    theme === "dark" 
-                      ? "bg-zinc-900 border-red-900/20 hover:border-red-600" 
+                  <Card
+                    key={room.id}
+                    className={`cursor-pointer hover:scale-105 transition-transform ${theme === "dark"
+                      ? "bg-zinc-900 border-red-900/20 hover:border-red-600"
                       : "bg-white border-gray-200 hover:border-red-600"
-                  }`}
-                  onClick={() => onNavigate("room", { roomId: room.id })}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex gap-4">
-                      <img 
-                        src={room.thumbnail} 
-                        alt={room.name}
-                        className="w-24 h-24 object-cover rounded-lg"
-                      />
-                      <div className="flex-1">
-                        <h4 className={`mb-1 ${theme === "dark" ? "text-white" : "text-black"}`}>
-                          {room.name}
-                        </h4>
-                        <p className={`text-sm mb-2 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-                          {room.description}
-                        </p>
-                        <div className="flex items-center gap-3 text-xs">
-                          <Badge className="bg-red-600">
-                            <Crown className="w-3 h-3 mr-1" />
-                            Admin
-                          </Badge>
-                          <span className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
-                            <Users className="w-3 h-3 inline mr-1" />
-                            {room.members}
-                          </span>
-                          {room.isPublic ? (
-                            <Globe className="w-3 h-3 text-green-500" />
-                          ) : (
-                            <Lock className="w-3 h-3 text-orange-500" />
-                          )}
+                      }`}
+                    onClick={() => onNavigate("room", { roomId: room.id })}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex gap-4">
+                        <img
+                          src={room.thumbnail}
+                          alt={room.name}
+                          className="w-24 h-24 object-cover rounded-lg"
+                        />
+                        <div className="flex-1">
+                          <h4 className={`mb-1 ${theme === "dark" ? "text-white" : "text-black"}`}>
+                            {room.name}
+                          </h4>
+                          <p className={`text-sm mb-2 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                            {room.description}
+                          </p>
+                          <div className="flex items-center gap-3 text-xs">
+                            <Badge className="bg-red-600">
+                              <Crown className="w-3 h-3 mr-1" />
+                              Admin
+                            </Badge>
+                            <span className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
+                              <Users className="w-3 h-3 inline mr-1" />
+                              {room.members}
+                            </span>
+                            {room.isPublic ? (
+                              <Globe className="w-3 h-3 text-green-500" />
+                            ) : (
+                              <Lock className="w-3 h-3 text-orange-500" />
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             )}
 
@@ -377,19 +374,18 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
             </h3>
             <div className="grid md:grid-cols-2 gap-4">
               {joinedRooms.map((room) => (
-                <Card 
+                <Card
                   key={room.id}
-                  className={`cursor-pointer hover:scale-105 transition-transform ${
-                    theme === "dark" 
-                      ? "bg-zinc-900 border-red-900/20 hover:border-red-600" 
-                      : "bg-white border-gray-200 hover:border-red-600"
-                  }`}
+                  className={`cursor-pointer hover:scale-105 transition-transform ${theme === "dark"
+                    ? "bg-zinc-900 border-red-900/20 hover:border-red-600"
+                    : "bg-white border-gray-200 hover:border-red-600"
+                    }`}
                   onClick={() => onNavigate("room", { roomId: room.id })}
                 >
                   <CardContent className="p-4">
                     <div className="flex gap-4">
-                      <img 
-                        src={room.thumbnail} 
+                      <img
+                        src={room.thumbnail}
                         alt={room.name}
                         className="w-24 h-24 object-cover rounded-lg"
                       />
@@ -423,18 +419,17 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, theme = "dark" 
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {favorites.map((video) => (
-                <Card 
+                <Card
                   key={video.id}
-                  className={`group cursor-pointer ${
-                    theme === "dark" 
-                      ? "bg-zinc-900 border-red-900/20 hover:border-red-600" 
-                      : "bg-white border-gray-200 hover:border-red-600"
-                  } transition-all`}
+                  className={`group cursor-pointer ${theme === "dark"
+                    ? "bg-zinc-900 border-red-900/20 hover:border-red-600"
+                    : "bg-white border-gray-200 hover:border-red-600"
+                    } transition-all`}
                 >
                   <CardContent className="p-0">
                     <div className="relative">
-                      <img 
-                        src={video.thumbnail} 
+                      <img
+                        src={video.thumbnail}
                         alt={video.title}
                         className="w-full h-40 object-cover rounded-t-lg"
                       />

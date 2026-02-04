@@ -26,23 +26,23 @@
  */
 
 import { useState, useEffect } from "react";
-import { getRooms } from "../utils/storage";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { Card, CardContent } from "../components/ui/card";
 import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
-import { 
-  Search, 
-  Users, 
-  Plus, 
+import {
+  Search,
+  Users,
+  Plus,
   Crown,
   Globe,
   Play,
   Star,
   TrendingUp
 } from "lucide-react";
+import { listSalons } from "../api/rooms";
 
 interface Room {
   id: string;
@@ -65,106 +65,39 @@ interface PublicRoomsPageProps {
   onThemeToggle?: () => void;
 }
 
-const mockRooms: Room[] = [
-  {
-    id: "1",
-    name: "🎬 Soirée Cinéma Classique",
-    description: "Films classiques et discussions conviviales",
-    participants: 8,
-    maxParticipants: 20,
-    isPublic: true,
-    currentVideo: "Le Parrain",
-    host: "CinePhile",
-    thumbnail: "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400",
-    rating: 4.8
-  },
-  {
-    id: "2",
-    name: "🎮 Gaming & Streams",
-    description: "Regardons les meilleurs moments gaming ensemble",
-    participants: 15,
-    maxParticipants: 30,
-    isPublic: true,
-    currentVideo: "Gameplay Elden Ring",
-    host: "GamerPro",
-    thumbnail: "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400",
-    rating: 4.5
-  },
-  {
-    id: "3",
-    name: "📚 Documentaires Nature",
-    description: "Découvrons la beauté de notre planète",
-    participants: 5,
-    maxParticipants: 15,
-    isPublic: true,
-    currentVideo: "Planet Earth II",
-    host: "NatureLover",
-    thumbnail: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400",
-    rating: 4.9
-  },
-  {
-    id: "4",
-    name: "🎵 Concerts Live",
-    description: "Les meilleurs concerts et performances musicales",
-    participants: 12,
-    maxParticipants: 25,
-    isPublic: true,
-    currentVideo: "Coldplay Live 2023",
-    host: "MusicFan",
-    thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400",
-    rating: 4.7
-  },
-  {
-    id: "5",
-    name: "🍿 Séries Netflix",
-    description: "Binge-watching de séries populaires",
-    participants: 20,
-    maxParticipants: 30,
-    isPublic: true,
-    currentVideo: "Stranger Things S4",
-    host: "SeriesAddict",
-    thumbnail: "https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?w=400",
-    rating: 4.6
-  },
-  {
-    id: "6",
-    name: "🎭 Théâtre & Arts",
-    description: "Pièces de théâtre et performances artistiques",
-    participants: 3,
-    maxParticipants: 10,
-    isPublic: true,
-    currentVideo: "Hamilton Musical",
-    host: "ArtLover",
-    thumbnail: "https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?w=400",
-    rating: 4.4
-  }
-];
+const DEFAULT_THUMBNAIL =
+  "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400";
 
 export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "dark", onThemeToggle }: PublicRoomsPageProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [allRooms, setAllRooms] = useState(mockRooms);
+  const [allRooms, setAllRooms] = useState<Room[]>([]);
 
-  // Load saved rooms from localStorage
+  // Charger depuis l'API
   useEffect(() => {
-    const savedRooms = getRooms();
-    // Merge mock rooms with saved rooms (filter to only show public rooms)
-    const publicSavedRooms = savedRooms
-      .filter(r => r.isPublic) // Only show public rooms
-      .map(r => ({
-        id: r.id,
-        name: r.name || "Salon sans nom",
-        description: r.description || "Aucune description",
-        participants: r.participants || 0,
-        maxParticipants: r.maxParticipants || 20,
-        isPublic: r.isPublic,
-        currentVideo: r.currentVideo || r.videoUrl || "Aucune vidéo",
-        host: r.creator || "Anonyme",
-        thumbnail: r.thumbnail || "https://images.unsplash.com/photo-1758686254041-88d7b6ecee8f?w=400",
-        rating: r.rating || 0
-      }));
-    
-    const combinedRooms = [...mockRooms, ...publicSavedRooms];
-    setAllRooms(combinedRooms);
+    const load = async () => {
+      try {
+        const data = await listSalons();
+        const mapped = (data || [])
+          .filter((room: any) => !!room.is_public)
+          .map((room: any) => ({
+            id: room.id_salon,
+            name: room.name || "Salon sans nom",
+            description: room.description || "Aucune description",
+            participants: 0,
+            maxParticipants: room.max_participants || 20,
+            isPublic: !!room.is_public,
+            currentVideo: room.current_video_title || "Aucune vidéo",
+            host: room.owner_name?.username || "Administrateur",
+            thumbnail: DEFAULT_THUMBNAIL,
+            rating: 0,
+          }));
+        setAllRooms(mapped);
+      } catch (error) {
+        console.error("Erreur chargement salons", error);
+      }
+    };
+
+    load();
   }, []);
 
   const filteredRooms = allRooms.filter(room =>
@@ -174,7 +107,7 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
 
   return (
     <div className={`min-h-screen flex flex-col ${theme === "dark" ? "bg-black" : "bg-white"}`}>
-      <Header 
+      <Header
         currentUser={currentUser}
         currentPage="public-rooms"
         onNavigate={onNavigate}
@@ -240,7 +173,7 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
                   <Users className="w-6 h-6 text-red-500" />
                 </div>
                 <div>
-                  <div className={`text-2xl font-display ${theme === "dark" ? "text-white" : "text-black"}`}>{mockRooms.length}</div>
+                  <div className={`text-2xl font-display ${theme === "dark" ? "text-white" : "text-black"}`}>{allRooms.length}</div>
                   <div className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>Salons actifs</div>
                 </div>
               </CardContent>
@@ -253,7 +186,7 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
                 </div>
                 <div>
                   <div className={`text-2xl font-display ${theme === "dark" ? "text-white" : "text-black"}`}>
-                    {mockRooms.reduce((acc, room) => acc + room.participants, 0)}
+                    {allRooms.reduce((acc, room) => acc + room.participants, 0)}
                   </div>
                   <div className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>Spectateurs</div>
                 </div>
@@ -267,7 +200,7 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
                 </div>
                 <div>
                   <div className={`text-2xl font-display ${theme === "dark" ? "text-white" : "text-black"}`}>
-                    {mockRooms.filter(r => r.participants > 0).length}
+                    {allRooms.filter(r => r.participants > 0).length}
                   </div>
                   <div className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>En direct</div>
                 </div>
@@ -280,11 +213,10 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
             {filteredRooms.map((room) => (
               <Card
                 key={room.id}
-                className={`group overflow-hidden cursor-pointer transform hover:scale-105 transition-all duration-300 ${
-                  theme === "dark" 
-                    ? "bg-zinc-900 border-red-900/20 hover:border-red-600" 
-                    : "bg-white border-gray-200 hover:border-red-600"
-                } shadow-lg hover:shadow-xl hover:shadow-red-600/20`}
+                className={`group overflow-hidden cursor-pointer transform hover:scale-105 transition-all duration-300 ${theme === "dark"
+                  ? "bg-zinc-900 border-red-900/20 hover:border-red-600"
+                  : "bg-white border-gray-200 hover:border-red-600"
+                  } shadow-lg hover:shadow-xl hover:shadow-red-600/20`}
                 onClick={() => onNavigate("room-info", { roomId: room.id })}
               >
                 {/* Thumbnail */}
@@ -295,7 +227,7 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent"></div>
-                  
+
                   {/* Live Badge */}
                   <Badge className="absolute top-3 right-3 bg-red-600">
                     <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
@@ -336,7 +268,7 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
                           {room.participants}/{room.maxParticipants}
                         </span>
                       </div>
-                      
+
                       <div className="flex items-center gap-1.5">
                         <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                         <span className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>

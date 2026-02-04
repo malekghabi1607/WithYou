@@ -10,6 +10,9 @@ class SondageSalon extends Model
     use HasFactory;
 
     protected $table = 'sondage_salon';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
 
     protected $fillable = [
         'id_salon',

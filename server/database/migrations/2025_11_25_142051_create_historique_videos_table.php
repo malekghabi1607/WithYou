@@ -11,9 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('historique_videos', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
+        Schema::create('historique_video', function (Blueprint $table) {
+            $table->id('id_historique');
+            $table->string('video_id', 36);
+            $table->string('user_id', 36);
+            $table->string('salon_id', 36);
+            $table->timestamp('date_lecture')->nullable();
         });
     }
 
@@ -22,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('historique_videos');
+        Schema::dropIfExists('historique_video');
     }
 };

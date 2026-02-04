@@ -8,5 +8,9 @@
  * centraliser les imports dans l’application.
  */
 // src/api/index.ts
-
-export const API_URL = `${import.meta.env.VITE_API_URL}/api`;
+const rawApiUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+const normalizedBase = rawApiUrl.replace(/\/+$/, "");
+export const API_BASE_URL = normalizedBase.endsWith("/api")
+  ? normalizedBase.slice(0, -4)
+  : normalizedBase;
+export const API_URL = `${API_BASE_URL}/api`;

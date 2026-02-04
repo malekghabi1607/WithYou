@@ -33,8 +33,7 @@
 import { useState } from "react";
 import { Video, Lock, Globe, Users, Link as LinkIcon, Settings, ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { saveRoom, Room, generateJoinCode } from "../utils/storage";
-import { extractYouTubeId, getYouTubeThumbnail } from "../utils/youtubeUtils";
+import { extractYouTubeId } from "../utils/youtubeUtils";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -62,87 +61,69 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!formData.name.trim()) {
-    toast.error("Veuillez entrer un nom pour le salon");
-    return;
-  }
+    if (!formData.name.trim()) {
+      toast.error("Veuillez entrer un nom pour le salon");
+      return;
+    }
 
-  if (!formData.description.trim()) {
-    toast.error("Veuillez ajouter une description");
-    return;
-  }
+    if (!formData.description.trim()) {
+      toast.error("Veuillez ajouter une description");
+      return;
+    }
 
-  if (!formData.videoUrl.trim()) {
-    toast.error("Veuillez ajouter une URL de vidéo YouTube");
-    return;
-  }
+    if (!formData.videoUrl.trim()) {
+      toast.error("Veuillez ajouter une URL de vidéo YouTube");
+      return;
+    }
 
-  if (!formData.videoUrl.includes('youtube.com') && !formData.videoUrl.includes('youtu.be')) {
-    toast.error("Veuillez entrer une URL YouTube valide");
-    return;
-  }
+    if (!formData.videoUrl.includes('youtube.com') && !formData.videoUrl.includes('youtu.be')) {
+      toast.error("Veuillez entrer une URL YouTube valide");
+      return;
+    }
 
-  if (!formData.isPublic && !formData.password) {
-    toast.error("Veuillez définir un mot de passe pour un salon privé");
-    return;
-  }
+    if (!formData.isPublic && !formData.password) {
+      toast.error("Veuillez définir un mot de passe pour un salon privé");
+      return;
+    }
 
-  // Extraire youtubeId
-const youtubeId = extractYoutubeId(formData.videoUrl);
-  if (!youtubeId) {
-    toast.error("Impossible d'extraire l'ID YouTube de cette URL");
-    return;
-  }
+    // Extraire youtubeId
+    const youtubeId = extractYoutubeId(formData.videoUrl);
+    if (!youtubeId) {
+      toast.error("Impossible d'extraire l'ID YouTube de cette URL");
+      return;
+    }
 
-  try {
-    // Importer createSalon depuis api/rooms    
-    // Création du salon côté back avec vidéo initiale
-    const salon = await createSalon({
-      name: formData.name,
-      description: formData.description,
-      youtubeId,
-      title: formData.name,
-    });
+    try {
+      // Importer createSalon depuis api/rooms    
+      // Création du salon côté back avec vidéo initiale
+      const salon = await createSalon({
+        name: formData.name,
+        description: formData.description,
+        youtubeId,
+        title: formData.name,
+        isPublic: formData.isPublic,
+        password: formData.password || undefined,
+        maxParticipants: formData.maxParticipants,
+      });
 
-    const roomId = salon.room_code;
-const invitationCode = (salon as any).invitation_code;
+      const roomId = salon.id_salon;
+      const invitationCode = salon.id_salon; // Using ID as code for now
 
-    // Objet room pour le localStorage
-    const newRoom: Room = {
-      id: roomId,
-      name: formData.name,
-      description: formData.description,
-      isPublic: formData.isPublic,
-      creator: currentUser.name,
-      creatorEmail: currentUser.email,
-      password: formData.password,
-      joinCode: invitationCode,
-      maxParticipants: formData.maxParticipants,
-      videoUrl: formData.videoUrl,
-      participants: 1,
-      currentVideo: formData.videoUrl,
-      thumbnail: getYouTubeThumbnail(youtubeId),
-      createdAt: new Date().toISOString(),
-      rating: 0,
-    };
+      // AFFICHER LE CODE D'INVITATION
+      toast.success(`✅ Salon "${formData.name}" créé avec succès !`, {
+        description: `📋 Code d'invitation : ${invitationCode}`,
+        duration: 10000,
+      });
 
-    saveRoom(newRoom);
-
-    // AFFICHER LE CODE D'INVITATION
-    toast.success(`✅ Salon "${formData.name}" créé avec succès !`, {
-      description: `📋 Code d'invitation : ${invitationCode}`,
-      duration: 10000,
-    });
-
-    onCreateRoom({ ...formData, id: roomId, joinCode: invitationCode });
-    onNavigate("room-loading", { roomId });
-  } catch (err) {
-    console.error(err);
-    toast.error("Erreur lors de la création du salon");
-  }
-};
+      onCreateRoom({ ...formData, id: roomId, joinCode: invitationCode });
+      onNavigate("room-loading", { roomId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la création du salon");
+    }
+  };
 
   return (
     <div className={`min-h-screen ${theme === "dark" ? "bg-black" : "bg-gray-50"}`}>
@@ -180,7 +161,7 @@ const invitationCode = (salon as any).invitation_code;
                   Configurez votre espace de visionnage collaboratif
                 </CardDescription>
               </div>
-              
+
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-red-600 to-transparent"></div>
                 <Settings className="w-5 h-5 text-red-500" />
@@ -203,11 +184,10 @@ const invitationCode = (salon as any).invitation_code;
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
-                    className={`h-12 ${
-                      theme === "dark"
+                    className={`h-12 ${theme === "dark"
                         ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
                         : "bg-white border-gray-300 text-black placeholder:text-gray-400"
-                    } focus:border-red-600`}
+                      } focus:border-red-600`}
                   />
                 </div>
 
@@ -223,11 +203,10 @@ const invitationCode = (salon as any).invitation_code;
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     required
                     rows={3}
-                    className={`${
-                      theme === "dark"
+                    className={`${theme === "dark"
                         ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
                         : "bg-white border-gray-300 text-black placeholder:text-gray-400"
-                    } focus:border-red-600`}
+                      } focus:border-red-600`}
                   />
                 </div>
 
@@ -244,11 +223,10 @@ const invitationCode = (salon as any).invitation_code;
                     value={formData.videoUrl}
                     onChange={(e) => setFormData({ ...formData, videoUrl: e.target.value })}
                     required
-                    className={`h-12 ${
-                      theme === "dark"
+                    className={`h-12 ${theme === "dark"
                         ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
                         : "bg-white border-gray-300 text-black placeholder:text-gray-400"
-                    } focus:border-red-600`}
+                      } focus:border-red-600`}
                   />
                 </div>
 
@@ -266,7 +244,7 @@ const invitationCode = (salon as any).invitation_code;
                           {formData.isPublic ? "Salon public" : "Salon privé"}
                         </Label>
                         <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-                          {formData.isPublic 
+                          {formData.isPublic
                             ? "Tout le monde peut rejoindre"
                             : "Nécessite un mot de passe"
                           }
@@ -274,11 +252,11 @@ const invitationCode = (salon as any).invitation_code;
                       </div>
                     </div>
                     <Switch
-                    checked={formData.isPublic}
-                    onCheckedChange={(checked) =>
-                      setFormData(prev => ({ ...prev, isPublic: Boolean(checked) }))
-                    }
-                  />
+                      checked={formData.isPublic}
+                      onCheckedChange={(checked) =>
+                        setFormData(prev => ({ ...prev, isPublic: Boolean(checked) }))
+                      }
+                    />
                   </div>
 
                   {!formData.isPublic && (
@@ -293,11 +271,10 @@ const invitationCode = (salon as any).invitation_code;
                         placeholder="••••••••"
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        className={`h-12 ${
-                          theme === "dark"
+                        className={`h-12 ${theme === "dark"
                             ? "bg-zinc-800/50 border-red-900/30 text-white"
                             : "bg-white border-gray-300 text-black"
-                        } focus:border-red-600`}
+                          } focus:border-red-600`}
                       />
                     </div>
                   )}
@@ -316,11 +293,10 @@ const invitationCode = (salon as any).invitation_code;
                     max="100"
                     value={formData.maxParticipants}
                     onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) })}
-                    className={`h-12 ${
-                      theme === "dark"
+                    className={`h-12 ${theme === "dark"
                         ? "bg-zinc-800/50 border-red-900/30 text-white"
                         : "bg-white border-gray-300 text-black"
-                    } focus:border-red-600`}
+                      } focus:border-red-600`}
                   />
                 </div>
 
@@ -330,21 +306,20 @@ const invitationCode = (salon as any).invitation_code;
                     type="button"
                     variant="outline"
                     onClick={() => onNavigate("rooms")}
-                    className={`flex-1 h-12 ${
-                      theme === "dark"
+                    className={`flex-1 h-12 ${theme === "dark"
                         ? "border-red-900/30 text-gray-300 hover:bg-zinc-800"
                         : "border-gray-300 text-gray-700 hover:bg-gray-100"
-                    }`}
+                      }`}
                   >
                     Annuler
                   </Button>
-                <Button
-                  type="submit"
-                  onClick={() => console.log("CLICK CREATE")}
-                  className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50"
-                >
-                  Créer le salon
-                </Button>
+                  <Button
+                    type="submit"
+                    onClick={() => console.log("CLICK CREATE")}
+                    className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50"
+                  >
+                    Créer le salon
+                  </Button>
                 </div>
               </form>
             </CardContent>

@@ -11,10 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('playlists', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('playlist')) {
+            Schema::create('playlist', function (Blueprint $table) {
+                $table->string('id_playlist', 36)->primary();
+                $table->string('salon_id', 36);
+                $table->timestamp('created_at')->nullable();
+            });
+        }
     }
 
     /**
@@ -22,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('playlists');
+        Schema::dropIfExists('playlist');
     }
 };

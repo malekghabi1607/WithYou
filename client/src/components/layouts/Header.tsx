@@ -57,32 +57,32 @@ export function Header({
             </button>
 
             {/* Desktop Navigation */}
-            {currentUser && (
-              <nav className="hidden md:flex items-center gap-6">
+            <nav className="hidden md:flex items-center gap-6">
+              {currentUser && (
                 <button
                   onClick={() => onNavigate("salons")}
                   className={`flex items-center gap-2 text-sm transition-colors ${
-                    currentPage === "salons" 
-                      ? "text-red-500" 
+                    currentPage === "salons"
+                      ? "text-red-500"
                       : theme === "dark" ? "text-gray-300 hover:text-white" : "text-gray-700 hover:text-black"
                   }`}
                 >
                   <Home className="w-4 h-4" />
                   Accueil
                 </button>
-                <button
-                  onClick={() => onNavigate("public-rooms")}
-                  className={`flex items-center gap-2 text-sm transition-colors ${
-                    currentPage === "public-rooms" || currentPage === "create-room" || currentPage === "join-room"
-                      ? "text-red-500" 
-                      : theme === "dark" ? "text-gray-300 hover:text-white" : "text-gray-700 hover:text-black"
-                  }`}
-                >
-                  <Video className="w-4 h-4" />
-                  Salons publics
-                </button>
-              </nav>
-            )}
+              )}
+              <button
+                onClick={() => onNavigate("public-rooms")}
+                className={`flex items-center gap-2 text-sm transition-colors ${
+                  currentPage === "public-rooms" || currentPage === "create-room" || currentPage === "join-room"
+                    ? "text-red-500"
+                    : theme === "dark" ? "text-gray-300 hover:text-white" : "text-gray-700 hover:text-black"
+                }`}
+              >
+                <Video className="w-4 h-4" />
+                Salons publics
+              </button>
+            </nav>
           </div>
 
           {/* Right Side Actions */}
@@ -251,6 +251,17 @@ export function Header({
         {mobileMenuOpen && !currentUser && (
           <div className={`md:hidden border-t ${theme === 'dark' ? 'border-red-900/20' : 'border-gray-200'} py-4 animate-slide-in-right`}>
             <nav className="flex flex-col gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  onNavigate("public-rooms");
+                  setMobileMenuOpen(false);
+                }}
+                className={`justify-start ${theme === 'dark' ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-black'}`}
+              >
+                <Video className="w-4 h-4 mr-2" />
+                Salons publics
+              </Button>
               <Button
                 variant="ghost"
                 onClick={() => {

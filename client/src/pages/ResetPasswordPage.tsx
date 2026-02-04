@@ -8,6 +8,7 @@ import { Lock, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 // Importe la nouvelle fonction qu'on vient de créer
 import { resetPassword } from "../api/auth";
+import { supabase } from "../api/supabase";
 
 interface ResetPasswordPageProps {
   token?: string; // Peut venir des props si tu utilises un loader
@@ -22,26 +23,38 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
-  
+
   // 1. Récupérer l'email et le token depuis l'URL
   const [email, setEmail] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(propToken || null);
 
+  const [session, setSession] = useState<any>(null);
+
   useEffect(() => {
+    // Check for active session (PKCE flow)
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setSession(data.session);
+      }
+    });
+
     // Récupérer les paramètres ?email=...
     const urlParams = new URLSearchParams(window.location.search);
     const emailFromUrl = urlParams.get('email');
     if (emailFromUrl) setEmail(emailFromUrl);
 
     // Si le token n'est pas passé en props, on essaie de le trouver dans l'URL
-    // Ex: /reset-password/LE_TOKEN_ICI
     if (!token) {
-        const pathSegments = window.location.pathname.split('/');
-        const potentialToken = pathSegments[pathSegments.length - 1]; 
-        // Vérification basique pour ne pas prendre "reset-password" comme token
-        if (potentialToken && potentialToken !== "reset-password") {
-            setToken(potentialToken);
+      const pathSegments = window.location.pathname.split('/');
+      const potentialToken = pathSegments[pathSegments.length - 1];
+
+      if (potentialToken && potentialToken !== "reset-password") {
+        try {
+          setToken(decodeURIComponent(potentialToken));
+        } catch {
+          setToken(potentialToken);
         }
+      }
     }
   }, [propToken, token]);
 
@@ -58,25 +71,32 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
       return;
     }
 
-    if (!token || !email) {
-      toast.error("Lien invalide (Token ou Email manquant)");
+    // Allow if token exists OR if session exists
+    if (!token && !session) {
+      toast.error("Session invalide ou lien expiré.");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // APPEL AU VRAI BACKEND
-      await resetPassword({
-        token: token,
-        email: email,
-        password: password,
-        password_confirmation: confirmPassword,
-      });
+      if (session) {
+        // Logged in via recovery link -> Update User directly
+        await resetPassword({ password: password });
+      } else {
+        // Legacy/Token flow (Admin API or old flow)
+        // Note: resetPassword wrapper usually calls updateUser, so generic works
+        // But if we wanted to use token explicitly we'd need a different call.
+        // API auth.ts resetPassword calls updateUser.
+        // updateUser works ONLY if logged in.
+        // So actually, we MUST be logged in. OLD token flow is deprecated in new Supabase versions for client side.
+        // We will assume session is required.
+        await resetPassword({ password: password });
+      }
 
       setResetSuccess(true);
       toast.success("Mot de passe modifié avec succès !");
-      
+
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Erreur lors de la réinitialisation");
@@ -91,7 +111,7 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
         <Card className={`w-full max-w-md ${theme === "dark" ? "bg-black/50 border-red-900/30 backdrop-blur-xl" : "bg-white"}`}>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-6">
-                <CheckCircle className="w-16 h-16 text-green-500" />
+              <CheckCircle className="w-16 h-16 text-green-500" />
             </div>
             <CardTitle className="text-2xl">Mot de passe réinitialisé !</CardTitle>
             <CardDescription>Vous pouvez maintenant vous connecter.</CardDescription>
@@ -128,7 +148,7 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
                   required
                 />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute left-3 top-1/2 -translate-y-1/2">
-                   <Lock className="w-4 h-4 text-gray-400" />
+                  <Lock className="w-4 h-4 text-gray-400" />
                 </button>
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
                   {showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
@@ -147,8 +167,8 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
                   className="pl-10"
                   required
                 />
-                 <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute left-3 top-1/2 -translate-y-1/2">
-                   <Lock className="w-4 h-4 text-gray-400" />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <Lock className="w-4 h-4 text-gray-400" />
                 </button>
                 <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2">
                   {showConfirmPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}

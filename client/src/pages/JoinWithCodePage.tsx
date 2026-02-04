@@ -31,6 +31,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Video, Lock, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { fetchSalonByCode } from "../api/rooms";
 
 interface JoinWithCodePageProps {
   roomId: string;
@@ -40,47 +41,38 @@ interface JoinWithCodePageProps {
 }
 export function JoinWithCodePage({ roomId, onNavigate, onJoinRoom, theme = "dark" }: JoinWithCodePageProps) {
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
 
-  
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
 
-  if (!code.trim()) {
-    toast.error("Veuillez entrer un code d'invitation");
-    return;
-  }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  try {
-    const token = localStorage.getItem("token");
-    const API_URL = import.meta.env.VITE_API_URL;
-
-    // Chercher le salon par invitation_code
-    const res = await fetch(`${API_URL}/api/salons/by-code/${code.trim()}`, {
-      headers: {
-        Authorization: token ? `Bearer ${token}` : "",
-      },
-    });
-
-    if (!res.ok) {
-      toast.error("Aucun salon trouvé avec ce code");
+    if (!code.trim()) {
+      toast.error("Veuillez entrer un code d'invitation");
       return;
     }
 
-    const salon = await res.json();
-    
-    toast.success(`Salon "${salon.name}" trouvé ! Redirection...`);
-    onJoinRoom(salon.room_code);
-  } catch (err) {
-    console.error(err);
-    toast.error("Erreur lors de la recherche du salon");
-  }
-};
+    try {
+      const salon = await fetchSalonByCode(code.trim());
+
+      if (!salon) {
+        toast.error("Aucun salon trouvé");
+        return;
+      }
+
+      toast.success(`Salon "${salon.name}" trouvé ! Redirection...`);
+      onJoinRoom(salon.id_salon);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la recherche du salon");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black">
       {/* Header */}
       <header className="container mx-auto px-4 py-6 flex justify-between items-center">
-        <button 
+        <button
           onClick={() => onNavigate('room-info', roomId)}
           className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors"
         >
@@ -117,6 +109,17 @@ const handleSubmit = async (e: React.FormEvent) => {
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 className="mt-1 text-center tracking-wider bg-black border-red-900/30 text-white placeholder:text-gray-500"
                 maxLength={20}
+              />
+            </div>
+            <div>
+              <Label htmlFor="password" className="text-gray-300">Mot de passe (si privé)</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Mot de passe du salon"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 bg-black border-red-900/30 text-white placeholder:text-gray-500"
               />
             </div>
 

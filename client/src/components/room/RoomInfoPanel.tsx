@@ -26,9 +26,9 @@
  */
 import { X, Users, Crown, Copy, Check } from "lucide-react";
 import { Button } from "../ui/button";
-import { getRoomById } from "../../utils/storage";
+import { fetchSalonByCode } from "../../api/rooms";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface RoomInfoPanelProps {
   roomId: string;
@@ -38,9 +38,27 @@ interface RoomInfoPanelProps {
 
 export function RoomInfoPanel({ roomId, onClose, theme = "dark" }: RoomInfoPanelProps) {
   const [copied, setCopied] = useState(false);
-  
-  // Récupérer les vraies données du salon
-  const room = getRoomById(roomId);
+  const [room, setRoom] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await fetchSalonByCode(roomId);
+        setRoom({
+          name: data.name,
+          creator: "Admin",
+          isPublic: !!data.is_public,
+          participants: 0,
+          maxParticipants: data.max_participants || 20,
+          joinCode: data.invitation_code ?? data.room_code,
+        });
+      } catch (error) {
+        console.error("Erreur chargement salon", error);
+      }
+    };
+
+    load();
+  }, [roomId]);
   
   if (!room) {
     return null;
