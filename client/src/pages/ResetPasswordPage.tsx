@@ -142,6 +142,7 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10"
@@ -162,6 +163,7 @@ export function ResetPasswordPage({ token: propToken, onNavigate, theme = "dark"
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="pl-10"

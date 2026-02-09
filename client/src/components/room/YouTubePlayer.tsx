@@ -16,13 +16,27 @@ interface YouTubePlayerProps {
   videoId: string;
   isPlaying: boolean;
   onPlayPause: () => void;
+  syncTime?: number;
+  syncNonce?: number;
+  onTimeUpdate?: (seconds: number) => void;
+  onPlaybackStateChange?: (isPlaying: boolean) => void;
   theme?: "light" | "dark";
 }
 
-export function YouTubePlayer({ videoId, isPlaying, onPlayPause, theme = "dark" }: YouTubePlayerProps) {
+export function YouTubePlayer({
+  videoId,
+  isPlaying,
+  onPlayPause,
+  syncTime,
+  syncNonce,
+  onTimeUpdate,
+  onPlaybackStateChange,
+  theme = "dark"
+}: YouTubePlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const tickIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Vérifier si l'API YouTube est déjà chargée
@@ -54,13 +68,47 @@ export function YouTubePlayer({ videoId, isPlaying, onPlayPause, theme = "dark" 
             modestbranding: 1,
           },
           events: {
-            onReady: () => setPlayerReady(true),
+            onReady: () => {
+              setPlayerReady(true);
+              if (typeof syncTime === "number" && syncTime > 0) {
+                playerRef.current.seekTo(syncTime, true);
+              }
+            },
+            onStateChange: (event: any) => {
+              const yt = (window as any).YT;
+              if (!yt) return;
+
+              if (event.data === yt.PlayerState.PLAYING) {
+                onPlaybackStateChange?.(true);
+                if (tickIntervalRef.current) {
+                  window.clearInterval(tickIntervalRef.current);
+                }
+                tickIntervalRef.current = window.setInterval(() => {
+                  if (!playerRef.current?.getCurrentTime) return;
+                  const t = Math.floor(playerRef.current.getCurrentTime());
+                  onTimeUpdate?.(t);
+                }, 1000);
+              } else if (
+                event.data === yt.PlayerState.PAUSED ||
+                event.data === yt.PlayerState.ENDED
+              ) {
+                onPlaybackStateChange?.(false);
+                if (tickIntervalRef.current) {
+                  window.clearInterval(tickIntervalRef.current);
+                  tickIntervalRef.current = null;
+                }
+              }
+            },
           },
         });
       }
     }
 
     return () => {
+      if (tickIntervalRef.current) {
+        window.clearInterval(tickIntervalRef.current);
+        tickIntervalRef.current = null;
+      }
       // Cleanup
       if (playerRef.current && playerRef.current.destroy) {
         playerRef.current.destroy();
@@ -78,6 +126,11 @@ export function YouTubePlayer({ videoId, isPlaying, onPlayPause, theme = "dark" 
       }
     }
   }, [isPlaying, playerReady]);
+
+  useEffect(() => {
+    if (!playerReady || !playerRef.current || typeof syncTime !== "number") return;
+    playerRef.current.seekTo(Math.max(0, syncTime), true);
+  }, [syncNonce, syncTime, playerReady]);
 
   return (
     <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden`}>

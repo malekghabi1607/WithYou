@@ -136,6 +136,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   <Input
                     id="email"
                     type="email"
+                    autoComplete="email"
                     placeholder="vous@exemple.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -161,6 +162,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   <Input
                     id="password"
                     type="password"
+                    autoComplete="current-password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

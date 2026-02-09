@@ -26,7 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Plus, DoorOpen, Play } from "lucide-react";
 import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
-import { fetchMySalons } from "../api/rooms";
+import { fetchMySalons, listSalons } from "../api/rooms";
 
 interface SalonsPageProps {
   onNavigate: (page: string) => void;
@@ -44,12 +44,14 @@ export function SalonsPage({
   onThemeToggle
 }: SalonsPageProps) {
   const [mySalons, setMySalons] = useState<any[]>([]);
+  const [allSalons, setAllSalons] = useState<any[]>([]);
 
   useEffect(() => {
     if (currentUser) {
       fetchMySalons().then(res => {
         if (res.salons) setMySalons(res.salons);
       });
+      listSalons().then((res) => setAllSalons(res || []));
     }
   }, [currentUser]);
 
@@ -197,6 +199,40 @@ export function SalonsPage({
               </CardContent>
             </Card>
           </div>
+
+          {/* Tous les salons */}
+          {allSalons.length > 0 && (
+            <div className="mt-12">
+              <h2 className="text-2xl mb-6 pl-2 border-l-4 border-blue-600">Tous les salons</h2>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {allSalons.map((salon) => (
+                  <Card
+                    key={salon.id_salon}
+                    className={`${theme === "dark" ? "bg-zinc-900 border-zinc-800" : "bg-white"} transition-all hover:scale-[1.02]`}
+                  >
+                    <CardHeader>
+                      <CardTitle className="truncate">{salon.name}</CardTitle>
+                      <CardDescription className="line-clamp-1 text-xs">
+                        {salon.is_public ? "Public" : "Privé"} | {salon.video_count || 0} vidéo(s) | {salon.participants_count || 0} participant(s)
+                      </CardDescription>
+                      <CardDescription className="line-clamp-1 text-xs">
+                        Playlist: {salon.has_playlist ? "Oui" : "Non"} | Hôte: {salon.owner_name?.username || "Inconnu"}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => onNavigate("join-room")}
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Rejoindre
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 

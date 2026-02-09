@@ -18,7 +18,7 @@
  * Utilisé dans routes/AppRouter.tsx via RoomPageWrapper.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
@@ -56,7 +56,7 @@ import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
 import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
-import { addVideoToPlaylist, fetchPlaylist, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
+import { addVideoToPlaylist, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
 import { fetchParticipants, connectToSalon, disconnectFromSalon } from "../api/participants";
 import { supabase } from "../api/supabase";
@@ -119,9 +119,22 @@ interface RoomPageProps {
 }
 
 const reactions = ["❤️", "😂", "👍", "🔥", "😮", "🎉"];
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getErrorMessage = (error: any, fallback: string) => {
+  const message =
+    error?.message ||
+    error?.error_description ||
+    error?.details ||
+    error?.hint ||
+    fallback;
+  return message === fallback ? fallback : `${fallback}: ${message}`;
+};
 
 export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigate, theme = "dark", onThemeToggle }: RoomPageProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [syncNonce, setSyncNonce] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"chat" | "participants" | "polls">("chat");
@@ -144,6 +157,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [role, setRole] = useState<"admin" | "member" | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const roomChannelRef = useRef<any>(null);
 
   const isAdmin = role === "admin";
 
@@ -187,8 +201,98 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const participantCount = otherParticipants.filter(p => p.status === "online").length + 1; // +1 pour l'utilisateur courant
   const currentVideo = playlist.find(v => v.isCurrent);
 
+  const loadParticipantsSnapshot = useCallback(async () => {
+    const data = await withFallback(backendSalonId, roomId, fetchParticipants);
+    if (role === null) {
+      const current = (data || []).find((participant: any) =>
+        participant?.id === currentUser.id || participant?.email === currentUser.email
+      );
+      if (current?.role) {
+        setRole(current.role === "admin" ? "admin" : "member");
+      }
+    }
+    const mapped = (data || []).map((participant: any) => ({
+      id: participant.id,
+      name: participant.name ?? "Utilisateur",
+      role: (participant.role === "admin" ? "admin" : "member") as "admin" | "member",
+      status: (participant.is_active ? "online" : "offline") as "online" | "offline",
+      avatar: createAvatarDataUrl(participant.name ?? "Utilisateur"),
+    }));
+    setParticipants(mapped);
+  }, [backendSalonId, roomId, role, currentUser.id, currentUser.email]);
+
+  const loadRoomSnapshot = useCallback(async () => {
+    if (!backendSalonId) return;
+
+    // Load Messages
+    const { data: messagesData, error: msgError } = await supabase
+      .from('messages')
+      .select('*, user:users(username, email, id_user)')
+      .eq('salon_id', backendSalonId)
+      .order('sent_at', { ascending: true });
+
+    if (!msgError) {
+      const mappedMessages = (messagesData || []).map((msg: any) => ({
+        id: msg.id_message,
+        sender: msg.user?.username || "Inconnu",
+        senderId: msg.user_id,
+        content: msg.content,
+        timestamp: new Date(msg.sent_at).toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        isYou: msg.user?.email === currentUser.email,
+        reactions: [],
+      }));
+      setMessages(mappedMessages);
+    }
+
+    // Load salon + current video
+    const { data: salonData } = await supabase
+      .from('salon')
+      .select('current_video_id, id_playlist, video(*), video_time, video_status')
+      .eq('id_salon', backendSalonId)
+      .single();
+
+    const dbTime = Number(salonData?.video_time || 0);
+    setCurrentTime(dbTime);
+    setIsPlaying(salonData?.video_status === "playing");
+    setSyncNonce(Date.now());
+
+    // Load playlist
+    const playlistData = salonData?.id_playlist
+      ? await fetchPlaylistById(salonData.id_playlist)
+      : await fetchPlaylist(backendSalonId);
+
+    setPlaylistId(playlistData.playlistId);
+    const mapped = (playlistData.items || []).map((item: any, index: number) => {
+      const youtubeId = item.youtube_id;
+      const isCurrent = salonData?.current_video_id
+        ? item.id === salonData.current_video_id
+        : index === 0;
+
+      return {
+        id: item.id,
+        youtubeId,
+        title: item.titre ?? "Sans titre",
+        thumbnail: youtubeId
+          ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`
+          : THUMBNAIL_MOVIE,
+        duration: item.duration ? String(item.duration) : "0:00",
+        isCurrent,
+        votes: 0,
+        isFavorite: youtubeId ? favoriteIds.has(youtubeId) : false,
+      };
+    });
+    setPlaylist(mapped);
+  }, [backendSalonId, currentUser.email, favoriteIds]);
+
   useEffect(() => {
     setRoomCode(roomId);
+    // Fast path: if route already contains salon UUID, use it immediately.
+    if (UUID_REGEX.test(roomId)) {
+      setBackendSalonId(roomId);
+    }
   }, [roomId]);
 
   useEffect(() => {
@@ -215,7 +319,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const fetchSalonId = async () => {
       try {
         const data = await fetchSalonByCode(roomCode);
-        setBackendSalonId(data.id);
+        setBackendSalonId(data.id_salon || data.id || roomCode);
         if (data.owner_id) {
           setRole(currentUser.id === data.owner_id ? "admin" : "member");
         }
@@ -237,24 +341,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     let isMounted = true;
     const loadParticipants = async () => {
       try {
-        const data = await withFallback(backendSalonId, roomId, fetchParticipants);
         if (!isMounted) return;
-        if (role === null) {
-          const current = (data || []).find((participant: any) =>
-            participant?.id === currentUser.id || participant?.email === currentUser.email
-          );
-          if (current?.role) {
-            setRole(current.role === "admin" ? "admin" : "member");
-          }
-        }
-        const mapped = (data || []).map((participant: any) => ({
-          id: participant.id,
-          name: participant.name ?? "Utilisateur",
-          role: (participant.role === "admin" ? "admin" : "member") as "admin" | "member",
-          status: (participant.is_active ? "online" : "offline") as "online" | "offline",
-          avatar: createAvatarDataUrl(participant.name ?? "Utilisateur"),
-        }));
-        setParticipants(mapped);
+        await loadParticipantsSnapshot();
       } catch (error) {
         console.error("Erreur chargement participants", error);
       }
@@ -266,7 +354,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       isMounted = false;
       window.clearInterval(interval);
     };
-  }, [roomId, backendSalonId, currentUser.id, currentUser.email, role]);
+  }, [loadParticipantsSnapshot]);
 
   useEffect(() => {
     const loadFavorites = async () => {
@@ -285,70 +373,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   useEffect(() => {
     if (!backendSalonId) return;
 
-    // 1. Initial Load of Messages, Salon state, and Playlist
-    const loadState = async () => {
-      try {
-        // Load Messages
-        const { data: messagesData, error: msgError } = await supabase
-          .from('messages')
-          .select('*, user:users(username, email, id_user)')
-          .eq('salon_id', backendSalonId)
-          .order('sent_at', { ascending: true });
-
-        if (!msgError) {
-          const mappedMessages = (messagesData || []).map((msg: any) => ({
-            id: msg.id_message,
-            sender: msg.user?.username || "Inconnu",
-            senderId: msg.user_id,
-            content: msg.content,
-            timestamp: new Date(msg.sent_at).toLocaleTimeString("fr-FR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            isYou: msg.user?.email === currentUser.email,
-            reactions: [],
-          }));
-          setMessages(mappedMessages);
-        }
-
-        // Load Current Video from Salon
-        const { data: salonData } = await supabase
-          .from('salon')
-          .select('current_video_id, video(*)')
-          .eq('id_salon', backendSalonId)
-          .single();
-
-        // Load Playlist
-        const playlistData = await fetchPlaylist(backendSalonId);
-        setPlaylistId(playlistData.playlistId);
-        const mapped = (playlistData.items || []).map((item: any) => {
-          const youtubeId = item.youtube_id;
-          const isCurrent = salonData?.current_video_id
-            ? item.id === salonData.current_video_id
-            : false;
-          return {
-            id: item.id,
-            youtubeId,
-            title: item.titre ?? "Sans titre",
-            thumbnail: youtubeId
-              ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`
-              : THUMBNAIL_MOVIE,
-            duration: item.duration ? String(item.duration) : "0:00",
-            isCurrent,
-            votes: 0,
-            isFavorite: youtubeId ? favoriteIds.has(youtubeId) : false,
-          };
-        });
-        setPlaylist(mapped);
-
-      } catch (error) {
-        console.error("Erreur chargement initial", error);
-      }
-    };
-
-    // ... loadPlaylist logic ... keep existing or merge
-
-    loadState();
+    loadRoomSnapshot().catch((error) => {
+      console.error("Erreur chargement initial", error);
+    });
 
     // 3. Realtime Subscription (Messages AND Salon Updates)
     const channel = supabase
@@ -390,17 +417,46 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 isCurrent: p.id === vid.id_video
               })));
               // If it wasn't in playlist, maybe add it? 
-              toast.info(`Vidéo changée: ${vid.title}`);
+              toast.info(`Vidéo changée: ${vid.title ?? vid.titre ?? "Sans titre"}`);
             }
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'salon_member', filter: `salon_id=eq.${backendSalonId}` },
+        async () => {
+          await loadParticipantsSnapshot();
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_force_sync' },
+        async (payload) => {
+          if (payload?.payload?.by === currentUser.id) return;
+          await loadRoomSnapshot();
+          toast.info("Synchronisation reçue");
+        }
+      )
       .subscribe();
 
+    roomChannelRef.current = channel;
+
     return () => {
+      roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, favoriteIds]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot]);
+
+  // Keep favorite flags in sync without blocking initial playlist load.
+  useEffect(() => {
+    setPlaylist((prev) =>
+      prev.map((video) => ({
+        ...video,
+        isFavorite: video.youtubeId ? favoriteIds.has(video.youtubeId) : false,
+      }))
+    );
+  }, [favoriteIds]);
 
 
   // Sauvegarder l'historique des vidéos
@@ -442,7 +498,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setNewMessage("");
 
     } catch (error: any) {
-      toast.error("Erreur envoi message");
+      toast.error(getErrorMessage(error, "Erreur envoi message"));
       console.error(error);
     }
   };
@@ -505,40 +561,22 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     if (backendSalonId) {
       try {
         await supabase.from('salon').update({
-          // status: newPlayingState ? 'playing' : 'paused' // field name might vary, checking logic
-          // The user wanted 'sync'. Usually this implies updating current_video_id or similar?
-          // Wait, previous code sent { status: 'playing' }. 
-          // Looking at tablebase.sql, there is NO status column on salon table.
-          // There is 'current_video_id'.
-          // Maybe there is no 'playing/paused' state in DB yet?
-          // If the schema doesn't have it, we might need to add it or just ignore for now if it was legacy.
-          // However, the user wants sync.
-          // Let's assume for now we just log it or if we had a column we'd use it.
-          // But wait, the user said "sync".
+          video_status: newPlayingState ? 'playing' : 'paused',
+          video_time: currentTime
+        }).eq('id_salon', backendSalonId);
 
-          // For now, let's just NOT call the invalid API.
-          // If we want real play/pause sync, we need a column `is_playing` and `timestamp` in `salon` table.
-          // The `tablebase.sql` did NOT show `is_playing`.
-          // So real sync of "play/pause" might not be possible without DB schema change.
-          // BUT, `current_video_id` change IS possible.
-
-          // The existing code was calling an endpoint that probably broadcasted an event.
-          // We can replicate this by sending a "Broadcast" message via Supabase Realtime Channel if we don't want to store state?
-          // OR we just comment out the broken API call.
-
-          // Given the user instructions "The user wants... synchronized", I should probably implement it properly.
-          // But let's first kill the API call.
-        });
-
-        // BETTER APPROACH: Send a "Broadcast" event for Play/Pause since it's transient?
-        // OR just rely on the fact that we can't store it yet.
-        // Let's broadcast it!
-        const channel = supabase.channel(`room-${backendSalonId}`);
-        await channel.send({
-          type: 'broadcast',
-          event: 'player_state',
-          payload: { isPlaying: newPlayingState }
-        });
+        if (roomChannelRef.current) {
+          await roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'room_force_sync',
+            payload: {
+              by: currentUser.id,
+              at: Date.now(),
+              isPlaying: newPlayingState,
+              time: currentTime
+            }
+          });
+        }
 
       } catch (err) {
         console.error('Erreur sync video:', err);
@@ -583,7 +621,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       );
     } catch (error) {
       console.error("Erreur favoris", error);
-      toast.error("Impossible de mettre a jour le favori");
+      toast.error(getErrorMessage(error, "Impossible de mettre a jour le favori"));
     }
   };
 
@@ -604,9 +642,41 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     setShowLeaveDialog(false);
   };
 
-  const handleSync = () => {
-    console.log('Syncing video...');
-    toast.success('🔄 Synchronisation effectuée');
+  const handleSync = async () => {
+    if (!isAdmin) {
+      toast.error("Seul l'admin peut synchroniser");
+      return;
+    }
+    if (!backendSalonId) {
+      toast.error("Salon introuvable pour la synchronisation");
+      return;
+    }
+
+    try {
+      await supabase.from('salon').update({
+        video_time: currentTime,
+        video_status: isPlaying ? 'playing' : 'paused',
+        current_video_id: currentVideo?.id || null
+      }).eq('id_salon', backendSalonId);
+
+      await loadRoomSnapshot();
+      if (roomChannelRef.current) {
+        await roomChannelRef.current.send({
+          type: 'broadcast',
+          event: 'room_force_sync',
+          payload: {
+            by: currentUser.id,
+            at: Date.now(),
+            time: currentTime,
+            isPlaying
+          }
+        });
+      }
+      toast.success("Synchronisation envoyée à tous les invités");
+    } catch (error: any) {
+      toast.error(error?.message || "Erreur synchronisation");
+      console.error("Erreur sync salon", error);
+    }
   };
 
   const handleAddVideo = async (url: string, title: string) => {
@@ -634,7 +704,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setPlaylist(mapped);
       toast.success(`✅ Vidéo "${title}" ajoutée à la playlist !`);
     } catch (error) {
-      toast.error("Erreur ajout vidéo");
+      toast.error(getErrorMessage(error, "Erreur ajout vidéo"));
       console.error(error);
     }
   };
@@ -649,7 +719,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         toast.success(`🗑️ Vidéo "${videoToRemove.title}" supprimée`);
       }
     } catch (error) {
-      toast.error("Erreur suppression vidéo");
+      toast.error(getErrorMessage(error, "Erreur suppression vidéo"));
       console.error(error);
     }
   };
@@ -681,16 +751,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
       // Also update database state for persistence (new joiners)
       supabase.from('salon').update({
-        current_video_id: video.id // Note: using internal ID not youtubeId if possible?
-        // Actually table has current_video_id. video variable has .id (internal) and .youtubeId.
-        // Wait, 'video' in handlePlayVideo comes from 'playlist'.
-        // In loadPlaylist (Step 197), 'playlist' items have 'id' (which is video internal ID?).
-        // Let's assume video.id is the UUID of the video table.
+        current_video_id: video.id,
+        video_status: 'playing',
+        video_time: 0
       }).eq('id_salon', backendSalonId)
         .then(res => {
           if (res.error) console.error("Error updating salon video state", res.error);
         });
     }
+
+    setCurrentTime(0);
+    setIsPlaying(true);
+    setSyncNonce(Date.now());
 
     // Ajouter à l'historique
     const historyEntry: VideoHistoryEntry = {
@@ -762,8 +834,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('Toggle Play/Pause - Current state:', isPlaying);
-              setIsPlaying(!isPlaying);
+              handlePlayPause();
             }}
             variant="ghost"
             size="sm"
@@ -787,7 +858,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('Syncing video...');
+              handleSync();
             }}
             variant="ghost"
             size="sm"
@@ -841,6 +912,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               videoId={currentVideo.youtubeId}
               isPlaying={isPlaying}
               onPlayPause={handlePlayPause}
+              syncTime={currentTime}
+              syncNonce={syncNonce}
+              onTimeUpdate={(seconds) => {
+                if (isAdmin) setCurrentTime(seconds);
+              }}
+              onPlaybackStateChange={(playing) => {
+                if (isAdmin) setIsPlaying(playing);
+              }}
               theme={theme}
             />
           ) : (
@@ -1033,6 +1112,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                    autoComplete="off"
                     placeholder="Message..."
                     className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} flex-1 text-sm h-9`}
                   />

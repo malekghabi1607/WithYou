@@ -15,16 +15,7 @@ export async function fetchFavorites(): Promise<FavoriteVideoApi[]> {
 
   const { data, error } = await supabase
     .from('favorite_video')
-    .select(`
-      id_video,
-      created_at,
-      video:video (
-        id_video,
-        youtube_id,
-        title,
-        thumbnail_url
-      )
-    `)
+    .select('id_video, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
@@ -33,12 +24,30 @@ export async function fetchFavorites(): Promise<FavoriteVideoApi[]> {
     return [];
   }
 
-  const mapped = (data || []).map((row: any) => ({
-    youtube_id: row.video?.youtube_id || "",
-    title: row.video?.title || "Sans titre",
-    thumbnail: row.video?.thumbnail_url || null,
-    added_at: row.created_at || null,
-  })).filter((row: FavoriteVideoApi) => !!row.youtube_id);
+  const videoIds = (data || []).map((row: any) => row.id_video).filter(Boolean);
+  if (videoIds.length === 0) return [];
+
+  const { data: videos, error: videosError } = await supabase
+    .from('video')
+    .select('*')
+    .in('id_video', videoIds);
+
+  if (videosError) {
+    console.warn("Fetch videos for favorites failed", videosError);
+    return [];
+  }
+
+  const videoById = new Map((videos || []).map((v: any) => [v.id_video, v]));
+  const mapped = (data || []).map((row: any) => {
+    const v = videoById.get(row.id_video);
+    if (!v) return null;
+    return {
+      youtube_id: v.youtube_id || "",
+      title: v.title ?? v.titre ?? "Sans titre",
+      thumbnail: v.thumbnail_url || null,
+      added_at: row.created_at || null,
+    };
+  }).filter(Boolean);
 
   return mapped;
 }

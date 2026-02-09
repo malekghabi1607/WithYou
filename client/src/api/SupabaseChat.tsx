@@ -78,6 +78,9 @@ export function SupabaseChat({ roomId, userName, className = "" }: SupabaseChatP
       {/* Zone de saisie */}
       <form onSubmit={handleSend} className="p-3 border-t border-gray-200 dark:border-zinc-800 flex gap-2">
         <input
+          id="supabase-chat-message"
+          name="message"
+          autoComplete="off"
           className="flex-1 bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           placeholder="Votre message..."
           value={inputText}

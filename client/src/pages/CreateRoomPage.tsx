@@ -60,6 +60,16 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
     maxParticipants: 20
   });
 
+  const getErrorMessage = (error: any, fallback: string) => {
+    const message =
+      error?.message ||
+      error?.error_description ||
+      error?.details ||
+      error?.hint ||
+      fallback;
+    return message === fallback ? fallback : `${fallback}: ${message}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -121,7 +131,7 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
       onNavigate("room-loading", { roomId });
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors de la création du salon");
+      toast.error(getErrorMessage(err, "Erreur lors de la création du salon"));
     }
   };
 

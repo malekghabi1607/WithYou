@@ -49,6 +49,7 @@ interface Room {
   name: string;
   description: string;
   participants: number;
+  videosCount: number;
   maxParticipants: number;
   isPublic: boolean;
   currentVideo: string;
@@ -83,7 +84,8 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
             id: room.id_salon,
             name: room.name || "Salon sans nom",
             description: room.description || "Aucune description",
-            participants: 0,
+            participants: room.participants_count || 0,
+            videosCount: room.video_count || 0,
             maxParticipants: room.max_participants || 20,
             isPublic: !!room.is_public,
             currentVideo: room.current_video_title || "Aucune vidéo",
@@ -266,6 +268,13 @@ export function PublicRoomsPage({ onNavigate, currentUser, onSignOut, theme = "d
                         <Users className="w-4 h-4 text-red-500" />
                         <span className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
                           {room.participants}/{room.maxParticipants}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <Play className="w-4 h-4 text-red-500" />
+                        <span className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
+                          {room.videosCount} vidéo(s)
                         </span>
                       </div>
 

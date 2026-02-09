@@ -66,19 +66,19 @@ export function VideoManagementPanel({
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleAddVideo = () => {
-    if (videoUrl.trim() && videoTitle.trim()) {
-      // Extraire l'ID YouTube de l'URL
-      const youtubeId = extractYouTubeId(videoUrl);
-      onAddVideo(videoUrl, videoTitle, youtubeId || undefined);
-      setVideoUrl("");
-      setVideoTitle("");
-      
-      if (youtubeId) {
-        toast.success(`Vidéo YouTube ajoutée avec succès !`);
-      } else {
-        toast.success(`Vidéo ajoutée !`);
-      }
+    if (!videoUrl.trim() || !videoTitle.trim()) return;
+
+    // Extraire l'ID YouTube de l'URL (schema DB: youtube_id obligatoire)
+    const youtubeId = extractYouTubeId(videoUrl);
+    if (!youtubeId) {
+      toast.error("URL YouTube invalide. Utilise un lien YouTube.");
+      return;
     }
+
+    onAddVideo(videoUrl, videoTitle, youtubeId);
+    setVideoUrl("");
+    setVideoTitle("");
+    toast.success("Vidéo YouTube ajoutée avec succès !");
   };
 
   const filteredVideos = videos.filter(v => 

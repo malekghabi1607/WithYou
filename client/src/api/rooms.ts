@@ -24,6 +24,62 @@
 // client/src/api/rooms.ts
 import { supabase } from "./supabase";
 
+const getSupabaseErrorMessage = (error: any, fallback: string) =>
+  error?.message || error?.details || error?.hint || fallback;
+
+async function resolveSalonReference(roomRef: string): Promise<{ id_salon: string; id_playlist?: string | null } | null> {
+  const { data, error } = await supabase
+    .from('salon')
+    .select('id_salon, id_playlist')
+    .or(`id_salon.eq.${roomRef},room_code.eq.${roomRef},invitation_code.eq.${roomRef}`)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("resolveSalonReference error:", error);
+    return null;
+  }
+
+  return data || null;
+}
+
+async function upsertVideoRecord(youtubeId: string, title?: string) {
+  const basePayload: Record<string, any> = { youtube_id: youtubeId };
+
+  // Try with `title` first (schema A), then fallback to `titre` (schema B).
+  if (title) {
+    const { data, error } = await supabase
+      .from('video')
+      .upsert({ ...basePayload, title }, { onConflict: 'youtube_id' })
+      .select()
+      .single();
+
+    if (!error) return { data, error: null };
+
+    const message = String((error as any)?.message || "");
+    if (!message.includes("Could not find the 'title' column")) {
+      return { data: null, error };
+    }
+  }
+
+  if (title) {
+    const { data, error } = await supabase
+      .from('video')
+      .upsert({ ...basePayload, titre: title }, { onConflict: 'youtube_id' })
+      .select()
+      .single();
+
+    return { data, error: error || null };
+  }
+
+  const { data, error } = await supabase
+    .from('video')
+    .upsert(basePayload, { onConflict: 'youtube_id' })
+    .select()
+    .single();
+
+  return { data, error: error || null };
+}
+
 // 🔹 Extraire youtubeId depuis une URL YouTube
 export function extractYoutubeId(url: string): string | null {
   const patterns = [
@@ -91,7 +147,9 @@ export async function createSalon(payload: {
   let initialVideoId = null;
 
   if (payload.youtubeId) {
-    const yId = extractYoutubeId(payload.youtubeId);
+    const raw = payload.youtubeId.trim();
+    const isDirectId = /^[a-zA-Z0-9_-]{11}$/.test(raw);
+    const yId = isDirectId ? raw : extractYoutubeId(raw);
     console.log("Extracted YouTube ID:", yId);
 
     if (yId) {
@@ -107,15 +165,10 @@ export async function createSalon(payload: {
         console.log("Found existing video:", initialVideoId);
       } else {
         // 2b. Insert new video
-        const { data: newVideo, error: insertError } = await supabase
-          .from('video')
-          .insert({
-            youtube_id: yId,
-            title: payload.title || "Vidéo initiale",
-            duration: 0
-          })
-          .select()
-          .single();
+        const { data: newVideo, error: insertError } = await upsertVideoRecord(
+          yId,
+          payload.title || payload.name || "Vidéo initiale"
+        );
 
         if (insertError) {
           console.error("Error inserting video:", insertError);
@@ -142,22 +195,40 @@ export async function createSalon(payload: {
 
   if (salonError) {
     console.error("Create salon error:", salonError);
-    throw new Error("Erreur création salon");
+    throw new Error(getSupabaseErrorMessage(salonError, "Erreur création salon"));
   }
 
-  // 4. Create initial Playlist
-  const { data: playlistData } = await supabase.from('playlist').insert({
-    name: "File d'attente",
+  // 4. Create initial Playlist (schema uses nom_salon)
+  const { data: playlistData, error: playlistError } = await supabase.from('playlist').insert({
+    nom_salon: salonData.name || "File d'attente",
     salon_id: salonData.id_salon
   }).select().single();
+
+  if (playlistError) {
+    throw new Error(getSupabaseErrorMessage(playlistError, "Erreur création playlist"));
+  }
+
+  // 4b. Link playlist back to salon
+  if (playlistData?.id_playlist) {
+    const { error: salonUpdateError } = await supabase
+      .from('salon')
+      .update({ id_playlist: playlistData.id_playlist })
+      .eq('id_salon', salonData.id_salon);
+
+    if (salonUpdateError) {
+      throw new Error(getSupabaseErrorMessage(salonUpdateError, "Erreur liaison salon/playlist"));
+    }
+  }
 
   // 5. If we had a video, add it to the playlist too
   if (initialVideoId && playlistData) {
     try {
       await supabase.from('playlist_video').insert({
-        playlist_id: playlistData.id_playlist,
-        video_id: initialVideoId,
-        added_by: user.id
+        id: crypto.randomUUID(),
+        id_playlist: playlistData.id_playlist,
+        id_video: initialVideoId,
+        position: 1,
+        is_current: true
       });
     } catch (err) {
       console.warn("Could not add to playlist_video table", err);
@@ -169,26 +240,115 @@ export async function createSalon(payload: {
 
 export async function listSalons() {
   console.log("listSalons: Fetching all salons...");
-  const { data, error } = await supabase.from('salon').select('*, owner_name:users(username)');
+  const { data, error } = await supabase
+    .from('salon')
+    .select('id_salon,name,description,is_public,max_participants,owner_id,current_video_id,id_playlist,room_code,invitation_code,password,owner_name:users(username)');
 
   if (error) {
     console.error("listSalons error", error);
     return [];
   }
 
-  console.log("listSalons: Found", data?.length);
-  return data || [];
+  const salons = data || [];
+  if (salons.length === 0) {
+    console.log("listSalons: Found 0");
+    return [];
+  }
+
+  const salonIds = salons.map((s: any) => s.id_salon);
+  const knownPlaylistIds = new Set(
+    salons.map((s: any) => s.id_playlist).filter(Boolean)
+  );
+
+  // Fetch missing playlists by salon_id (legacy/inconsistent rows fallback).
+  const { data: playlists } = await supabase
+    .from('playlist')
+    .select('id_playlist,salon_id')
+    .in('salon_id', salonIds);
+
+  const playlistIdBySalon = new Map<string, string>();
+  salons.forEach((s: any) => {
+    if (s.id_playlist) playlistIdBySalon.set(s.id_salon, s.id_playlist);
+  });
+  (playlists || []).forEach((p: any) => {
+    if (!playlistIdBySalon.has(p.salon_id)) {
+      playlistIdBySalon.set(p.salon_id, p.id_playlist);
+    }
+    knownPlaylistIds.add(p.id_playlist);
+  });
+
+  const playlistIds = Array.from(knownPlaylistIds);
+  const salonIdByPlaylist = new Map<string, string>();
+  playlistIdBySalon.forEach((playlistId, salonId) => {
+    salonIdByPlaylist.set(playlistId, salonId);
+  });
+
+  const { data: tracks } = playlistIds.length
+    ? await supabase
+        .from('playlist_video')
+        .select('id_playlist,id_video')
+        .in('id_playlist', playlistIds)
+    : { data: [] as any[] };
+
+  const videoCountBySalon = new Map<string, number>();
+  const firstVideoBySalon = new Map<string, string>();
+  (tracks || []).forEach((t: any) => {
+    const salonId = salonIdByPlaylist.get(t.id_playlist);
+    if (!salonId) return;
+    videoCountBySalon.set(salonId, (videoCountBySalon.get(salonId) || 0) + 1);
+    if (!firstVideoBySalon.has(salonId) && t.id_video) {
+      firstVideoBySalon.set(salonId, t.id_video);
+    }
+  });
+
+  const currentOrFirstVideoIds = Array.from(
+    new Set(
+      salons
+        .map((s: any) => s.current_video_id || firstVideoBySalon.get(s.id_salon))
+        .filter(Boolean)
+    )
+  );
+
+  const { data: videos } = currentOrFirstVideoIds.length
+    ? await supabase
+        .from('video')
+        .select('*')
+        .in('id_video', currentOrFirstVideoIds)
+    : { data: [] as any[] };
+
+  const videoById = new Map((videos || []).map((v: any) => [v.id_video, v]));
+
+  const { data: members } = await supabase
+    .from('salon_member')
+    .select('salon_id');
+
+  const participantsBySalon = new Map<string, number>();
+  (members || []).forEach((m: any) => {
+    participantsBySalon.set(m.salon_id, (participantsBySalon.get(m.salon_id) || 0) + 1);
+  });
+
+  const mapped = salons.map((s: any) => {
+    const selectedVideoId = s.current_video_id || firstVideoBySalon.get(s.id_salon);
+    const selectedVideo = selectedVideoId ? videoById.get(selectedVideoId) : null;
+    return {
+      ...s,
+      has_playlist: playlistIdBySalon.has(s.id_salon),
+      video_count: videoCountBySalon.get(s.id_salon) || 0,
+      participants_count: participantsBySalon.get(s.id_salon) || 0,
+      has_password: !!s.password,
+      current_video_title: selectedVideo?.title ?? selectedVideo?.titre ?? null,
+    };
+  });
+
+  console.log("listSalons: Found", mapped.length);
+  return mapped;
 }
 
 export async function fetchSalonByCode(code: string) {
-  // Assuming 'id_salon' is the code or we query by name/id
-  // The original code used a route /salons/:code
-
   const { data, error } = await supabase
     .from('salon')
     .select('*')
-    .or(`id_salon.eq.${code}`)
-    // If you have a 'room_code' column, add .or(`room_code.eq.${code}`)
+    .or(`id_salon.eq.${code},room_code.eq.${code},invitation_code.eq.${code}`)
     .single();
 
   if (error) throw new Error("Salon introuvable");
@@ -226,19 +386,30 @@ export async function fetchMySalons() {
 
 // 🔹 Récupérer la playlist
 export async function fetchPlaylist(roomId: string) {
+  const salonRef = await resolveSalonReference(roomId);
+  const resolvedSalonId = salonRef?.id_salon || roomId;
+
   // 1. Get Playlist ID for Salon
   const { data: playlists, error } = await supabase
     .from('playlist')
     .select('id_playlist')
-    .eq('salon_id', roomId)
+    .eq('salon_id', resolvedSalonId)
     .maybeSingle();
 
   if (error) {
     console.error("fetchPlaylist error", error);
-    throw new Error("Erreur fetch playlist");
+    throw new Error(getSupabaseErrorMessage(error, "Erreur fetch playlist"));
   }
 
-  if (!playlists) return { playlistId: null, items: [] };
+  if (!playlists) {
+    // Fallback: some environments store explicit playlist reference on salon
+    const fallbackPlaylistId = salonRef?.id_playlist;
+    if (fallbackPlaylistId) {
+      return fetchPlaylistById(fallbackPlaylistId);
+    }
+
+    return { playlistId: null, items: [] };
+  }
 
   // 2. Load links from join table `playlist_video`
   const { data: tracks, error: tracksError } = await supabase
@@ -259,7 +430,7 @@ export async function fetchPlaylist(roomId: string) {
 
   const { data: videos, error: videosError } = await supabase
     .from('video')
-    .select('id_video, youtube_id, title, thumbnail_url, duration')
+    .select('*')
     .in('id_video', videoIds);
 
   if (videosError) {
@@ -274,7 +445,7 @@ export async function fetchPlaylist(roomId: string) {
     return {
       id: v.id_video,
       youtube_id: v.youtube_id,
-      titre: v.title,
+      titre: v.title ?? v.titre,
       thumbnail: v.thumbnail_url,
       duration: v.duration,
       position: t.position
@@ -287,32 +458,86 @@ export async function fetchPlaylist(roomId: string) {
   };
 }
 
+// 🔹 Récupérer la playlist par son ID (utile quand salon.id_playlist est déjà connu)
+export async function fetchPlaylistById(playlistId: string) {
+  const { data: tracks, error: tracksError } = await supabase
+    .from('playlist_video')
+    .select('id, id_video, position, created_at')
+    .eq('id_playlist', playlistId)
+    .order('position', { ascending: true });
+
+  if (tracksError) {
+    console.error("Error fetching playlist tracks by id:", tracksError);
+    return { playlistId, items: [] };
+  }
+
+  const videoIds = (tracks || []).map((t: any) => t.id_video).filter(Boolean);
+  if (videoIds.length === 0) {
+    return { playlistId, items: [] };
+  }
+
+  const { data: videos, error: videosError } = await supabase
+    .from('video')
+    .select('*')
+    .in('id_video', videoIds);
+
+  if (videosError) {
+    console.error("Error fetching videos by playlist id:", videosError);
+    return { playlistId, items: [] };
+  }
+
+  const videoById = new Map((videos || []).map((v: any) => [v.id_video, v]));
+  const items = (tracks || []).map((t: any) => {
+    const v = videoById.get(t.id_video);
+    if (!v) return null;
+    return {
+      id: v.id_video,
+      youtube_id: v.youtube_id,
+      titre: v.title ?? v.titre,
+      thumbnail: v.thumbnail_url,
+      duration: v.duration,
+      position: t.position
+    };
+  }).filter(Boolean);
+
+  return { playlistId, items };
+}
+
 // 🔹 Ajouter une vidéo
 export async function addVideoToPlaylist(
   roomId: string,
   data: { title: string; url: string }
 ) {
+  const salonRef = await resolveSalonReference(roomId);
+  const resolvedSalonId = salonRef?.id_salon || roomId;
+
   // 1. Insert Video
   const youtubeId = extractYoutubeId(data.url);
   if (!youtubeId) throw new Error("URL invalide");
 
-  const { data: videoData, error: videoError } = await supabase
-    .from('video')
-    .upsert({
-      youtube_id: youtubeId,
-      title: data.title
-    }, { onConflict: 'youtube_id' })
-    .select()
-    .single();
+  const { data: videoData, error: videoError } = await upsertVideoRecord(
+    youtubeId,
+    data.title
+  );
 
   if (videoError) throw videoError;
+  if (!videoData?.youtube_id) {
+    throw new Error("Video invalide: youtube_id manquant");
+  }
 
   // 2. Get Playlist
-  const { data: playlist } = await supabase
+  let { data: playlist } = await supabase
     .from('playlist')
     .select('id_playlist')
-    .eq('salon_id', roomId)
-    .single();
+    .eq('salon_id', resolvedSalonId)
+    .maybeSingle();
+
+  // Fallback when playlist row is missing but salon points to one
+  if (!playlist) {
+    if (salonRef?.id_playlist) {
+      playlist = { id_playlist: salonRef.id_playlist };
+    }
+  }
 
   if (playlist) {
     // 3. Link Video to Playlist
@@ -321,7 +546,7 @@ export async function addVideoToPlaylist(
       .select('*', { count: 'exact', head: true })
       .eq('id_playlist', playlist.id_playlist);
 
-    await supabase
+    const { error: playlistInsertError } = await supabase
       .from('playlist_video')
       .insert({
         id: crypto.randomUUID(),
@@ -329,6 +554,10 @@ export async function addVideoToPlaylist(
         id_video: videoData.id_video,
         position: (count || 0) + 1
       });
+
+    if (playlistInsertError) {
+      throw new Error(getSupabaseErrorMessage(playlistInsertError, "Erreur ajout a la playlist"));
+    }
   }
 
   return { success: true };
@@ -336,17 +565,30 @@ export async function addVideoToPlaylist(
 
 // 🔹 Supprimer une vidéo
 export async function removeVideoFromPlaylist(roomId: string, videoId: string) {
-  const { data: playlist } = await supabase
+  const salonRef = await resolveSalonReference(roomId);
+  const resolvedSalonId = salonRef?.id_salon || roomId;
+
+  let { data: playlist } = await supabase
     .from('playlist')
     .select('id_playlist')
-    .eq('salon_id', roomId)
-    .single();
+    .eq('salon_id', resolvedSalonId)
+    .maybeSingle();
+
+  if (!playlist) {
+    if (salonRef?.id_playlist) {
+      playlist = { id_playlist: salonRef.id_playlist };
+    }
+  }
 
   if (!playlist) return;
 
-  await supabase
+  const { error: removeError } = await supabase
     .from('playlist_video')
     .delete()
     .eq('id_playlist', playlist.id_playlist)
     .eq('id_video', videoId);
+
+  if (removeError) {
+    throw new Error(getSupabaseErrorMessage(removeError, "Erreur suppression de la video"));
+  }
 }
