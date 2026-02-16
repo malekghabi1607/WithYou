@@ -27,6 +27,8 @@
 import { X, Users, Crown, Copy, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { fetchSalonByCode } from "../../api/rooms";
+import { fetchParticipants } from "../../api/participants";
+import { supabase } from "../../api/supabase";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
 
@@ -34,9 +36,17 @@ interface RoomInfoPanelProps {
   roomId: string;
   onClose: () => void;
   theme?: "light" | "dark";
+  adminName?: string;
+  participantsCount?: number;
 }
 
-export function RoomInfoPanel({ roomId, onClose, theme = "dark" }: RoomInfoPanelProps) {
+export function RoomInfoPanel({
+  roomId,
+  onClose,
+  theme = "dark",
+  adminName,
+  participantsCount,
+}: RoomInfoPanelProps) {
   const [copied, setCopied] = useState(false);
   const [room, setRoom] = useState<any>(null);
 
@@ -44,11 +54,37 @@ export function RoomInfoPanel({ roomId, onClose, theme = "dark" }: RoomInfoPanel
     const load = async () => {
       try {
         const data = await fetchSalonByCode(roomId);
+        let resolvedAdmin = adminName || "Administrateur";
+        let resolvedParticipants = participantsCount ?? 0;
+
+        try {
+          const participants = await fetchParticipants(data.id_salon || roomId);
+          const activeCount = (participants || []).filter((p) => p.is_active).length;
+          if (activeCount > 0) resolvedParticipants = activeCount;
+          const admin = (participants || []).find((p) => p.role === "admin");
+          if (admin?.name) resolvedAdmin = admin.name;
+        } catch {
+          // fallback below
+        }
+
+        if ((!resolvedAdmin || resolvedAdmin === "Administrateur") && data.owner_id) {
+          const { data: ownerData } = await supabase
+            .from("users")
+            .select("username,email")
+            .eq("id_user", data.owner_id)
+            .maybeSingle();
+          if (ownerData?.username) {
+            resolvedAdmin = ownerData.username;
+          } else if (ownerData?.email) {
+            resolvedAdmin = ownerData.email.split("@")[0];
+          }
+        }
+
         setRoom({
           name: data.name,
-          creator: "Admin",
+          creator: resolvedAdmin || "Administrateur",
           isPublic: !!data.is_public,
-          participants: 0,
+          participants: resolvedParticipants,
           maxParticipants: data.max_participants || 20,
           joinCode: data.invitation_code ?? data.room_code,
         });
@@ -58,7 +94,7 @@ export function RoomInfoPanel({ roomId, onClose, theme = "dark" }: RoomInfoPanel
     };
 
     load();
-  }, [roomId]);
+  }, [roomId, adminName, participantsCount]);
   
   if (!room) {
     return null;

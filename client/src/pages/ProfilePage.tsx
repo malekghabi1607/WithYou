@@ -69,8 +69,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, onUserUpdate, t
     const loadRooms = async () => {
       try {
         const data = await fetchMySalons();
-        // Since api/rooms.ts fetchMySalons returns { salons: [...] } which are owned salons
-        const owned = (data.salons || []).map((room: any) => ({
+        const owned = (data.owned || data.salons || []).map((room: any) => ({
           id: room.id_salon,
           name: room.name,
           description: room.description || "Aucune description",
@@ -81,10 +80,20 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, onUserUpdate, t
           thumbnail: DEFAULT_THUMBNAIL,
         }));
 
-        // Joined rooms not yet implemented in fetchMySalons
-        const joined: Room[] = [];
+        const joined = (data.joined || []).map((room: any) => ({
+          id: room.id_salon,
+          name: room.name,
+          description: room.description || "Aucune description",
+          isPublic: !!room.is_public,
+          role: "member" as const,
+          members: 0,
+          lastActive: "En ligne",
+          thumbnail: DEFAULT_THUMBNAIL,
+        }));
 
-        setUserRooms([...owned, ...joined]);
+        const dedupedById = new Map<string, Room>();
+        [...owned, ...joined].forEach((room) => dedupedById.set(room.id, room));
+        setUserRooms(Array.from(dedupedById.values()));
       } catch (error: any) {
         if (error.name === 'AbortError') return;
         console.error("Erreur chargement salons profil", error);
@@ -162,7 +171,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, onUserUpdate, t
       <Header
         currentUser={currentUser}
         currentPage="profile"
-        onNavigate={onNavigate}
+        onNavigate={onNavigate} onLogout={onLogout}
         theme={theme}
       />
 
@@ -464,7 +473,7 @@ export function ProfilePage({ currentUser, onNavigate, onLogout, onUserUpdate, t
         </div>
       </main>
 
-      <Footer onNavigate={onNavigate} theme={theme} />
+      <Footer onNavigate={onNavigate} onLogout={onLogout} theme={theme} />
     </div>
   );
 }

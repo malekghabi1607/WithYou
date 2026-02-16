@@ -23,16 +23,51 @@
 
 // client/src/api/rooms.ts
 import { supabase } from "./supabase";
+import { connectToSalon } from "./participants";
 
 const getSupabaseErrorMessage = (error: any, fallback: string) =>
   error?.message || error?.details || error?.hint || fallback;
 
+function getJoinedRoomsStorageKey(userId: string) {
+  return `withyou_joined_salons_${userId}`;
+}
+
+function readLocallyPersistedJoinedSalonIds(userId: string): string[] {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(getJoinedRoomsStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed
+        .map((entry: any) =>
+          typeof entry === "string" ? entry : entry?.id_salon
+        )
+        .filter(Boolean)
+      : [];
+  } catch (error) {
+    console.warn("Could not read joined salons from localStorage", error);
+    return [];
+  }
+}
+
 async function resolveSalonReference(roomRef: string): Promise<{ id_salon: string; id_playlist?: string | null } | null> {
-  const { data, error } = await supabase
+  const cleanedRef = roomRef.trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanedRef);
+
+  let queryBuilder = supabase
     .from('salon')
-    .select('id_salon, id_playlist')
-    .or(`id_salon.eq.${roomRef},room_code.eq.${roomRef},invitation_code.eq.${roomRef}`)
-    .maybeSingle();
+    .select('id_salon, id_playlist');
+
+  if (isUuid) {
+    // If it's a UUID, it could be the ID or the code (unlikely but possible for legacy codes)
+    queryBuilder = queryBuilder.or(`id_salon.eq.${cleanedRef},room_code.eq.${cleanedRef},invitation_code.eq.${cleanedRef}`);
+  } else {
+    // If it's NOT a UUID, do NOT query id_salon (avoids 400/22P02 error)
+    queryBuilder = queryBuilder.or(`room_code.ilike.${cleanedRef},invitation_code.ilike.${cleanedRef}`);
+  }
+
+  const { data, error } = await queryBuilder.maybeSingle();
 
   if (error) {
     console.warn("resolveSalonReference error:", error);
@@ -133,7 +168,9 @@ export async function createSalon(payload: {
       id_user: user.id, // Using Supabase auth ID as FK
       username: user.user_metadata?.username || user.email?.split('@')[0],
       email: user.email,
-      password_hash: "managed_by_supabase_auth"
+      password_hash: "managed_by_supabase_auth",
+      // role: "student", // REMOVED: Do not overwrite role during room creation!
+      email_verified_at: user.email_confirmed_at || null,
     }, { onConflict: 'id_user' })
     .select()
     .single();
@@ -150,7 +187,6 @@ export async function createSalon(payload: {
     const raw = payload.youtubeId.trim();
     const isDirectId = /^[a-zA-Z0-9_-]{11}$/.test(raw);
     const yId = isDirectId ? raw : extractYoutubeId(raw);
-    console.log("Extracted YouTube ID:", yId);
 
     if (yId) {
       // 2a. Check if video exists
@@ -162,7 +198,6 @@ export async function createSalon(payload: {
 
       if (existingVideo) {
         initialVideoId = existingVideo.id_video;
-        console.log("Found existing video:", initialVideoId);
       } else {
         // 2b. Insert new video
         const { data: newVideo, error: insertError } = await upsertVideoRecord(
@@ -174,11 +209,24 @@ export async function createSalon(payload: {
           console.error("Error inserting video:", insertError);
         } else if (newVideo) {
           initialVideoId = newVideo.id_video;
-          console.log("Inserted new video:", initialVideoId);
         }
       }
     }
   }
+
+  // Helper to generate a short code
+  const generateRoomCode = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let result = "";
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
+  const roomCode = generateRoomCode();
+  console.log("Generated roomCode:", roomCode); // DEBUG LOG
+
 
   // 3. Insert Salon
   const { data: salonData, error: salonError } = await supabase
@@ -188,7 +236,9 @@ export async function createSalon(payload: {
       description: payload.description,
       is_public: payload.isPublic,
       owner_id: user.id,
-      current_video_id: initialVideoId // Set the initial video
+      current_video_id: initialVideoId, // Set the initial video
+      room_code: roomCode,
+      invitation_code: roomCode
     }])
     .select()
     .single();
@@ -199,7 +249,9 @@ export async function createSalon(payload: {
   }
 
   // 4. Create initial Playlist (schema uses nom_salon)
+  const playlistId = crypto.randomUUID();
   const { data: playlistData, error: playlistError } = await supabase.from('playlist').insert({
+    id_playlist: playlistId,
     nom_salon: salonData.name || "File d'attente",
     salon_id: salonData.id_salon
   }).select().single();
@@ -239,7 +291,6 @@ export async function createSalon(payload: {
 }
 
 export async function listSalons() {
-  console.log("listSalons: Fetching all salons...");
   const { data, error } = await supabase
     .from('salon')
     .select('id_salon,name,description,is_public,max_participants,owner_id,current_video_id,id_playlist,room_code,invitation_code,password,owner_name:users(username)');
@@ -251,7 +302,6 @@ export async function listSalons() {
 
   const salons = data || [];
   if (salons.length === 0) {
-    console.log("listSalons: Found 0");
     return [];
   }
 
@@ -285,9 +335,9 @@ export async function listSalons() {
 
   const { data: tracks } = playlistIds.length
     ? await supabase
-        .from('playlist_video')
-        .select('id_playlist,id_video')
-        .in('id_playlist', playlistIds)
+      .from('playlist_video')
+      .select('id_playlist,id_video')
+      .in('id_playlist', playlistIds)
     : { data: [] as any[] };
 
   const videoCountBySalon = new Map<string, number>();
@@ -311,9 +361,9 @@ export async function listSalons() {
 
   const { data: videos } = currentOrFirstVideoIds.length
     ? await supabase
-        .from('video')
-        .select('*')
-        .in('id_video', currentOrFirstVideoIds)
+      .from('video')
+      .select('*')
+      .in('id_video', currentOrFirstVideoIds)
     : { data: [] as any[] };
 
   const videoById = new Map((videos || []).map((v: any) => [v.id_video, v]));
@@ -340,48 +390,109 @@ export async function listSalons() {
     };
   });
 
-  console.log("listSalons: Found", mapped.length);
   return mapped;
 }
 
 export async function fetchSalonByCode(code: string) {
-  const { data, error } = await supabase
+  const cleanedCode = code.trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanedCode);
+
+  let queryBuilder = supabase
     .from('salon')
-    .select('*')
-    .or(`id_salon.eq.${code},room_code.eq.${code},invitation_code.eq.${code}`)
-    .single();
+    .select('*');
+
+  if (isUuid) {
+    queryBuilder = queryBuilder.or(`id_salon.eq.${cleanedCode},room_code.eq.${cleanedCode},invitation_code.eq.${cleanedCode}`);
+  } else {
+    queryBuilder = queryBuilder.or(`room_code.ilike.${cleanedCode},invitation_code.ilike.${cleanedCode}`);
+  }
+
+  const { data, error } = await queryBuilder.single();
 
   if (error) throw new Error("Salon introuvable");
   return data;
 }
 
 export async function joinSalon(code: string, password?: string) {
-  // Client-side join logic is mostly just "checking if it exists"
-  // Permissions are verified by RLS or loading the page
-  return { success: true };
+  const roomRef = code.trim();
+  if (!roomRef) {
+    throw new Error("Code de salon invalide");
+  }
+
+  const salonRef = await resolveSalonReference(roomRef);
+  if (!salonRef?.id_salon) {
+    throw new Error("Salon introuvable");
+  }
+
+  // In Supabase mode, access control is handled by RLS.
+  // If RLS blocks salon_member, we still keep local history in connectToSalon().
+  try {
+    await connectToSalon(salonRef.id_salon);
+  } catch (error: any) {
+    const message = String(error?.message || "");
+    if (!message.toLowerCase().includes("row-level security")) {
+      throw error;
+    }
+    console.warn("joinSalon: salon_member blocked by RLS, local history fallback enabled");
+  }
+
+  return { success: true, salonId: salonRef.id_salon };
 }
 
 export async function fetchMySalons() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     console.warn("fetchMySalons: User not logged in");
-    return { salons: [] };
+    return { salons: [], owned: [], joined: [] };
   }
 
-  console.log("fetchMySalons: Fetching for user", user.id);
-
-  const { data, error } = await supabase
+  const { data: owned, error: ownedError } = await supabase
     .from('salon')
     .select('*')
     .eq('owner_id', user.id);
 
-  if (error) {
-    console.error("fetchMySalons error", error);
-    return { salons: [] };
+  if (ownedError) {
+    console.error("fetchMySalons owned error", ownedError);
+    return { salons: [], owned: [], joined: [] };
   }
 
-  console.log("fetchMySalons: Found salons", data?.length);
-  return { salons: data || [] };
+  const { data: memberships, error: membershipsError } = await supabase
+    .from('salon_member')
+    .select('salon_id')
+    .eq('user_id', user.id);
+
+  const localJoinedIds = readLocallyPersistedJoinedSalonIds(user.id);
+
+  if (membershipsError) {
+    console.error("fetchMySalons memberships error", membershipsError);
+  }
+
+  const membershipIds = (memberships || []).map((membership: any) => membership.salon_id);
+  const ownedOnly = owned || [];
+  const ownedIds = new Set(ownedOnly.map((salon: any) => salon.id_salon));
+  const joinedIds = Array.from(
+    new Set([...membershipIds, ...localJoinedIds].filter((id: string) => !!id && !ownedIds.has(id)))
+  );
+
+  let joined: any[] = [];
+  if (joinedIds.length > 0) {
+    const { data: joinedSalons, error: joinedError } = await supabase
+      .from('salon')
+      .select('*')
+      .in('id_salon', joinedIds);
+
+    if (joinedError) {
+      console.error("fetchMySalons joined error", joinedError);
+    } else {
+      joined = joinedSalons || [];
+    }
+  }
+
+  return {
+    salons: [...ownedOnly, ...joined],
+    owned: ownedOnly,
+    joined,
+  };
 }
 
 // 🔹 Récupérer la playlist

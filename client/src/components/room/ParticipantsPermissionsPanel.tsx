@@ -31,7 +31,7 @@ import { X, MessageSquare, Video, Trash2, Crown, Users as UsersIcon } from "luci
 interface Participant {
   id: string;
   name: string;
-  role: "admin" | "member";
+  role: "admin" | "teacher" | "student" | "guest" | "member";
   status?: "online" | "offline";
   avatar: string;
   permissions: {
@@ -45,7 +45,7 @@ interface ParticipantsPermissionsPanelProps {
   participants: Array<{
     id: string;
     name: string;
-    role: "admin" | "member";
+    role: "admin" | "teacher" | "student" | "guest" | "member";
     status?: "online" | "offline";
     avatar: string;
     permissions?: {
@@ -60,10 +60,20 @@ interface ParticipantsPermissionsPanelProps {
   isReadOnly?: boolean;
 }
 
-export function ParticipantsPermissionsPanel({ 
-  participants: initialParticipants, 
-  onClose, 
-  onUpdatePermissions, 
+const getRoleLabel = (role: string) => {
+  switch (role) {
+    case 'admin': return 'Administrateur';
+    case 'teacher': return 'Professeur';
+    case 'student': return 'Étudiant';
+    case 'guest': return 'Invité';
+    default: return 'Membre';
+  }
+};
+
+export function ParticipantsPermissionsPanel({
+  participants: initialParticipants,
+  onClose,
+  onUpdatePermissions,
   theme = "dark",
   isReadOnly = false
 }: ParticipantsPermissionsPanelProps) {
@@ -75,8 +85,8 @@ export function ParticipantsPermissionsPanel({
   );
 
   const togglePermission = (id: string, permission: keyof Participant["permissions"]) => {
-    setParticipants(participants.map(p => 
-      p.id === id 
+    setParticipants(participants.map(p =>
+      p.id === id
         ? { ...p, permissions: { ...p.permissions, [permission]: !p.permissions[permission] } }
         : p
     ));
@@ -87,7 +97,7 @@ export function ParticipantsPermissionsPanel({
     setParticipants(updatedParticipants);
     if (onUpdatePermissions) {
       // Filtrer l'utilisateur courant avant de passer au parent
-      const participantsWithoutCurrentUser = updatedParticipants.filter(p => 
+      const participantsWithoutCurrentUser = updatedParticipants.filter(p =>
         !p.id.startsWith('current-user-')
       );
       onUpdatePermissions(participantsWithoutCurrentUser);
@@ -96,7 +106,7 @@ export function ParticipantsPermissionsPanel({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div 
+      <div
         className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col shadow-2xl`}
       >
         {/* Header */}
@@ -176,7 +186,7 @@ export function ParticipantsPermissionsPanel({
                         )}
                       </p>
                       <p className={`${theme === 'dark' ? 'text-gray-500' : 'text-gray-600'} text-xs`}>
-                        {participant.role === "admin" ? "Administrateur" : "Membre"}
+                        {getRoleLabel(participant.role)}
                       </p>
                     </div>
                   </div>
@@ -187,11 +197,10 @@ export function ParticipantsPermissionsPanel({
                       {/* Chat Permission */}
                       <button
                         onClick={() => togglePermission(participant.id, "chat")}
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                          participant.permissions.chat
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${participant.permissions.chat
                             ? "bg-blue-500/20 text-blue-500"
                             : theme === 'dark' ? "bg-zinc-700 text-gray-500" : "bg-gray-200 text-gray-400"
-                        }`}
+                          }`}
                         title="Chat"
                         disabled={isReadOnly}
                       >
@@ -201,11 +210,10 @@ export function ParticipantsPermissionsPanel({
                       {/* Video Permission */}
                       <button
                         onClick={() => togglePermission(participant.id, "video")}
-                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                          participant.permissions.video
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${participant.permissions.video
                             ? "bg-green-500/20 text-green-500"
                             : theme === 'dark' ? "bg-zinc-700 text-gray-500" : "bg-gray-200 text-gray-400"
-                        }`}
+                          }`}
                         title="Contrôle vidéo"
                         disabled={isReadOnly}
                       >

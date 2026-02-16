@@ -31,7 +31,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Video, Lock, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { fetchSalonByCode } from "../api/rooms";
+import { fetchSalonByCode, joinSalon } from "../api/rooms";
 
 interface JoinWithCodePageProps {
   roomId: string;
@@ -59,6 +59,8 @@ export function JoinWithCodePage({ roomId, onNavigate, onJoinRoom, theme = "dark
         toast.error("Aucun salon trouvé");
         return;
       }
+
+      await joinSalon(salon.id_salon, password || undefined);
 
       toast.success(`Salon "${salon.name}" trouvé ! Redirection...`);
       onJoinRoom(salon.id_salon);

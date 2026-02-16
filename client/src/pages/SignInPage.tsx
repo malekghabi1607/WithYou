@@ -66,7 +66,12 @@ const handleSubmit = async (e: React.FormEvent) => {
     toast.success("Connexion réussie !");
     onNavigate("rooms");
   } catch (err: any) {
-    toast.error("Erreur de connexion : " + (err?.message || "inconnue"));
+    const message = String(err?.message || "inconnue");
+    if (message.toLowerCase().includes("confirmer votre email")) {
+      toast.error("Veuillez confirmer votre email avant de vous connecter.");
+    } else {
+      toast.error("Erreur de connexion : " + message);
+    }
   }
 };
 

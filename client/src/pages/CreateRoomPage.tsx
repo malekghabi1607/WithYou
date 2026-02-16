@@ -70,8 +70,12 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
     return message === fallback ? fallback : `${fallback}: ${message}`;
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSubmitting) return;
 
     if (!formData.name.trim()) {
       toast.error("Veuillez entrer un nom pour le salon");
@@ -105,6 +109,8 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
       // Importer createSalon depuis api/rooms    
       // Création du salon côté back avec vidéo initiale
@@ -119,7 +125,7 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
       });
 
       const roomId = salon.id_salon;
-      const invitationCode = salon.id_salon; // Using ID as code for now
+      const invitationCode = salon.room_code || salon.invitation_code || salon.id_salon;
 
       // AFFICHER LE CODE D'INVITATION
       toast.success(`✅ Salon "${formData.name}" créé avec succès !`, {
@@ -132,7 +138,9 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
     } catch (err) {
       console.error(err);
       toast.error(getErrorMessage(err, "Erreur lors de la création du salon"));
+      setIsSubmitting(false);
     }
+    // Do not set isSubmitting(false) on success to prevent double clicks during navigation
   };
 
   return (
@@ -195,8 +203,8 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
                     className={`h-12 ${theme === "dark"
-                        ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
-                        : "bg-white border-gray-300 text-black placeholder:text-gray-400"
+                      ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
+                      : "bg-white border-gray-300 text-black placeholder:text-gray-400"
                       } focus:border-red-600`}
                   />
                 </div>
@@ -214,8 +222,8 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                     required
                     rows={3}
                     className={`${theme === "dark"
-                        ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
-                        : "bg-white border-gray-300 text-black placeholder:text-gray-400"
+                      ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
+                      : "bg-white border-gray-300 text-black placeholder:text-gray-400"
                       } focus:border-red-600`}
                   />
                 </div>
@@ -234,8 +242,8 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                     onChange={(e) => setFormData({ ...formData, videoUrl: e.target.value })}
                     required
                     className={`h-12 ${theme === "dark"
-                        ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
-                        : "bg-white border-gray-300 text-black placeholder:text-gray-400"
+                      ? "bg-zinc-800/50 border-red-900/30 text-white placeholder:text-gray-500"
+                      : "bg-white border-gray-300 text-black placeholder:text-gray-400"
                       } focus:border-red-600`}
                   />
                 </div>
@@ -282,8 +290,8 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         className={`h-12 ${theme === "dark"
-                            ? "bg-zinc-800/50 border-red-900/30 text-white"
-                            : "bg-white border-gray-300 text-black"
+                          ? "bg-zinc-800/50 border-red-900/30 text-white"
+                          : "bg-white border-gray-300 text-black"
                           } focus:border-red-600`}
                       />
                     </div>
@@ -304,8 +312,8 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                     value={formData.maxParticipants}
                     onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) })}
                     className={`h-12 ${theme === "dark"
-                        ? "bg-zinc-800/50 border-red-900/30 text-white"
-                        : "bg-white border-gray-300 text-black"
+                      ? "bg-zinc-800/50 border-red-900/30 text-white"
+                      : "bg-white border-gray-300 text-black"
                       } focus:border-red-600`}
                   />
                 </div>
@@ -316,19 +324,20 @@ export function CreateRoomPage({ currentUser, onNavigate, onCreateRoom, theme = 
                     type="button"
                     variant="outline"
                     onClick={() => onNavigate("rooms")}
+                    disabled={isSubmitting}
                     className={`flex-1 h-12 ${theme === "dark"
-                        ? "border-red-900/30 text-gray-300 hover:bg-zinc-800"
-                        : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                      ? "border-red-900/30 text-gray-300 hover:bg-zinc-800"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-100"
                       }`}
                   >
                     Annuler
                   </Button>
                   <Button
                     type="submit"
-                    onClick={() => console.log("CLICK CREATE")}
-                    className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50"
+                    disabled={isSubmitting}
+                    className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Créer le salon
+                    {isSubmitting ? "Création en cours..." : "Créer le salon"}
                   </Button>
                 </div>
               </form>

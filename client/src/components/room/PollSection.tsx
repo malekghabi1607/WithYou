@@ -1,26 +1,4 @@
-/**
- * Projet : WithYou
- * Fichier : components/room/PollSection.tsx
- *
- * Description :
- * Composant responsable de la gestion des sondages au sein d’un salon
- * de visionnage collaboratif.
- *
- * Fonctionnalités principales :
- * - Affichage des sondages actifs du salon
- * - Vote des utilisateurs sur les options proposées
- * - Affichage des résultats en temps réel (pourcentages + barres de progression)
- * - Création de nouveaux sondages (réservée à l’administrateur)
- * - Limitation du vote à une seule fois par utilisateur
- *
- * Objectif :
- * - Favoriser l’interaction entre les participants
- * - Faciliter la prise de décision collective (choix de film, pause, etc.)
- *
- * Remarque :
- * - Les données sont simulées (mock) pour le développement front-end
- * - Les actions utilisateur déclenchent des notifications via Sonner
- */import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -29,15 +7,8 @@ import { Badge } from "../ui/badge";
 import { Progress } from "../ui/progress";
 import { Plus, X, BarChart3, CheckCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
-interface Poll {
-  id: string;
-  question: string;
-  options: { text: string; votes: number }[];
-  is_active: boolean;
-  created_at?: string;
-  creator?: { username: string };
-}
+import { createPoll, fetchPolls, votePoll, Poll } from "../../api/polls";
+import { supabase } from "../../api/supabase";
 
 interface PollSectionProps {
   isAdmin: boolean;
@@ -48,59 +19,55 @@ interface PollSectionProps {
 export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps) {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
-  const [votedPolls, setVotedPolls] = useState<string[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [newPoll, setNewPoll] = useState({
     question: "",
     options: ["", ""]
   });
 
-  const fetchPolls = async () => {
+  const loadPolls = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/sondages/${salonId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setPolls(data);
-      }
+      const data = await fetchPolls(salonId);
+      setPolls(data);
     } catch (error) {
-      console.error(error);
+      console.error("Erreur chargement sondages:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPolls();
-    const interval = setInterval(fetchPolls, 5000);
-    return () => clearInterval(interval);
+    loadPolls();
+
+    // Subscribe to Realtime changes
+    const channel = supabase
+      .channel(`polls-${salonId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sondages', filter: `id_salon=eq.${salonId}` }, () => {
+        loadPolls();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sondage_votes' }, () => {
+        // We can't easily filter votes by salon_id directly in the subscription filter efficiently without joins,
+        // but we can just reload on any vote. Optimally we'd filter, but for now this ensures correctness.
+        // Actually, we can check if the vote belongs to one of our polls if we want, or just reload.
+        loadPolls();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [salonId]);
 
-  const handleVote = async (pollId: string, index: number) => {
-    setVotedPolls([...votedPolls, pollId]);
-
+  const handleVote = async (pollId: string, optionId: string) => {
+    // Optimistic UI update (optional, but good for UX)
+    // For now, relies on realtime reload which is fast enough
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:8000/api/sondages/${pollId}/vote`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ optionIndex: index })
-      });
-
-      if (response.ok) {
-        toast.success("Vote enregistré !");
-        fetchPolls();
-      } else {
-        setVotedPolls(votedPolls.filter(id => id !== pollId));
-        toast.error("Erreur lors du vote");
-      }
-    } catch (e) {
-      toast.error("Erreur de connexion");
+      await votePoll(pollId, optionId);
+      toast.success("Vote enregistré !");
+      loadPolls();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur lors du vote");
     }
   };
 
@@ -116,31 +83,18 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
       return;
     }
 
+    setIsCreating(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/sondages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          id_salon: salonId,
-          question: newPoll.question,
-          options: validOptions
-        })
-      });
-
-      if (response.ok) {
-        toast.success("Sondage créé !");
-        setNewPoll({ question: "", options: ["", ""] });
-        setShowCreateForm(false);
-        fetchPolls();
-      } else {
-        toast.error("Impossible de créer le sondage");
-      }
-    } catch (e) {
-      toast.error("Erreur technique");
+      await createPoll(salonId, newPoll.question, validOptions);
+      toast.success("Sondage créé !");
+      setNewPoll({ question: "", options: ["", ""] });
+      setShowCreateForm(false);
+      loadPolls();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || e.details || "Impossible de créer le sondage");
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -173,16 +127,15 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
             <BarChart3 className="w-5 h-5 text-purple-400" />
             <h3 className="text-white">Sondages</h3>
           </div>
-          {isAdmin && (
-            <Button
-              size="sm"
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              variant="outline"
-            >
-              {showCreateForm ? <X className="w-4 h-4 mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
-              {showCreateForm ? "Annuler" : "Créer"}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            variant="outline"
+            className="border-gray-600 hover:bg-gray-700 hover:text-white"
+          >
+            {showCreateForm ? <X className="w-4 h-4 mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
+            {showCreateForm ? "Annuler" : "Créer"}
+          </Button>
         </div>
       </div>
 
@@ -193,7 +146,7 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
           </div>
         )}
 
-        {showCreateForm && isAdmin && (
+        {showCreateForm && (
           <Card className="p-4 bg-gray-900 border-purple-500 animate-in slide-in-from-top-2">
             <div className="space-y-3">
               <div>
@@ -203,7 +156,7 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
                   placeholder="Posez votre question..."
                   value={newPoll.question}
                   onChange={(e) => setNewPoll({ ...newPoll, question: e.target.value })}
-                  className="mt-1 bg-gray-800 border-gray-700 text-white text-sm"
+                  className="mt-1 bg-gray-800 border-gray-700 text-white text-sm focus:ring-purple-500 hover:border-gray-600"
                 />
               </div>
 
@@ -216,13 +169,14 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
                         placeholder={`Option ${index + 1}`}
                         value={option}
                         onChange={(e) => handleUpdateOption(index, e.target.value)}
-                        className="bg-gray-800 border-gray-700 text-white text-sm"
+                        className="bg-gray-800 border-gray-700 text-white text-sm focus:ring-purple-500 hover:border-gray-600"
                       />
                       {newPoll.options.length > 2 && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRemoveOption(index)}
+                          className="hover:bg-red-900/20"
                         >
                           <X className="w-4 h-4 text-red-400" />
                         </Button>
@@ -235,15 +189,20 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
                     variant="ghost"
                     size="sm"
                     onClick={handleAddOption}
-                    className="mt-2 text-xs text-purple-400 hover:text-purple-300"
+                    className="mt-2 text-xs text-purple-400 hover:text-purple-300 hover:bg-purple-900/20"
                   >
                     <Plus className="w-3 h-3 mr-1" /> Ajouter une option
                   </Button>
                 )}
               </div>
 
-              <Button onClick={handleCreatePoll} size="sm" className="w-full bg-purple-600 hover:bg-purple-700">
-                Lancer le sondage
+              <Button
+                onClick={handleCreatePoll}
+                size="sm"
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium"
+                disabled={isCreating}
+              >
+                {isCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : "Lancer le sondage"}
               </Button>
             </div>
           </Card>
@@ -257,8 +216,8 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
         )}
 
         {polls.map((poll) => {
-          const totalVotes = poll.options.reduce((acc, curr) => acc + curr.votes, 0);
-          const hasVoted = votedPolls.includes(poll.id);
+          const totalVotes = poll.options.reduce((acc, curr) => acc + curr.vote_count, 0);
+          const hasVoted = !!poll.user_voted_option_id;
 
           return (
             <Card key={poll.id} className="p-4 bg-gray-900 border-gray-700">
@@ -275,18 +234,19 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
               </div>
 
               <div className="space-y-3">
-                {poll.options.map((option, idx) => {
-                  const percentage = totalVotes > 0 
-                    ? (option.votes / totalVotes) * 100 
+                {poll.options.map((option) => {
+                  const percentage = totalVotes > 0
+                    ? (option.vote_count / totalVotes) * 100
                     : 0;
-                  
+                  const isUserChoice = poll.user_voted_option_id === option.id;
+
                   return (
-                    <div key={idx} className="relative">
+                    <div key={option.id} className="relative">
                       {!hasVoted ? (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleVote(poll.id, idx)}
+                          onClick={() => handleVote(poll.id, option.id)}
                           disabled={!poll.is_active}
                           className="w-full justify-between text-sm h-auto py-2 border-gray-700 hover:bg-gray-800 hover:border-purple-500 transition-all"
                         >
@@ -295,16 +255,16 @@ export function PollSection({ isAdmin, currentUser, salonId }: PollSectionProps)
                       ) : (
                         <div>
                           <div className="flex justify-between text-xs mb-1">
-                            <span className="text-gray-300 font-medium">
-                              {option.text}
+                            <span className={`font-medium ${isUserChoice ? 'text-purple-400' : 'text-gray-300'}`}>
+                              {option.text} {isUserChoice && "(Vous)"}
                             </span>
                             <span className="text-gray-400">
-                              {option.votes} ({Math.round(percentage)}%)
+                              {option.vote_count} ({Math.round(percentage)}%)
                             </span>
                           </div>
-                          <Progress 
-                            value={percentage} 
-                            className="h-2 bg-gray-800 [&>div]:bg-purple-500" 
+                          <Progress
+                            value={percentage}
+                            className={`h-2 bg-gray-800 [&>div]:bg-purple-500 ${isUserChoice ? '[&>div]:bg-purple-400' : ''}`}
                           />
                         </div>
                       )}

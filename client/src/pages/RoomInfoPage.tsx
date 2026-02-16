@@ -24,7 +24,7 @@ import { Footer } from "../components/layouts/Footer";
 
 import { Video, Users, Lock, Globe, Star, Crown, Play } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchSalonByCode } from "../api/rooms";
+import { fetchSalonByCode, joinSalon } from "../api/rooms";
 
 interface RoomInfoPageProps {
   roomId: string;
@@ -68,7 +68,7 @@ export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, them
 
   if (!room) return null;
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!currentUser) {
       onNavigate('signin');
       return;
@@ -77,6 +77,12 @@ export function RoomInfoPage({ roomId, currentUser, onNavigate, onJoinRoom, them
     if (!room.isPublic) {
       onNavigate('join-with-code', roomId);
       return;
+    }
+
+    try {
+      await joinSalon(roomId);
+    } catch (error) {
+      console.error("Erreur enregistrement adhésion salon", error);
     }
 
     onJoinRoom(roomId);

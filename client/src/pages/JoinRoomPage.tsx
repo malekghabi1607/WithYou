@@ -28,7 +28,7 @@
  * avant l’accès à l’interface de visionnage.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -62,6 +62,13 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
   const [isSearching, setIsSearching] = useState(false);
   const [foundRoom, setFoundRoom] = useState<any>(null);
   const [showPasswordField, setShowPasswordField] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeFromUrl = params.get("code");
+    if (!codeFromUrl) return;
+    setRoomCode(codeFromUrl.toUpperCase());
+  }, []);
 
   const handleSearchRoom = async () => {
     if (!roomCode.trim()) {
@@ -104,6 +111,12 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
       toast.error("❌ Aucun salon trouvé avec ce code");
     }
   };
+
+  useEffect(() => {
+    if (!roomCode || roomCode.length < 4 || foundRoom || isSearching) return;
+    handleSearchRoom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode]);
 
   const handleJoinRoom = async () => {
     if (!foundRoom) {

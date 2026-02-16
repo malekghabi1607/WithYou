@@ -33,6 +33,8 @@ import { Button } from "../components/ui/button";
 import { Logo } from "../components/ui/Logo";
 import { Mail, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useMemo } from "react";
+import { resendConfirmationEmail } from "../api/auth";
 
 interface EmailSentPageProps {
   email: string;
@@ -42,13 +44,21 @@ interface EmailSentPageProps {
 }
 
 export function EmailSentPage({ email, onNavigate, theme = "dark", onThemeToggle }: EmailSentPageProps) {
-  const handleResendEmail = () => {
-    toast.success("Email de confirmation renvoyé !");
-  };
+  const targetEmail = useMemo(() => {
+    return email || localStorage.getItem("pendingConfirmationEmail") || "";
+  }, [email]);
 
-  const handleDemoConfirm = () => {
-    toast.success("Compte confirmé en mode démo !");
-    onNavigate("account-confirmed");
+  const handleResendEmail = async () => {
+    if (!targetEmail) {
+      toast.error("Aucune adresse email disponible");
+      return;
+    }
+    try {
+      await resendConfirmationEmail(targetEmail);
+      toast.success("Email de confirmation renvoye !");
+    } catch (error: any) {
+      toast.error(error?.message || "Impossible de renvoyer l'email");
+    }
   };
 
   return (
@@ -93,7 +103,7 @@ export function EmailSentPage({ email, onNavigate, theme = "dark", onThemeToggle
           </p>
           
           <p className={`mb-8 text-lg ${theme === "dark" ? "text-red-500" : "text-red-600"}`}>
-            {email}
+            {targetEmail || "Votre adresse email"}
           </p>
 
           {/* Next Steps Box */}
@@ -130,14 +140,11 @@ export function EmailSentPage({ email, onNavigate, theme = "dark", onThemeToggle
 
           {/* Demo Mode Section */}
           <div className="mt-8 pt-8 border-t border-zinc-800">
-            <p className={`text-sm mb-4 ${theme === "dark" ? "text-gray-500" : "text-gray-600"}`}>
-              Mode démo : Simuler la confirmation
-            </p>
             <Button
-              onClick={handleDemoConfirm}
+              onClick={() => onNavigate("signin")}
               className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 text-base shadow-lg shadow-red-600/30"
             >
-              Confirmer le compte (demo)
+              Aller a la connexion
             </Button>
           </div>
         </div>

@@ -154,12 +154,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showHistory, setShowHistory] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [roomCode, setRoomCode] = useState<string>("");
-  const [role, setRole] = useState<"admin" | "member" | null>(null);
+  const [role, setRole] = useState<"admin" | "teacher" | "student" | "guest" | "member" | null>(null);
+  const [videoVoteCounts, setVideoVoteCounts] = useState<Record<string, number>>({});
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const roomChannelRef = useRef<any>(null);
+  const historyLoadedRef = useRef(false);
+  const lastTrackedVideoIdRef = useRef<string | null>(null);
 
   const isAdmin = role === "admin";
+  const voteStorageKey = `room_${roomId}_videoVotes`;
 
   const withFallback = async <T,>(
     primaryId: string | null,
@@ -214,7 +218,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const mapped = (data || []).map((participant: any) => ({
       id: participant.id,
       name: participant.name ?? "Utilisateur",
-      role: (participant.role === "admin" ? "admin" : "member") as "admin" | "member",
+      role: (participant.role || "member") as "admin" | "teacher" | "student" | "guest" | "member",
       status: (participant.is_active ? "online" : "offline") as "online" | "offline",
       avatar: createAvatarDataUrl(participant.name ?? "Utilisateur"),
     }));
@@ -280,12 +284,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           : THUMBNAIL_MOVIE,
         duration: item.duration ? String(item.duration) : "0:00",
         isCurrent,
-        votes: 0,
+        votes: videoVoteCounts[item.id] ?? 0,
         isFavorite: youtubeId ? favoriteIds.has(youtubeId) : false,
       };
     });
     setPlaylist(mapped);
-  }, [backendSalonId, currentUser.email, favoriteIds]);
+  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts]);
 
   useEffect(() => {
     setRoomCode(roomId);
@@ -320,6 +324,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       try {
         const data = await fetchSalonByCode(roomCode);
         setBackendSalonId(data.id_salon || data.id || roomCode);
+        // Always expose a shareable join code in the UI dialog.
+        setRoomCode(data.invitation_code || data.room_code || data.id_salon || roomCode);
         if (data.owner_id) {
           setRole(currentUser.id === data.owner_id ? "admin" : "member");
         }
@@ -461,9 +467,49 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   // Sauvegarder l'historique des vidéos
   useEffect(() => {
+    historyLoadedRef.current = false;
+    try {
+      const raw = localStorage.getItem(`room_${roomId}_videoHistory`);
+      if (!raw) {
+        // Do not force-reset here: user may click a video before this effect completes.
+        historyLoadedRef.current = true;
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      const normalized = Array.isArray(parsed)
+        ? parsed.filter((entry: any) =>
+          entry &&
+          typeof entry.id === "string" &&
+          typeof entry.title === "string"
+        )
+        : [];
+
+      setVideoHistory((prev) => {
+        if (prev.length === 0) return normalized;
+        const merged = [...prev, ...normalized];
+        const seen = new Set<string>();
+        const unique: VideoHistoryEntry[] = [];
+        for (const entry of merged) {
+          const key = `${entry.youtubeId || "no-id"}|${entry.playedAt}|${entry.title}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          unique.push(entry);
+        }
+        return unique.slice(0, 200);
+      });
+    } catch (error) {
+      console.error("Erreur lors du chargement de l'historique:", error);
+      setVideoHistory([]);
+    } finally {
+      historyLoadedRef.current = true;
+    }
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!historyLoadedRef.current) return;
     try {
       localStorage.setItem(`room_${roomId}_videoHistory`, JSON.stringify(videoHistory));
-      console.log('Historique des vidéos sauvegardé:', videoHistory.length, 'entrées');
     } catch (error) {
       console.error('Erreur lors de la sauvegarde de l\'historique:', error);
     }
@@ -473,6 +519,61 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(voteStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === "object") {
+        setVideoVoteCounts(parsed as Record<string, number>);
+      } else {
+        setVideoVoteCounts({});
+      }
+    } catch (error) {
+      console.error("Erreur chargement votes vidéo:", error);
+      setVideoVoteCounts({});
+    }
+  }, [voteStorageKey]);
+
+  useEffect(() => {
+    setPlaylist((prev) =>
+      prev.map((video) => ({
+        ...video,
+        votes: videoVoteCounts[video.id] ?? video.votes ?? 0,
+      }))
+    );
+  }, [videoVoteCounts]);
+
+  // Track current video changes in history (works even with a single-video playlist).
+  useEffect(() => {
+    if (!currentVideo?.id) return;
+    if (lastTrackedVideoIdRef.current === currentVideo.id) return;
+
+    const historyEntry: VideoHistoryEntry = {
+      id: Date.now().toString(),
+      youtubeId: currentVideo.youtubeId,
+      title: currentVideo.title,
+      thumbnail: currentVideo.thumbnail,
+      duration: currentVideo.duration,
+      playedAt: new Date().toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      playedBy: currentUser.name
+    };
+
+    setVideoHistory((prev) => {
+      if (prev[0]?.youtubeId && prev[0].youtubeId === historyEntry.youtubeId) {
+        return prev;
+      }
+      return [historyEntry, ...prev].slice(0, 200);
+    });
+
+    lastTrackedVideoIdRef.current = currentVideo.id;
+  }, [currentVideo?.id, currentVideo?.youtubeId, currentUser.name, currentVideo?.title, currentVideo?.thumbnail, currentVideo?.duration]);
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !backendSalonId) return;
@@ -626,19 +727,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleLeaveRoom = () => {
-    console.log('Opening leave dialog');
     setShowLeaveDialog(true);
   };
 
   const confirmLeave = () => {
-    console.log('Leaving room and redirecting to salons...');
     setShowLeaveDialog(false);
     // Rediriger vers la page "salons" (liste des salons)
     onNavigate("salons");
   };
 
   const cancelLeave = () => {
-    console.log('Cancelled leaving room');
     setShowLeaveDialog(false);
   };
 
@@ -697,7 +795,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             : THUMBNAIL_MOVIE,
           duration: item.duration ? String(item.duration) : "0:00",
           isCurrent: existingCurrentId ? item.id === existingCurrentId : index === 0,
-          votes: 0,
+          votes: videoVoteCounts[item.id] ?? 0,
           isFavorite: youtubeId ? favoriteIds.has(youtubeId) : false,
         };
       });
@@ -728,61 +826,75 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     setParticipants(updatedParticipants);
   };
 
-  const handlePlayVideo = (video: VideoInPlaylist) => {
-    // Notification : Changement de vidéo
-    toast.success(`Lecture de "${video.title}"`, {
-      duration: 3000,
-      icon: '🎬',
-      description: `Lancée par ${currentUser.name}`,
-    });
-
-    // Mettre à jour la playlist
-    setPlaylist(prev => prev.map(v =>
-      v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
-    ));
-
-    if (backendSalonId && video.youtubeId) {
-      // Broadcast video change
-      supabase.channel(`room-${backendSalonId}`).send({
-        type: 'broadcast',
-        event: 'video_change',
-        payload: { videoId: video.youtubeId }
-      }).catch(err => console.warn('Broadcast error', err));
-
-      // Also update database state for persistence (new joiners)
-      supabase.from('salon').update({
-        current_video_id: video.id,
-        video_status: 'playing',
-        video_time: 0
-      }).eq('id_salon', backendSalonId)
-        .then(res => {
-          if (res.error) console.error("Error updating salon video state", res.error);
-        });
-    }
-
-    setCurrentTime(0);
-    setIsPlaying(true);
-    setSyncNonce(Date.now());
-
-    // Ajouter à l'historique
-    const historyEntry: VideoHistoryEntry = {
-      id: Date.now().toString(),
-      youtubeId: video.youtubeId,
-      title: video.title,
-      thumbnail: video.thumbnail,
-      duration: video.duration,
-      playedAt: new Date().toLocaleString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
-      playedBy: currentUser.name
+  const handleVoteVideo = (videoId: string) => {
+    const next = {
+      ...videoVoteCounts,
+      [videoId]: (videoVoteCounts[videoId] || 0) + 1,
     };
+    setVideoVoteCounts(next);
+    try {
+      localStorage.setItem(voteStorageKey, JSON.stringify(next));
+    } catch (error) {
+      console.error("Erreur sauvegarde votes vidéo:", error);
+    }
+  };
 
-    setVideoHistory(prev => [historyEntry, ...prev]);
-    console.log('📹 Vidéo ajoutée à l\'historique:', video.title);
+  const handlePlayVideo = async (video: VideoInPlaylist) => {
+    try {
+      if (!video?.id) return;
+
+      toast.success(`Lecture de "${video.title}"`, {
+        duration: 3000,
+        icon: '🎬',
+        description: `Lancée par ${currentUser.name}`,
+      });
+
+      // Basculer immédiatement côté UI
+      setPlaylist(prev => prev.map(v =>
+        v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
+      ));
+      setCurrentTime(0);
+      setIsPlaying(true);
+      setSyncNonce(Date.now());
+
+      // Seul l'admin persiste/synchronise l'état global du salon
+      if (isAdmin && backendSalonId) {
+        if (roomChannelRef.current) {
+          try {
+            await roomChannelRef.current.send({
+              type: 'broadcast',
+              event: 'room_force_sync',
+              payload: {
+                by: currentUser.id,
+                at: Date.now(),
+                videoId: video.id,
+                isPlaying: true,
+                time: 0,
+              }
+            });
+          } catch (broadcastError) {
+            console.warn("Broadcast error", broadcastError);
+          }
+        }
+
+        const { error: updateError } = await supabase
+          .from('salon')
+          .update({
+            current_video_id: video.id,
+            video_status: 'playing',
+            video_time: 0
+          })
+          .eq('id_salon', backendSalonId);
+
+        if (updateError) {
+          console.error("Error updating salon video state", updateError);
+        }
+      }
+
+    } catch (error) {
+      console.error("Erreur changement vidéo", error);
+      toast.error("Impossible de changer la vidéo");
+    }
   };
 
   return (
@@ -818,7 +930,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Clicked: Add Video');
                 setShowVideoManagement(true);
               }}
               size="sm"
@@ -889,7 +1000,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              console.log('Opening leave dialog');
               setShowLeaveDialog(true);
             }}
             variant="ghost"
@@ -958,12 +1068,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   <div
                     key={video.id}
                     onClick={() => {
-                      if (isAdmin) {
-                        handlePlayVideo(video);
-                      }
+                      handlePlayVideo(video);
                     }}
                     className={`relative group rounded-lg overflow-hidden ${video.isCurrent ? "ring-2 ring-red-600" : ""
-                      } ${isAdmin ? 'cursor-pointer hover:ring-2 hover:ring-red-400' : 'cursor-default'} transition-all`}
+                      } cursor-pointer hover:ring-2 hover:ring-red-400 transition-all`}
                   >
                     <img
                       src={video.thumbnail}
@@ -971,11 +1079,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                       className="w-full aspect-video object-cover"
                     />
 
-                    {isAdmin && (
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Play className="w-6 h-6 text-white" />
-                      </div>
-                    )}
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Play className="w-6 h-6 text-white" />
+                    </div>
 
                     {video.isCurrent && (
                       <div className="absolute top-1.5 left-1.5 bg-red-600 rounded px-1.5 py-0.5 flex items-center gap-1">
@@ -1217,7 +1323,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           <div className={`fixed bottom-24 right-6 w-64 flex flex-col gap-2 z-50 rounded-xl p-3 shadow-2xl ${theme === 'dark' ? 'bg-zinc-800 border border-zinc-700' : 'bg-white border border-gray-300'}`}>
             <Button
               onClick={() => {
-                console.log('Opening Share Dialog');
                 setShowShareDialog(true);
                 setShowMenu(false);
               }}
@@ -1230,7 +1335,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Button
               onClick={() => {
-                console.log('Opening Room Info Panel');
                 setShowRoomInfo(true);
                 setShowMenu(false);
               }}
@@ -1243,7 +1347,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Button
               onClick={() => {
-                console.log('Opening Video Vote Panel');
                 setShowVideoVote(true);
                 setShowMenu(false);
               }}
@@ -1256,7 +1359,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Button
               onClick={() => {
-                console.log('Opening Rating Panel');
                 setShowRating(true);
                 setShowMenu(false);
               }}
@@ -1269,7 +1371,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Button
               onClick={() => {
-                console.log('Opening History Panel');
                 setShowHistory(true);
                 setShowMenu(false);
               }}
@@ -1286,7 +1387,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
                 <Button
                   onClick={() => {
-                    console.log('Opening Permissions Panel');
                     setShowPermissions(true);
                     setShowMenu(false);
                   }}
@@ -1299,7 +1399,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
                 <Button
                   onClick={() => {
-                    console.log('Opening Video Management Panel');
                     setShowVideoManagement(true);
                     setShowMenu(false);
                   }}
@@ -1316,7 +1415,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Button
               onClick={() => {
-                console.log('Opening Leave Dialog');
                 setShowLeaveDialog(true);
                 setShowMenu(false);
               }}
@@ -1342,6 +1440,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       {showRoomInfo && (
         <RoomInfoPanel
           roomId={roomId}
+          adminName={
+            participants.find((p) => p.role === "admin")?.name ||
+            (isAdmin ? currentUser.name : undefined)
+          }
+          participantsCount={participantCount}
           onClose={() => setShowRoomInfo(false)}
           theme={theme}
         />
@@ -1357,14 +1460,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
       {showVideoVote && (
         <VideoVotePanel
-          videos={playlist.filter(v => !v.isCurrent).map(v => ({
+          videos={playlist.map(v => ({
             id: v.id,
             title: v.title,
             thumbnail: v.thumbnail,
             votes: v.votes || 0
           }))}
           onClose={() => setShowVideoVote(false)}
-          onVote={(videoId: string) => console.log('Vote for:', videoId)}
+          onVote={handleVoteVideo}
           theme={theme}
         />
       )}

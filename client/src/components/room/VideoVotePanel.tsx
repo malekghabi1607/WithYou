@@ -44,12 +44,19 @@ export interface VideoVotePanelProps {
   theme?: "light" | "dark";
 }
 
-export function VideoVotePanel({ onClose, videos }: VideoVotePanelProps) {
+export function VideoVotePanel({ onClose, videos, onVote }: VideoVotePanelProps) {
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [videoVotes, setVideoVotes] = useState<Map<string, number>>(
     new Map(videos.map(v => [v.id, v.votes || 0]))
   );
   const [votedVideoId, setVotedVideoId] = useState<string | null>(null);
+  const totalVotes = Array.from(videoVotes.values()).reduce((sum, count) => sum + count, 0);
+  const sortedResults = [...videos]
+    .map((video) => ({
+      ...video,
+      currentVotes: videoVotes.get(video.id) || 0,
+    }))
+    .sort((a, b) => b.currentVotes - a.currentVotes);
 
   useEffect(() => {
     // Vérifier si l'utilisateur a déjà voté pour une des vidéos
@@ -91,6 +98,7 @@ export function VideoVotePanel({ onClose, videos }: VideoVotePanelProps) {
     });
     
     setVotedVideoId(selectedVideo);
+    onVote(selectedVideo);
     const videoTitle = videos.find(v => v.id === selectedVideo)?.title;
     toast.success(`Vote enregistré pour : ${videoTitle} ! Prochain vote dans 24h.`);
     
@@ -201,6 +209,39 @@ export function VideoVotePanel({ onClose, videos }: VideoVotePanelProps) {
             </p>
           </div>
         )}
+
+        <div className="mt-4 pt-4 border-t border-zinc-800">
+          <p className="text-sm text-gray-300 mb-2">
+            Resultats du vote ({totalVotes})
+          </p>
+          {sortedResults.length === 0 ? (
+            <p className="text-xs text-gray-500">Aucune video a voter</p>
+          ) : (
+            <div className="space-y-2">
+              {sortedResults.map((result, index) => {
+                const percentage = totalVotes > 0 ? Math.round((result.currentVotes / totalVotes) * 100) : 0;
+                return (
+                  <div key={result.id} className="text-xs text-gray-300">
+                    <div className="flex items-center justify-between">
+                      <span className="truncate pr-2">
+                        {index + 1}. {result.title}
+                      </span>
+                      <span>
+                        {result.currentVotes} vote{result.currentVotes > 1 ? "s" : ""} ({percentage}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-800 rounded mt-1">
+                      <div
+                        className="h-1.5 bg-red-600 rounded"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

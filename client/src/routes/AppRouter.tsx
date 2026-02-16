@@ -60,7 +60,7 @@ import { FAQPage } from '../pages/FAQPage';
 import { PrivacyPage } from '../pages/PrivacyPage';
 import { TermsPage } from '../pages/TermsPage';
 import { ResetPasswordPage } from '../pages/ResetPasswordPage';
-import { me } from '../api/auth';
+import { logoutLocal, me } from '../api/auth';
 // Wrappers pour les pages avec paramètres d'URL
 function RoomPageWrapper() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -305,12 +305,13 @@ function AppContent() {
     // Charger l'utilisateur depuis le localStorage
     const savedUser = localStorage.getItem('currentUser');
     const token = localStorage.getItem('token');
+    const savedPendingEmail = localStorage.getItem('pendingConfirmationEmail');
+    if (savedPendingEmail) {
+      setPendingEmail(savedPendingEmail);
+    }
     if (savedUser && token) {
-      const user = JSON.parse(savedUser);
-      setCurrentUser(user);
       me(token)
         .then((data: any) => {
-          console.log("AppRouter me() data:", data); // DEBUG
           if (data?.email) {
             const rawDate = data.created_at || data.email_verified_at;
             // toast.info(`Debug Date: ${rawDate}`); // Visual Debug
@@ -318,7 +319,6 @@ function AppContent() {
             const memberSince = rawDate
               ? new Date(rawDate).toLocaleDateString("fr-FR")
               : undefined;
-            console.log("Calculated memberSince:", memberSince); // DEBUG
 
             const nextUser = {
               email: data.email,
@@ -328,6 +328,10 @@ function AppContent() {
             };
             setCurrentUser(nextUser);
             localStorage.setItem('currentUser', JSON.stringify(nextUser));
+          } else {
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('token');
+            setCurrentUser(null);
           }
         })
         .catch((error: any) => {
@@ -343,6 +347,8 @@ function AppContent() {
             localStorage.removeItem('token');
             setCurrentUser(null);
             toast.error("Session expirée, reconnecte-toi.");
+          } else {
+            console.warn("Session check failed but keeping local state:", msg);
           }
         });
     }
@@ -351,6 +357,13 @@ function AppContent() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
         navigate("/reset-password");
+      }
+
+      if (event === "SIGNED_IN") {
+        const hash = window.location.hash || "";
+        if (hash.includes("type=signup")) {
+          navigate("/account-confirmed");
+        }
       }
     });
 
@@ -404,10 +417,6 @@ function AppContent() {
   };
 
   const handleSignIn = (email: string, name: string) => {
-    const user = { email, name };
-    setCurrentUser(user);
-    localStorage.setItem('currentUser', JSON.stringify(user));
-
     me()
       .then((data: any) => {
         if (data?.email) {
@@ -422,15 +431,25 @@ function AppContent() {
           };
           setCurrentUser(nextUser);
           localStorage.setItem('currentUser', JSON.stringify(nextUser));
+          localStorage.removeItem('pendingConfirmationEmail');
+          setPendingEmail('');
+        } else {
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('token');
+          setCurrentUser(null);
         }
       })
       .catch((error) => {
         console.error("Session invalide", error);
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('token');
+        setCurrentUser(null);
       });
   };
 
   const handleSignUp = (email: string, name: string) => {
     setPendingEmail(email);
+    localStorage.setItem('pendingConfirmationEmail', email);
     navigate('/email-sent');
   };
 
@@ -439,10 +458,17 @@ function AppContent() {
     navigate(`/room-loading/${roomData.id || '1'}`);
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('currentUser');
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      await logoutLocal();
+    } catch (error) {
+      console.error("Erreur logout", error);
+    } finally {
+      setCurrentUser(null);
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('token');
+      navigate('/');
+    }
   };
 
   const handleThemeToggle = () => {

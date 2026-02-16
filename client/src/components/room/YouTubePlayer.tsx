@@ -68,9 +68,17 @@ export function YouTubePlayer({
             modestbranding: 1,
           },
           events: {
-            onReady: () => {
+            onReady: (event: any) => {
+              // Always keep the concrete YT player instance from the ready event.
+              if (event?.target) {
+                playerRef.current = event.target;
+              }
               setPlayerReady(true);
-              if (typeof syncTime === "number" && syncTime > 0) {
+              if (
+                typeof syncTime === "number" &&
+                syncTime > 0 &&
+                typeof playerRef.current?.seekTo === "function"
+              ) {
                 playerRef.current.seekTo(syncTime, true);
               }
             },
@@ -119,16 +127,23 @@ export function YouTubePlayer({
 
   useEffect(() => {
     if (playerReady && playerRef.current) {
-      if (isPlaying) {
+      const canPlay = typeof playerRef.current.playVideo === "function";
+      const canPause = typeof playerRef.current.pauseVideo === "function";
+      if (isPlaying && canPlay) {
         playerRef.current.playVideo();
-      } else {
+      } else if (!isPlaying && canPause) {
         playerRef.current.pauseVideo();
       }
     }
   }, [isPlaying, playerReady]);
 
   useEffect(() => {
-    if (!playerReady || !playerRef.current || typeof syncTime !== "number") return;
+    if (
+      !playerReady ||
+      !playerRef.current ||
+      typeof syncTime !== "number" ||
+      typeof playerRef.current.seekTo !== "function"
+    ) return;
     playerRef.current.seekTo(Math.max(0, syncTime), true);
   }, [syncNonce, syncTime, playerReady]);
 

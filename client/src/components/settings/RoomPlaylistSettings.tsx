@@ -52,8 +52,6 @@ export function RoomPlaylistSettings({ roomId }: RoomPlaylistSettingsProps) {
   const [newVideoUrl, setNewVideoUrl] = useState("");
 
   const handleAddVideo = () => {
-    console.log("Tentative d&apos;ajout de vidéo:", newVideoUrl);
-    
     if (!newVideoUrl.trim()) {
       toast.error("Veuillez entrer une URL de vidéo");
       return;
@@ -80,7 +78,6 @@ export function RoomPlaylistSettings({ roomId }: RoomPlaylistSettingsProps) {
       addedBy: "Vous"
     };
 
-    console.log("Ajout de la vidéo:", newVideo);
     setPlaylist([...playlist, newVideo]);
     setNewVideoUrl("");
     toast.success("✅ Vidéo ajoutée à la playlist!");

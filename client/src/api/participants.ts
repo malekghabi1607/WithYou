@@ -9,11 +9,36 @@ export interface ParticipantApi {
   joined_at?: string | null;
 }
 
+function getJoinedRoomsStorageKey(userId: string) {
+  return `withyou_joined_salons_${userId}`;
+}
+
+function persistJoinedSalonLocally(userId: string, salonId: string) {
+  if (!userId || !salonId) return;
+  try {
+    const key = getJoinedRoomsStorageKey(userId);
+    const raw = localStorage.getItem(key);
+    const current = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(current)
+      ? current
+          .map((entry: any) =>
+            typeof entry === "string" ? entry : entry?.id_salon
+          )
+          .filter(Boolean)
+      : [];
+    const next = Array.from(new Set([...list, salonId]));
+    localStorage.setItem(key, JSON.stringify(next));
+  } catch (error) {
+    console.warn("Could not persist joined salons locally", error);
+  }
+}
+
 async function resolveSalonId(roomRef: string): Promise<string> {
+  const cleanedRef = roomRef.trim();
   const { data, error } = await supabase
     .from('salon')
     .select('id_salon')
-    .or(`id_salon.eq.${roomRef},room_code.eq.${roomRef},invitation_code.eq.${roomRef}`)
+    .or(`id_salon.eq.${cleanedRef},room_code.ilike.${cleanedRef},invitation_code.ilike.${cleanedRef}`)
     .maybeSingle();
 
   if (error || !data?.id_salon) {
@@ -89,6 +114,8 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
 export async function connectToSalon(roomId: string) {
   const salonId = await resolveSalonId(roomId);
   const userId = await ensureCurrentUserInPublicUsers();
+  // Keep a local trace even if RLS blocks salon_member writes.
+  persistJoinedSalonLocally(userId, salonId);
 
   const { data: existing } = await supabase
     .from('salon_member')
@@ -104,6 +131,7 @@ export async function connectToSalon(roomId: string) {
       .eq('id_salon_member', existing.id_salon_member);
 
     if (updateError) throw new Error(updateError.message || "Erreur connexion salon");
+    persistJoinedSalonLocally(userId, salonId);
     return { message: "Connected" };
   }
 
@@ -118,6 +146,7 @@ export async function connectToSalon(roomId: string) {
     });
 
   if (insertError) throw new Error(insertError.message || "Erreur connexion salon");
+  persistJoinedSalonLocally(userId, salonId);
   return { message: "Connected" };
 }
 

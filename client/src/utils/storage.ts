@@ -278,7 +278,6 @@ export function initializeExampleRooms(): void {
       };
       
       saveRoom(exampleRoom);
-      console.log('✅ Salon d\'exemple créé avec le code: CINEMA2025');
     }
   } catch (error) {
     console.error('Erreur lors de l\'initialisation du salon d\'exemple:', error);
@@ -298,7 +297,6 @@ export function resetExampleRoom(): void {
         maxParticipants: 50
       };
       saveRoom(updatedRoom);
-      console.log('🔄 Salon CINEMA2025 réinitialisé : 1/50 participants');
     } else {
       // Créer le salon s'il n'existe pas
       initializeExampleRooms();
