@@ -1,0 +1,80 @@
+\babel@toc {french}{}\relax 
+\contentsline {chapter}{Page de garde}{1}{Doc-Start}%
+\contentsline {chapter}{\numberline {1}Introduction}{3}{chapter.1}%
+\contentsline {chapter}{\numberline {2}Description technique}{4}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Stack technologique}{4}{section.2.1}%
+\contentsline {subsection}{\numberline {2.1.1}Front-end : React.js et Tailwind CSS}{4}{subsection.2.1.1}%
+\contentsline {subsection}{\numberline {2.1.2}Back-end : PHP et Laravel}{4}{subsection.2.1.2}%
+\contentsline {subsection}{\numberline {2.1.3}Base de données : PostgreSQL via Supabase}{4}{subsection.2.1.3}%
+\contentsline {subsection}{\numberline {2.1.4}Communication temps réel : Laravel Reverb et Laravel Echo}{4}{subsection.2.1.4}%
+\contentsline {subsection}{\numberline {2.1.5}API externe : YouTube IFrame API}{5}{subsection.2.1.5}%
+\contentsline {subsection}{\numberline {2.1.6}Sécurité : JSON Web Token (JWT)}{5}{subsection.2.1.6}%
+\contentsline {subsection}{\numberline {2.1.7}Outils collaboratifs}{5}{subsection.2.1.7}%
+\contentsline {section}{\numberline {2.2}Architecture logicielle}{5}{section.2.2}%
+\contentsline {subsection}{\numberline {2.2.1}Front-end (Client React)}{5}{subsection.2.2.1}%
+\contentsline {subsection}{\numberline {2.2.2}Back-end (Serveur Laravel)}{5}{subsection.2.2.2}%
+\contentsline {subsection}{\numberline {2.2.3}Base de données (PostgreSQL via Supabase)}{5}{subsection.2.2.3}%
+\contentsline {subsection}{\numberline {2.2.4}Communication temps réel (Laravel Reverb et Echo)}{6}{subsection.2.2.4}%
+\contentsline {chapter}{\numberline {3}Gestion de projet}{7}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Méthodologie}{7}{section.3.1}%
+\contentsline {section}{\numberline {3.2}Cahier des charges et priorisation}{7}{section.3.2}%
+\contentsline {section}{\numberline {3.3}Outils de gestion de projet}{8}{section.3.3}%
+\contentsline {section}{\numberline {3.4}Répartition des rôles}{8}{section.3.4}%
+\contentsline {chapter}{\numberline {4}Fonctionnalités développées}{10}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Page d’accueil}{10}{section.4.1}%
+\contentsline {section}{\numberline {4.2}Salons publics}{10}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Création et gestion des salons}{10}{section.4.3}%
+\contentsline {section}{\numberline {4.4}Interface de visionnage collaboratif}{10}{section.4.4}%
+\contentsline {section}{\numberline {4.5}Synchronisation en temps réel}{11}{section.4.5}%
+\contentsline {section}{\numberline {4.6}Chat en temps réel}{11}{section.4.6}%
+\contentsline {section}{\numberline {4.7}Gestion de la playlist}{11}{section.4.7}%
+\contentsline {section}{\numberline {4.8}Système de notation}{11}{section.4.8}%
+\contentsline {section}{\numberline {4.9}Sondages}{12}{section.4.9}%
+\contentsline {section}{\numberline {4.10}Historique des vidéos}{12}{section.4.10}%
+\contentsline {chapter}{\numberline {5}Contributions individuelles}{13}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Contribution de Meriem Takdjerad}{13}{section.5.1}%
+\contentsline {paragraph}{1) Développement front-end}{13}{paragraph*.1}%
+\contentsline {paragraph}{2) Intégration UI}{14}{paragraph*.2}%
+\contentsline {paragraph}{3) Authentification et sécurité}{14}{paragraph*.3}%
+\contentsline {paragraph}{4) Réinitialisation de mot de passe (Front + Back)}{14}{paragraph*.4}%
+\contentsline {paragraph}{5) Fonctionnalité sondages}{14}{paragraph*.5}%
+\contentsline {paragraph}{6) Accès aux salons}{14}{paragraph*.6}%
+\contentsline {section}{\numberline {5.2}Contribution de Malek Ghabi}{14}{section.5.2}%
+\contentsline {paragraph}{1) Conception et développement front-end}{15}{paragraph*.7}%
+\contentsline {paragraph}{2) Pages et composants avancés des salons}{15}{paragraph*.8}%
+\contentsline {paragraph}{3) Intégration UI et design system}{15}{paragraph*.9}%
+\contentsline {paragraph}{4) Architecture front-end}{16}{paragraph*.10}%
+\contentsline {paragraph}{5) Intégration front-end / back-end}{16}{paragraph*.11}%
+\contentsline {paragraph}{6) Tests et amélioration continue}{16}{paragraph*.12}%
+\contentsline {section}{\numberline {5.3}Contribution de Yanis Laftimi}{16}{section.5.3}%
+\contentsline {paragraph}{1) Mise en place de l’architecture back-end}{17}{paragraph*.13}%
+\contentsline {paragraph}{2) Gestion des utilisateurs et authentification}{17}{paragraph*.14}%
+\contentsline {paragraph}{3) Gestion des salons et logique métier}{17}{paragraph*.15}%
+\contentsline {paragraph}{4) Chat en temps réel}{17}{paragraph*.16}%
+\contentsline {paragraph}{5) Temps réel vidéo}{18}{paragraph*.17}%
+\contentsline {paragraph}{6) Pages de test et validation des flux}{18}{paragraph*.18}%
+\contentsline {section}{\numberline {5.4}Contribution de Taleb Wissame}{18}{section.5.4}%
+\contentsline {paragraph}{Architecture de la base de données}{18}{paragraph*.19}%
+\contentsline {paragraph}{Système de salons publics et privés}{19}{paragraph*.20}%
+\contentsline {paragraph}{Synchronisation vidéo en temps réel (front de test)}{19}{paragraph*.21}%
+\contentsline {paragraph}{Fonctionnalité historique des vidéos}{19}{paragraph*.22}%
+\contentsline {paragraph}{Système de playlist}{19}{paragraph*.23}%
+\contentsline {paragraph}{Système de sondages}{19}{paragraph*.24}%
+\contentsline {paragraph}{Système de notation des vidéos}{19}{paragraph*.25}%
+\contentsline {paragraph}{Configuration et tests}{19}{paragraph*.26}%
+\contentsline {paragraph}{Intégration back-end / front-end}{20}{paragraph*.27}%
+\contentsline {chapter}{\numberline {6}Problèmes rencontrés et solutions}{21}{chapter.6}%
+\contentsline {paragraph}{Configuration de Laravel Reverb et des WebSockets}{21}{paragraph*.28}%
+\contentsline {paragraph}{Synchronisation vidéo}{21}{paragraph*.29}%
+\contentsline {paragraph}{Problèmes CORS}{21}{paragraph*.30}%
+\contentsline {paragraph}{Envoi d’e-mails de vérification}{21}{paragraph*.31}%
+\contentsline {paragraph}{Types de données PostgreSQL}{21}{paragraph*.32}%
+\contentsline {paragraph}{Intégration front-end / back-end}{21}{paragraph*.33}%
+\contentsline {paragraph}{Conflits Git et gestion des versions}{21}{paragraph*.34}%
+\contentsline {paragraph}{Retard initial}{21}{paragraph*.35}%
+\contentsline {chapter}{\numberline {7}Tests et validation}{23}{chapter.7}%
+\contentsline {paragraph}{Tests fonctionnels manuels}{23}{paragraph*.36}%
+\contentsline {paragraph}{Tests d’intégration API}{23}{paragraph*.37}%
+\contentsline {paragraph}{Tests de communication temps réel}{23}{paragraph*.38}%
+\contentsline {paragraph}{Limites et perspectives}{23}{paragraph*.39}%
+\contentsline {chapter}{\numberline {8}Conclusion}{24}{chapter.8}%

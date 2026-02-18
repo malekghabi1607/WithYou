@@ -1,0 +1,520 @@
+\documentclass[12pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{lastpage}
+\usepackage[hidelinks]{hyperref}
+
+\geometry{margin=2.5cm}
+
+\definecolor{orangeil}{RGB}{230,120,20}
+
+% =========================
+% Header / Footer (partout)
+% =========================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\textcolor{orangeil}{Rapport Projet IL S6}}
+\fancyfoot[C]{\thepage\ /\ \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyhead[C]{\textcolor{orangeil}{Rapport Projet IL S6}}
+  \fancyfoot[C]{\thepage\ /\ \pageref{LastPage}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+\setlength{\headheight}{15pt} % hauteur minimale recommandée
+
+% =========================
+% Titres
+% =========================
+\titleformat{\chapter}[block]{\Huge\bfseries\color{orangeil}}{\thechapter.}{10pt}{}
+\titleformat{\section}{\Large\bfseries\color{orangeil}}{\thesection}{8pt}{}
+\titleformat{\subsection}{\large\bfseries\color{orangeil}}{\thesubsection}{6pt}{}
+
+% =========================
+% Sommaire
+% =========================
+\renewcommand{\contentsname}{\textcolor{orangeil}{Sommaire}}
+\renewcommand{\cftchapfont}{\color{orangeil}\bfseries}
+\renewcommand{\cftchappagefont}{\color{orangeil}\bfseries}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftsecfont}{\color{orangeil}}
+\renewcommand{\cftsecpagefont}{\color{orangeil}}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+
+\setlength{\cftbeforechapskip}{8pt}
+\setlength{\cftbeforesecskip}{4pt}
+
+\begin{document}
+
+% =========================
+% Page de garde (avec logo et membres)
+% =========================
+\begin{titlepage}
+\begin{center}
+\vspace*{1cm}
+\includegraphics[width=5cm]{logo-avignon.jpg}
+
+\vspace{1.5cm}
+
+{\Huge \bfseries Rapport \par}
+\vspace{0.3cm}
+{\Large Projet IL 2025--2026 \par}
+\vspace{0.8cm}
+
+{\LARGE \textbf{Plateforme collaborative de visionnage vidéo} \par}
+\vspace{0.3cm}
+{\LARGE \textbf{WithYou} \par}
+
+\vspace{1.5cm}
+
+{\large Université d’Avignon \par}
+{\large 16 février \par}
+
+\vspace{2cm}
+
+\begin{tabular}{p{6cm} p{6cm}}
+\textbf{Prestataires :} & \textbf{Clients :} \\
+Takdjerad Meriem & KESSLER Rémy \\
+Ghabi Malek & BONNEFOY Ludovic \\
+Taleb Wissame & \\
+Taleb Lamia & \\
+Laftimi Yanis & \\
+\end{tabular}
+
+
+
+\vfill
+{\small UFR Sciences, Technologies, Santé — CERI}
+\end{center}
+\end{titlepage}
+
+\setcounter{page}{1}
+\addcontentsline{toc}{chapter}{Page de garde}
+
+% =========================
+% Sommaire
+% =========================
+\tableofcontents
+\newpage
+
+% =========================
+% Introduction générale
+% =========================
+\chapter{Introduction générale}
+
+Le projet \textit{WithYou} est une application web collaborative déjà existante disposant d’un MVP fonctionnel. 
+L’objectif de ce semestre est de faire évoluer cette application vers un nouveau positionnement stratégique et fonctionnel.
+
+Afin de structurer cette évolution de manière rigoureuse, nous avons choisi d’adopter un modèle de développement en spirale. 
+Cette méthode permet d’identifier les risques majeurs dès les premières phases du projet, puis de les réduire progressivement au fil des cycles.
+
+Le projet est organisé en trois cycles :
+\begin{itemize}
+    \item Cycle 1 : Exploration et analyse des risques
+    \item Cycle 2 : Prototype et validation technique
+    \item Cycle 3 : Implémentation finale et stabilisation
+\end{itemize}
+
+Le présent document présente l’analyse complète du Cycle 1 et prépare la structure pour les cycles suivants.
+
+% =========================
+% Présentation du MVP existant
+% =========================
+\chapter{Présentation du MVP existant}
+
+L’application WithYou est une plateforme collaborative permettant des interactions en ligne entre plusieurs utilisateurs.
+
+Le MVP actuel comprend :
+\begin{itemize}
+    \item Une interface web interactive
+    \item Un système de collaboration en temps réel
+    \item Une architecture front-end / back-end
+\end{itemize}
+
+Cependant, le produit actuel nécessite une évolution stratégique afin d’élargir son public cible et d’enrichir ses fonctionnalités.
+
+% =========================
+% Méthodologie : Modèle en spirale
+% =========================
+\chapter{Méthodologie : Modèle en spirale}
+
+Le modèle en spirale repose sur une succession de cycles comprenant quatre étapes :
+\begin{enumerate}
+    \item Définition des objectifs
+    \item Identification et analyse des risques
+    \item Développement / Prototype
+    \item Évaluation et planification du cycle suivant
+\end{enumerate}
+
+Ce modèle est particulièrement adapté aux projets innovants comportant une incertitude fonctionnelle ou technique.
+
+
+
+% =========================
+% Cycle 1 – Exploration et analyse des risques
+% =========================
+
+\section{Analyse approfondie des pistes d’évolution}
+
+Dans le cadre de l’évolution du MVP existant de \textit{WithYou}, trois pistes stratégiques ont été étudiées. 
+Chaque piste a été analysée selon des critères fonctionnels, techniques et organisationnels.
+Afin d’analyser efficacement les différentes pistes d’évolution, le groupe a été divisé en trois sous-groupes, chacun responsable de l’étude approfondie d’une piste spécifique :
+
+\begin{itemize}
+    \item Groupe 1 : Mode Cours
+    \item Groupe 2 : Régie Vidéo
+    \item Groupe 3 : Plateforme de formation sécurisée
+\end{itemize}
+
+Chaque groupe devait :
+\begin{itemize}
+    \item Identifier les risques techniques et fonctionnels
+    \item Proposer une architecture possible
+    \item Réaliser des tests ou expérimentations
+    \item Évaluer la faisabilité
+\end{itemize}
+
+
+% ==========================================================
+\subsection{Piste 1 : Mode Cours interactif}
+
+\subsubsection*{1. Contexte et justification}
+
+Le projet étant développé dans un cadre universitaire, l’adaptation de la plateforme vers un environnement pédagogique apparaît cohérente. 
+Cette piste vise à transformer WithYou en outil d’accompagnement des cours en ligne.
+
+\subsubsection*{2. Objectifs fonctionnels}
+
+\begin{itemize}
+    \item Permettre la diffusion structurée de cours vidéo
+    \item Offrir des outils interactifs pour enrichir l’apprentissage
+    \item Centraliser contenu vidéo et annotations
+\end{itemize}
+
+\subsubsection*{3. Public cible}
+
+\begin{itemize}
+    \item Enseignants
+    \item Étudiants
+    \item Intervenants académiques
+\end{itemize}
+
+\subsubsection*{4. Fonctionnalités détaillées}
+
+\textbf{Tableau blanc pour professeur :}
+\begin{itemize}
+    \item Dessin en temps réel
+    \item Ajout de texte
+    \item Export du tableau
+\end{itemize}
+
+\textbf{Prise de notes côté étudiant :}
+\begin{itemize}
+    \item Notes personnelles synchronisées avec le cours
+    \item Sauvegarde automatique en base de données
+    \item Association des notes à un timestamp vidéo
+\end{itemize}
+
+\textbf{Recherche par hashtags :}
+\begin{itemize}
+    \item Indexation des notes
+    \item Recherche rapide par mot-clé
+    \item Organisation thématique
+\end{itemize}
+
+\subsubsection*{5. Impacts techniques}
+
+\begin{itemize}
+    \item Nécessité d’un système temps réel (WebSocket)
+    \item Gestion du stockage des notes
+    \item Synchronisation vidéo/annotation
+\end{itemize}
+
+\subsubsection*{6. Analyse des risques}
+
+\begin{itemize}
+    \item Complexité du tableau blanc collaboratif
+    \item Volume de données généré par les notes
+    \item Risque de surcharge serveur
+\end{itemize}
+
+\subsubsection*{7. Faisabilité}
+
+La piste est faisable si elle est développée progressivement, en commençant par des fonctionnalités simples.
+
+\subsubsection*{8. Conclusion}
+
+Piste cohérente avec le contexte académique, présentant un risque technique modéré.
+
+% ==========================================================
+\subsection{Piste 2 : Régie Vidéo avancée}
+
+\subsubsection*{1. Contexte et justification}
+
+Cette piste vise à professionnaliser la plateforme en proposant une gestion avancée des flux vidéo, similaire à une régie événementielle.
+
+\subsubsection*{2. Objectifs fonctionnels}
+
+\begin{itemize}
+    \item Permettre la gestion de plusieurs vidéos simultanées
+    \item Introduire un rôle spécifique de régisseur
+    \item Contrôler dynamiquement le flux diffusé
+\end{itemize}
+
+\subsubsection*{3. Public cible}
+
+\begin{itemize}
+    \item Organisateurs d’événements
+    \item Créateurs de contenu
+    \item Conférences universitaires
+\end{itemize}
+
+\subsubsection*{4. Fonctionnalités détaillées}
+
+\begin{itemize}
+    \item Interface de sélection des flux
+    \item Diffusion synchronisée pour tous les utilisateurs
+    \item Gestion des priorités vidéo
+    \item Possibilité de basculer entre plusieurs intervenants
+\end{itemize}
+
+\subsubsection*{5. Impacts techniques}
+
+\begin{itemize}
+    \item Gestion complexe de synchronisation
+    \item Nécessité de gérer la latence
+    \item Infrastructure serveur plus lourde
+\end{itemize}
+
+\subsubsection*{6. Analyse des risques}
+
+\begin{itemize}
+    \item Risque technique élevé
+    \item Forte dépendance aux performances réseau
+    \item Dépassement possible du cadre semestriel
+\end{itemize}
+
+\subsubsection*{7. Faisabilité}
+
+Cette piste est ambitieuse et pourrait dépasser les capacités temporelles du projet.
+
+\subsubsection*{8. Conclusion}
+
+Innovante mais risquée dans le cadre académique.
+
+% ==========================================================
+\subsection{Piste 3 : Plateforme de formation interne sécurisée}
+
+\subsubsection*{1. Contexte et justification}
+
+La sécurisation de la plateforme constitue une étape essentielle pour toute évolution fonctionnelle. 
+Cette piste vise à structurer l’accès et protéger les données.
+
+\subsubsection*{2. Objectifs fonctionnels}
+
+\begin{itemize}
+    \item Restreindre l’accès via authentification forte
+    \item Mettre en place une gestion fine des rôles
+    \item Organiser les offres de formation
+\end{itemize}
+
+\subsubsection*{3. Public cible}
+
+\begin{itemize}
+    \item Étudiants
+    \item Enseignants
+    \item Personnel interne
+\end{itemize}
+
+\subsubsection*{4. Fonctionnalités détaillées}
+
+\textbf{Authentification sérieuse :}
+\begin{itemize}
+    \item Email universitaire ou professionnel
+    \item Mot de passe sécurisé
+    \item Hashage avant stockage
+\end{itemize}
+
+\textbf{Gestion des rôles :}
+\begin{itemize}
+    \item Étudiant : accès aux cours
+    \item Professeur : création/modification
+    \item Administrateur : gestion complète
+\end{itemize}
+
+\textbf{Gestion des offres :}
+\begin{itemize}
+    \item Catalogue de formations
+    \item Attribution des accès
+    \item Restriction selon le rôle
+\end{itemize}
+
+\textbf{Sécurité des données :}
+\begin{itemize}
+    \item Protection des informations personnelles
+    \item Sécurisation des sessions
+\end{itemize}
+
+\subsubsection*{5. Impacts techniques}
+
+\begin{itemize}
+    \item Modification du schéma de base de données
+    \item Gestion des permissions côté backend
+    \item Contrôle d’accès aux API
+\end{itemize}
+
+\subsubsection*{6. Analyse des risques}
+
+\begin{itemize}
+    \item Mauvaise gestion des permissions
+    \item Vulnérabilités de sécurité
+\end{itemize}
+
+\subsubsection*{7. Faisabilité}
+
+Cette piste est réaliste et maîtrisable. 
+De plus, certaines fonctionnalités ont déjà été implémentées durant le Cycle 1.
+
+\subsubsection*{8. Conclusion}
+
+Piste structurante permettant de réduire les risques globaux du projet.
+Elle constitue une base solide pour les cycles suivants.
+
+
+% ==========================================================
+\section{Comparaison globale des pistes}
+
+Afin de prendre une décision stratégique cohérente, les trois pistes ont été comparées selon plusieurs critères : 
+le risque technique, le risque fonctionnel et la complexité globale de mise en œuvre dans le cadre du semestre.
+
+\begin{center}
+\begin{tabular}{|p{3cm}|p{3cm}|p{3cm}|p{3cm}|}
+\hline
+\textbf{Piste} & \textbf{Risque technique} & \textbf{Risque fonctionnel} & \textbf{Complexité globale} \\
+\hline
+Mode Cours & Moyen & Moyen & Modérée \\
+\hline
+Régie Vidéo & Élevé & Moyen & Élevée \\
+\hline
+Plateforme interne sécurisée & Faible à moyen & Faible & Modérée \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection*{Analyse comparative}
+
+\begin{itemize}
+    \item La \textbf{Régie Vidéo} présente le risque technique le plus élevé en raison de la synchronisation multi-flux et de la gestion de la latence.
+    
+    \item Le \textbf{Mode Cours} est cohérent avec le contexte académique mais nécessite des mécanismes temps réel (tableau blanc, prise de notes synchronisée).
+    
+    \item La \textbf{Plateforme interne sécurisée} constitue une base structurante permettant de sécuriser l’accès et de préparer l’implémentation des autres fonctionnalités.
+\end{itemize}
+
+% ==========================================================
+\section{Choix stratégique pour le Cycle 1}
+
+Après analyse détaillée, l’équipe a décidé de prioriser :
+
+\begin{itemize}
+    \item La mise en place d’une \textbf{authentification sérieuse}
+    \item L’implémentation d’une \textbf{gestion des rôles}
+    \item La structuration d’une \textbf{gestion des offres}
+\end{itemize}
+
+Ces éléments correspondent principalement à la piste :
+
+\begin{center}
+\textbf{Plateforme de formation interne sécurisée}
+\end{center}
+
+Ce choix repose sur plusieurs arguments :
+
+\begin{itemize}
+    \item Réduction immédiate des risques liés à la sécurité
+    \item Mise en place d’une architecture solide
+    \item Cohérence avec le public universitaire
+    \item Préparation technique pour le Mode Cours au Cycle 2
+\end{itemize}
+
+La Régie Vidéo, bien qu’innovante, est jugée trop complexe pour être prioritaire dans ce cycle exploratoire.
+
+% ==========================================================
+\section{Première liste de fonctionnalités retenues}
+
+Les fonctionnalités suivantes ont été retenues pour le Cycle 1 :
+
+\begin{itemize}
+    \item Système d’inscription avec email universitaire ou professionnel
+    \item Vérification du format d’email
+    \item Hashage sécurisé des mots de passe
+    \item Gestion des rôles (Étudiant / Professeur / Administrateur)
+    \item Restriction d’accès aux contenus selon le rôle
+    \item Mise en place d’un catalogue d’offres de formation
+\end{itemize}
+
+Ces fonctionnalités constituent la base sécuritaire nécessaire au développement futur du Mode Cours.
+
+% ==========================================================
+\section{Risques principaux identifiés et levés}
+
+Durant le Cycle 1, plusieurs risques critiques ont été identifiés puis partiellement ou totalement levés :
+
+\begin{itemize}
+    \item \textbf{Risque d’accès non contrôlé :} corrigé par la mise en place d’une authentification sécurisée.
+    
+    \item \textbf{Risque de mauvaise gestion des permissions :} réduit grâce à l’implémentation des rôles distincts.
+    
+    \item \textbf{Risque de stockage non sécurisé des mots de passe :} supprimé par l’utilisation d’un mécanisme de hashage.
+    
+    \item \textbf{Risque d’accès aux contenus sans autorisation :} contrôlé par des vérifications côté backend.
+\end{itemize}
+
+Le Cycle 1 a ainsi permis de transformer une incertitude stratégique en une base technique sécurisée et validée.
+
+
+
+
+
+
+
+
+
+
+
+% =========================
+% Cycle 2 – Prototype (à venir)
+% =========================
+\chapter{Cycle 2 – Prototype (à venir)}
+Cette section sera complétée lors du second cycle. 
+Elle présentera le prototype fonctionnel ainsi que les tests techniques réalisés.
+
+% =========================
+% Cycle 3 – Implémentation finale (à venir)
+% =========================
+\chapter{Cycle 3 – Implémentation finale (à venir)}
+Cette section détaillera l’implémentation finale, les optimisations réalisées et le bilan critique du projet.
+
+% =========================
+% Conclusion
+% =========================
+\chapter{Conclusion}
+
+Le Cycle 1 a permis d’identifier, comparer et analyser trois pistes d’évolution pour WithYou. 
+La solution retenue est le Mode Cours, présentant un bon équilibre entre innovation et maîtrise des risques.
+
+Les cycles suivants permettront de valider techniquement cette orientation et d’aboutir à une version stabilisée du produit.
+
+\end{document}

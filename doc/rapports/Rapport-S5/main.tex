@@ -1,0 +1,865 @@
+\documentclass[12pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{lastpage}
+\usepackage[hidelinks]{hyperref}
+
+\geometry{margin=2.5cm}
+
+\definecolor{orangeil}{RGB}{230,120,20}
+
+% =========================
+% Header / Footer (partout)
+% =========================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\textcolor{orangeil}{Rapport Projet IL S5}}
+\fancyfoot[C]{\thepage\ /\ \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyhead[C]{\textcolor{orangeil}{Rapport Projet IL S5}}
+  \fancyfoot[C]{\thepage\ /\ \pageref{LastPage}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+
+% =========================
+% Titres
+% =========================
+\titleformat{\chapter}[block]{\Huge\bfseries\color{orangeil}}{\thechapter.}{10pt}{}
+\titleformat{\section}{\Large\bfseries\color{orangeil}}{\thesection}{8pt}{}
+\titleformat{\subsection}{\large\bfseries\color{orangeil}}{\thesubsection}{6pt}{}
+
+% =========================
+% Sommaire
+% =========================
+\renewcommand{\contentsname}{\textcolor{orangeil}{Sommaire}}
+\renewcommand{\cftchapfont}{\color{orangeil}\bfseries}
+\renewcommand{\cftchappagefont}{\color{orangeil}\bfseries}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftsecfont}{\color{orangeil}}
+\renewcommand{\cftsecpagefont}{\color{orangeil}}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+
+\setlength{\cftbeforechapskip}{8pt}
+\setlength{\cftbeforesecskip}{4pt}
+
+\begin{document}
+
+% =========================
+% Page de garde (avec header/footer)
+% =========================
+\begin{titlepage}
+
+\begin{center}
+\vspace*{1cm}
+\includegraphics[width=5cm]{logo-avignon.jpg}
+
+\vspace{1.5cm}
+
+{\Huge \bfseries Rapport Projet IL S5 \par}
+\vspace{0.3cm}
+{\Large Projet IL 2025--2026 \par}
+\vspace{0.8cm}
+
+{\LARGE \textbf{Plateforme collaborative de visionnage vidéo} \par}
+\vspace{0.3cm}
+{\LARGE \textbf{WithYou} \par}
+
+\vspace{1.5cm}
+
+{\large Université d’Avignon \par}
+{\large 06 janvier 2026 \par}
+
+\vspace{2cm}
+
+\begin{tabular}{p{6cm} p{6cm}}
+\textbf{Prestataires :} & \textbf{Clients :} \\
+Takdjerad Meriem & KESSLER Rémy \\
+Ghabi Malek & BONNEFOY Ludovic \\
+Taleb Wissame & \\
+Taleb Lamia & \\
+Laftimi Yanis & \\
+\end{tabular}
+
+\vfill
+{\small UFR Sciences, Technologies, Santé — CERI}
+\end{center}
+\end{titlepage}
+
+\setcounter{page}{1}
+\addcontentsline{toc}{chapter}{Page de garde}
+
+% =========================
+% Sommaire
+% =========================
+\tableofcontents
+\newpage
+
+% --------------------
+\clearpage
+\chapter{Introduction}
+
+Dans le cadre de notre unité d’enseignement d’Ingénierie Logicielle, nous avons développé \textbf{WithYou}, une plateforme web collaborative permettant à plusieurs utilisateurs de regarder des vidéos YouTube ensemble de manière synchronisée et en temps réel.
+
+Ce projet s’inspire de services existants tels que \textit{Watch2Gether}, tout en y ajoutant des fonctionnalités interactives favorisant l’engagement et la prise de décision collective, notamment un chat instantané, un système de sondage permettant de choisir la prochaine vidéo à visionner, ainsi qu’un mécanisme de notation visant à évaluer la qualité des salons et de l’expérience proposée. La plateforme propose également des salons publics et privés, accessibles via un code d’invitation unique.
+
+L’objectif principal de \textbf{WithYou} est d’offrir une expérience de visionnage partagé fluide, conviviale et participative, dans laquelle les utilisateurs peuvent créer des salons, inviter leurs amis, échanger en temps réel et gérer collectivement une playlist de vidéos.
+
+Ce projet nous a permis d’explorer l’ensemble du cycle de développement logiciel, depuis l’analyse des besoins jusqu’à la mise en production, en passant par la conception de l’architecture, l’implémentation de fonctionnalités temps réel via les WebSockets, ainsi que la gestion collaborative du code source à l’aide de Git et GitHub.
+
+Nous avons adopté une méthodologie de type cascade, adaptée au cadre académique, en suivant des phases structurées (analyse, conception, développement, tests), tout en nous appuyant sur des outils modernes de gestion de projet tels que \textit{Jira} et \textit{Notion} afin d’assurer une organisation rigoureuse et une progression régulière du travail.
+% --------------------
+\chapter{Description technique}
+
+\section{Stack technologique}
+
+Le projet \textbf{WithYou} a été développé en s’appuyant sur une stack technologique moderne, choisie afin de garantir la performance, la fiabilité et la maintenabilité de l’application.
+
+\subsection{Front-end : React.js et Tailwind CSS}
+L’interface utilisateur est développée avec \textit{React.js}, une bibliothèque JavaScript permettant la création de composants réutilisables, dynamiques et modulaires. React facilite la gestion de l’état de l’application et la mise à jour efficace de l’interface en fonction des interactions des utilisateurs.  
+Le design et la mise en forme sont assurés par \textit{Tailwind CSS}, un framework utilitaire léger favorisant un rendu visuel cohérent, propre et responsive.
+
+\subsection{Back-end : PHP et Laravel}
+La partie serveur repose sur \textit{PHP} avec le framework \textit{Laravel}, qui permet de structurer une API RESTful sécurisée. Laravel fournit nativement des outils pour la gestion des routes, la validation des requêtes, l’authentification, la sécurité applicative et l’accès à la base de données.
+
+\subsection{Base de données : PostgreSQL via Supabase}
+Les données de l’application (utilisateurs, salons, messages, vidéos, playlists, votes, etc.) sont stockées dans une base \textit{PostgreSQL} hébergée via \textit{Supabase}. Ce choix garantit la robustesse, la cohérence et la persistance des données. Laravel interagit avec cette base à l’aide de son ORM \textit{Eloquent}, facilitant la manipulation des entités applicatives.
+
+\subsection{Communication temps réel : Laravel Reverb et Laravel Echo}
+Les fonctionnalités temps réel (chat instantané, synchronisation de lecture vidéo, mise à jour des sondages) reposent sur l’utilisation de WebSockets. \textit{Laravel Reverb} agit comme serveur de communication temps réel, tandis que \textit{Laravel Echo} est utilisé côté client pour écouter les événements diffusés. Cette combinaison permet une communication bidirectionnelle fluide et instantanée entre les utilisateurs d’un même salon.
+
+\subsection{API externe : YouTube IFrame API}
+L’API \textit{YouTube IFrame} est utilisée pour intégrer le lecteur vidéo directement dans l’interface de l’application. Elle permet de contrôler la lecture (lecture, pause, changement de vidéo) tout en garantissant une compatibilité et une performance optimales.
+
+\subsection{Sécurité : JSON Web Token (JWT)}
+L’authentification repose sur l’utilisation de \textit{JSON Web Tokens}. Après connexion, chaque utilisateur reçoit un jeton signé qui est transmis lors des requêtes suivantes afin de garantir un accès sécurisé aux ressources protégées de l’application.
+
+\subsection{Outils collaboratifs}
+\begin{itemize}
+  \item \textbf{GitHub} : gestion du code source et versioning collaboratif ;
+  \item \textbf{Jira / Notion} : planification des tâches, suivi d’avancement et documentation ;
+  \item \textbf{Postman} : tests des routes de l’API ;
+  \item \textbf{Figma} : conception des maquettes et des diagrammes (UML, interfaces).
+\end{itemize}
+
+\section{Architecture logicielle}
+
+L’architecture de \textbf{WithYou} repose sur une séparation claire entre le client, le serveur et la couche de données, favorisant la modularité, la scalabilité et la maintenabilité du système.
+
+\subsection{Front-end (Client React)}
+Le front-end est une application React composée de composants réutilisables organisés par fonctionnalités. Il communique avec le back-end via une API RESTful pour les opérations classiques (authentification, création de salons, gestion des playlists, votes, etc.).  
+Pour les interactions temps réel, \textit{Laravel Echo} établit une connexion WebSocket avec le serveur afin de recevoir instantanément les événements liés aux salons (messages, synchronisation vidéo, changements d’état).
+
+\subsection{Back-end (Serveur Laravel)}
+Le serveur \textit{Laravel} expose une API RESTful sécurisée par JWT. Il gère les utilisateurs, les salons, les playlists, l’historique et les sondages à l’aide de l’ORM \textit{Eloquent}. Les événements temps réel (lecture, pause, changement de vidéo, messages) sont émis via \textit{Laravel Reverb} et diffusés à l’ensemble des clients connectés à un même salon.
+
+\subsection{Base de données (PostgreSQL via Supabase)}
+PostgreSQL assure  le stockage persistant des données de manière fiable et sécurisée. \textit{Supabase} fournit l’infrastructure de la base ainsi que des mécanismes de sécurité et de gestion des accès, garantissant la protection des informations sensibles.
+
+\subsection{Communication temps réel (Laravel Reverb et Echo)}
+Laravel Reverb agit comme serveur de communication temps réel en gérant les connexions WebSocket et la diffusion des événements. \textit{Laravel Echo} permet au client d’écouter ces événements et de mettre à jour l’interface utilisateur de manière instantanée.
+
+Cette architecture garantit une séparation claire des responsabilités entre les différentes couches du système, facilite l’évolution indépendante de chaque composant et simplifie la maintenance globale de l’application.
+
+
+
+
+
+
+
+
+
+
+% --------------------
+% =========================
+\chapter{Gestion de projet}
+
+% -------------------------
+\section{Méthodologie}
+
+Pour développer la plateforme \textbf{WithYou}, nous avons suivi une démarche structurée de type cascade, en passant successivement par les phases d’analyse des besoins, de conception, de planification, de développement et de tests, tout en travaillant de manière collaborative.
+
+La phase d’analyse a permis d’identifier les fonctionnalités attendues, les contraintes techniques et les objectifs du projet. Elle a servi de base pour définir un périmètre clair et éviter les dérives fonctionnelles.
+
+La phase de conception a consisté à définir l’architecture générale du système (séparation front-end / back-end / base de données), ainsi que la structure des principales entités (utilisateurs, salons, messages, vidéos, playlists, votes).
+
+La planification a ensuite permis de répartir les tâches entre les membres de l’équipe et d’ordonner leur réalisation en tenant compte des dépendances techniques entre les différentes parties du projet.
+
+La phase de développement a été menée de manière progressive, chaque membre implémentant ses fonctionnalités, avec des intégrations régulières afin de maintenir une version fonctionnelle du projet.
+
+Enfin, la phase de tests a permis de vérifier le bon fonctionnement de l’application, de corriger les erreurs détectées et d’améliorer la stabilité globale, en particulier pour les fonctionnalités temps réel et la gestion des sessions.
+
+Cette organisation nous a permis de structurer efficacement notre travail et d’aboutir à une application cohérente et fonctionnelle.
+
+% -------------------------
+\section{Cahier des charges et priorisation}
+
+En début de projet, nous avons rédigé un cahier des charges recensant l’ensemble des fonctionnalités envisagées, puis nous les avons classées par ordre de priorité afin de garantir la livraison d’un produit fonctionnel dans les délais impartis.
+
+Nous avons distingué trois niveaux de priorité :
+
+\subsection*{Fonctionnalités essentielles (VIT — Vitales)}
+Ces fonctionnalités constituent le cœur du système et sont indispensables à son fonctionnement :
+\begin{itemize}
+  \item Inscription et authentification sécurisée des utilisateurs
+  \item Création et accès aux salons (publics ou privés)
+  \item Invitation via lien ou code d’accès
+  \item Lecture de vidéos YouTube via l’API officielle
+  \item Synchronisation des actions principales (lecture, pause, changement de vidéo)
+  \item Chat textuel en temps réel intégré au salon
+  \item Gestion de base de la playlist (ajout, suppression, sélection)
+\end{itemize}
+
+\subsection*{Fonctionnalités importantes (IMP — Importantes)}
+Elles enrichissent l’expérience utilisateur sans être strictement nécessaires au fonctionnement minimal :
+\begin{itemize}
+  \item Gestion des rôles et permissions dans un salon
+  \item Système de sondage pour le choix des vidéos
+  \item Notation du salon et de l’expérience utilisateur
+  \item Profil utilisateur
+  \item Améliorations de l’interface utilisateur
+\end{itemize}
+
+\subsection*{Fonctionnalités optionnelles (MIN — Minimales)}
+Elles constituent des améliorations complémentaires :
+\begin{itemize}
+  \item Abonnement premium
+  \item Multilingue
+  \item Chat vocal
+  \item Recommandation automatique de vidéos
+  \item Mode sombre
+\end{itemize}
+
+Cette priorisation nous a permis de concentrer nos efforts sur les fonctionnalités essentielles et d’assurer la livraison d’un \textit{MVP} (Minimum Viable Product) fonctionnel à la fin du semestre.
+
+% -------------------------
+\section{Outils de gestion de projet}
+
+Plusieurs outils ont été utilisés afin d’organiser le travail et de faciliter la collaboration au sein de l’équipe.
+
+\begin{itemize}
+  \item \textbf{GitHub} : gestion du code source, versioning et intégration des contributions
+  \item \textbf{Discord et WhatsApp} : communication, réunions, coordination et résolution des blocages
+  \item \textbf{Jira et Notion} : planification, suivi d’avancement, diagrammes et documentation
+  \item \textbf{Figma} : conception des maquettes et des interfaces utilisateur
+  \item \textbf{Postman} : tests des routes de l’API
+\end{itemize}
+
+Ces outils ont permis de maintenir une bonne coordination, une répartition équilibrée du travail et une progression régulière du projet.
+
+% -------------------------
+\section{Répartition des rôles}
+
+La répartition des tâches au sein de l’équipe a été effectuée en fonction des compétences et des préférences de chacun, tout en veillant à ce que chaque membre participe à différents aspects du projet afin de conserver une vision globale du système.
+
+\subsection*{Équipe Back-end (Taleb Wissame \& Yanis Laftimi)}
+\begin{itemize}
+  \item Développement de l’API RESTful avec Laravel
+  \item Mise en place de l’authentification JWT
+  \item Configuration de la base de données PostgreSQL via Supabase
+  \item Création des modèles Eloquent
+  \item Développement des contrôleurs et des routes API
+  \item Implémentation de la logique métier
+\end{itemize}
+
+\subsection*{Équipe Front-end (Meriem Takdjerad \& Malek Ghabi)}
+\begin{itemize}
+  \item Développement de l’interface avec React et TypeScript
+  \item Intégration de Tailwind CSS
+  \item Création des pages principales et des composants réutilisables
+  \item Gestion de l’état global avec React Context et Hooks
+  \item Harmonisation visuelle de l’application
+\end{itemize}
+
+\subsection*{Travail collaboratif}
+\begin{itemize}
+  \item Intégration front-end / back-end
+  \item Configuration de Laravel Reverb et Echo
+  \item Mise en place du système de broadcasting
+  \item Tests multi-utilisateurs
+  \item Débogage collaboratif (WebSockets, CORS, JWT)
+\end{itemize}
+
+Des réunions hebdomadaires ont permis de synchroniser l’avancement, résoudre les blocages et ajuster la répartition des tâches en fonction des besoins du projet.
+
+
+
+
+
+
+
+
+
+
+
+
+% --------------------
+% =========================
+\chapter{Fonctionnalités développées}
+
+% -------------------------
+\section{Page d’accueil}
+
+La page d’accueil constitue le point d’entrée de la plateforme \textbf{WithYou}. Elle permet aux utilisateurs de comprendre rapidement le concept du service et d’accéder aux principales fonctionnalités.
+
+Elle propose :
+\begin{itemize}
+  \item une présentation synthétique du concept de visionnage collaboratif ;
+  \item des accès directs vers la création et la recherche de salons ;
+  \item l’authentification des utilisateurs ;
+  \item une interface responsive compatible mobile, tablette et ordinateur.
+\end{itemize}
+
+\textbf{Technologies :} React, TypeScript, Tailwind CSS, React Router.
+
+% -------------------------
+\section{Salons publics}
+
+Une page dédiée permet de consulter et rechercher les salons publics disponibles.
+
+Fonctionnalités :
+\begin{itemize}
+  \item affichage de la liste des salons en cours ;
+  \item recherche par nom de salon ;
+  \item affichage du nombre de participants et du statut (en direct) ;
+  \item accès direct à un salon public.
+\end{itemize}
+
+% -------------------------
+\section{Création et gestion des salons}
+
+Les utilisateurs peuvent créer un salon de visionnage personnalisé.
+
+Fonctionnalités :
+\begin{itemize}
+  \item création de salon avec nom, description et vidéo initiale optionnelle ;
+  \item choix entre salon public ou privé (avec mot de passe) ;
+  \item génération automatique d’un code d’invitation ;
+  \item limitation du nombre maximum de participants ;
+  \item gestion des rôles (administrateur / participant) ;
+  \item gestion des accès et permissions.
+\end{itemize}
+
+\textbf{Technologies :} Laravel, PostgreSQL (Supabase), React, YouTube IFrame API.
+
+% -------------------------
+\section{Interface de visionnage collaboratif}
+
+Cette interface constitue le cœur de la plateforme.
+
+Elle comprend :
+\begin{itemize}
+  \item un lecteur YouTube synchronisé ;
+  \item une playlist interactive ;
+  \item un panneau latéral regroupant le chat, les participants, les sondages, la notation et l’historique des vidéos ;
+  \item des contrôles spécifiques pour l’administrateur ;
+  \item un design moderne en thème sombre et responsive.
+\end{itemize}
+
+% -------------------------
+\section{Synchronisation en temps réel}
+
+Les actions vidéo (lecture, pause, changement de vidéo) sont synchronisées entre tous les participants via des événements temps réel.
+
+L’infrastructure est opérationnelle et en cours de stabilisation afin d’assurer une propagation fiable des événements.
+
+\textbf{Technologies :} Laravel Reverb, Laravel Echo, WebSockets.
+
+% -------------------------
+\section{Chat en temps réel}
+
+Les utilisateurs peuvent échanger des messages pendant le visionnage.
+
+Fonctionnalités :
+\begin{itemize}
+  \item messagerie instantanée ;
+  \item réactions par emoji ;
+  \item affichage du pseudonyme, de l’heure et distinction visuelle des messages ;
+  \item défilement automatique des messages.
+\end{itemize}
+
+% -------------------------
+\section{Gestion de la playlist}
+
+Les participants peuvent gérer collectivement une liste de vidéos.
+
+Fonctionnalités :
+\begin{itemize}
+  \item ajout de vidéos via URL YouTube ;
+  \item extraction automatique des informations ;
+  \item affichage sous forme de grille ;
+  \item suppression réservée à l’administrateur ;
+  \item persistance en base de données.
+\end{itemize}
+
+% -------------------------
+\section{Système de notation}
+
+Les utilisateurs peuvent attribuer une note aux vidéos visionnées.
+
+Fonctionnalités :
+\begin{itemize}
+  \item notation sur 5 étoiles ;
+  \item calcul automatique de la moyenne ;
+  \item modification possible des notes ;
+  \item affichage dédié des évaluations.
+\end{itemize}
+
+% -------------------------
+\section{Sondages}
+
+L’administrateur peut créer des sondages interactifs.
+
+Fonctionnalités :
+\begin{itemize}
+  \item création de sondages avec options ;
+  \item vote unique par utilisateur ;
+  \item affichage des résultats en temps réel ;
+  \item conservation de l’historique des sondages.
+\end{itemize}
+
+% -------------------------
+\section{Historique des vidéos}
+
+Un historique des vidéos visionnées est conservé pour chaque salon.
+
+Fonctionnalités :
+\begin{itemize}
+  \item enregistrement automatique des vidéos lues ;
+  \item affichage chronologique ;
+  \item possibilité de relancer une vidéo depuis l’historique.
+\end{itemize}
+% --------------------
+% =========================
+\chapter{Contributions individuelles}
+
+% -------------------------
+\section{Contribution de Meriem Takdjerad}
+
+\subsection*{Rôle et responsabilités}
+
+Meriem Takdjerad a initialement participé au projet en tant que développeuse front-end, en charge de la conception et de l’implémentation des pages principales de l’application. Cette première phase visait à construire une interface complète et cohérente, avec des parcours utilisateurs fonctionnels, en s’appuyant sur des données simulées afin de valider la structure globale de l’application.
+
+Dans une seconde phase, Meriem a élargi son rôle vers une contribution front-end et back-end ciblée, principalement autour de la sécurité, de l’authentification et de la fonctionnalité sondages. Elle a intégré les routes d’authentification existantes, puis développé des fonctionnalités back-end spécifiques (validation d’email, réinitialisation de mot de passe, sondages).
+
+Ses responsabilités principales ont été :
+\begin{itemize}
+  \item développement des pages front-end et des layouts globaux ;
+  \item intégration et structuration des composants UI réutilisables ;
+  \item intégration des routes d’authentification (login / register) côté front-end ;
+  \item implémentation de la vérification d’email obligatoire avant connexion ;
+  \item développement du workflow complet de réinitialisation de mot de passe ;
+  \item ajout de logique back-end dédiée (contrôleurs et routes API) pour la gestion des emails ;
+  \item configuration et débogage de l’envoi d’emails (SMTP) ;
+  \item développement et connexion de la fonctionnalité sondages ;
+  \item correction et connexion des fonctionnalités d’accès aux salons (rejoindre un salon existant).
+\end{itemize}
+
+\subsection*{Réalisations concrètes}
+
+\paragraph{1) Développement front-end}
+Meriem a conçu et intégré plusieurs pages côté client, notamment :
+\begin{itemize}
+  \item Pages d’authentification : SignUpPage, SignInPage, ForgotPasswordPage, EmailSentPage, AccountConfirmedPage, ResetPasswordPage ;
+  \item Pages informatives et légales : Conditions d’utilisation, Politique de confidentialité, Règles du salon, FAQ, Contact ;
+  \item Layouts globaux : Header, Footer ;
+  \item Pages et composants de paramètres des salons (sondages, permissions, membres, informations).
+\end{itemize}
+
+\paragraph{2) Intégration UI}
+Meriem a mis en place une base complète de composants UI (Form, Button, Input, Dialog, Tabs, NavigationMenu, DropdownMenu, Sheet, etc.), permettant une interface homogène, réutilisable et maintenable dans l’ensemble de l’application.
+
+\paragraph{3) Authentification et sécurité}
+Meriem a intégré les routes login et register existantes, puis ajouté :
+\begin{itemize}
+  \item la vérification de l’email après inscription ;
+  \item la protection de la connexion tant que l’email n’est pas validé ;
+  \item les routes API associées.
+\end{itemize}
+
+\paragraph{4) Réinitialisation de mot de passe (Front + Back)}
+Elle a développé le workflow complet :
+\begin{itemize}
+  \item demande de réinitialisation via le front-end ;
+  \item envoi d’un email contenant un lien sécurisé ;
+  \item validation du lien et modification effective du mot de passe côté back-end.
+\end{itemize}
+
+\paragraph{5) Fonctionnalité sondages}
+Meriem a développé la fonctionnalité sondages de manière full stack :
+\begin{itemize}
+  \item création de la table sondage en base ;
+  \item création du contrôleur associé ;
+  \item définition des routes API ;
+  \item connexion au front-end.
+\end{itemize}
+
+\paragraph{6) Accès aux salons}
+Elle a corrigé et connecté la page JoinRoomPage pour permettre à un utilisateur de rejoindre un salon existant via le back-end.
+
+\subsection*{Problèmes rencontrés}
+
+\begin{itemize}
+  \item coordination entre front-end, back-end et base de données ;
+  \item configuration et débogage du service SMTP ;
+  \item adaptation du front-end lors du passage de données simulées à l’API réelle ;
+  \item intégration simultanée front/back des sondages.
+\end{itemize}
+
+\subsection*{Apports spécifiques}
+
+Meriem a apporté une contribution significative au projet, permettant :
+\begin{itemize}
+  \item la mise en place d’un front-end complet et structuré ;
+  \item un parcours utilisateur sécurisé (validation email, reset password) ;
+  \item l’intégration d’une fonctionnalité métier persistante (sondages) ;
+  \item une évolution progressive vers des tâches full stack ciblées.
+\end{itemize}
+
+
+
+% -------------------------
+\section{Contribution de Malek Ghabi}
+
+\subsection*{Rôle et responsabilités}
+
+Malek Ghabi a participé au projet en tant que développeuse front-end, avec la responsabilité principale de la conception de l’expérience utilisateur (UX/UI) et de l’implémentation technique des interfaces de l’application. Son rôle a couvert l’ensemble du cycle de développement front-end, depuis la conception des maquettes jusqu’à l’intégration des fonctionnalités avec le back-end.
+
+Elle a assuré le passage des maquettes Figma au code applicatif en React, en veillant au respect des principes de modularité, de réutilisabilité des composants et de maintenabilité du code.
+
+En parallèle, Malek a contribué à l’organisation et au suivi du projet à l’aide d’outils de gestion tels que Jira, Notion et Excel, notamment pour la planification des tâches, le suivi de l’avancement et la préparation de la soutenance.
+
+\subsection*{Réalisations concrètes}
+
+\paragraph{1) Conception et développement front-end}
+Malek a conçu et développé les interfaces principales de l’application, en particulier celles liées aux salons (rooms), qui constituent le cœur fonctionnel de la plateforme. Elle a notamment implémenté :
+
+\begin{itemize}
+  \item la page d’accueil et la navigation globale ;
+  \item les interfaces liées aux salons :
+  \begin{itemize}
+    \item liste des salons publics ;
+    \item interface de création de salon ;
+    \item page permettant de rejoindre un salon par code ;
+    \item page principale d’un salon (RoomPage) et pages de paramètres associées ;
+  \end{itemize}
+  \item les interfaces de gestion des vidéos :
+  \begin{itemize}
+    \item ajout de vidéos à la playlist ;
+    \item suppression de vidéos par l’administrateur ;
+    \item affichage de la vidéo en cours et des vidéos à venir ;
+    \item interface administrateur associée ;
+    \item page de profil utilisateur.
+  \end{itemize}
+\end{itemize}
+
+Ces développements ont permis de structurer l’ensemble du parcours utilisateur, depuis l’entrée sur la plateforme jusqu’à l’utilisation collaborative complète à l’intérieur d’un salon.
+
+\paragraph{2) Pages et composants avancés des salons}
+Malek a implémenté l’ensemble des composants front-end liés aux salons, notamment :
+
+\begin{itemize}
+  \item intégration du lecteur vidéo YouTube ;
+  \item gestion de la playlist ;
+  \item affichage et gestion des participants ;
+  \item gestion des permissions et des règles du salon ;
+  \item affichage des informations du salon ;
+  \item interface de notation des vidéos ;
+  \item interface de vote des sondages ;
+  \item historique des vidéos ;
+  \item page d’invitation avec lien et code de salon.
+\end{itemize}
+
+\paragraph{3) Intégration UI et design system}
+Malek a mis en place et exploité une base cohérente de composants UI (Form, Button, Input, Dialog, Tabs, NavigationMenu, DropdownMenu, Sheet, etc.), garantissant une interface homogène, cohérente et responsive.
+
+Elle a également contribué à l’harmonisation du design system (typographie, couleurs, espacements, comportements interactifs).
+
+\paragraph{4) Architecture front-end}
+Malek a participé à :
+
+\begin{itemize}
+  \item l’organisation de l’architecture front-end ;
+  \item la mise en place du routage applicatif ;
+  \item la documentation de la structure front-end.
+\end{itemize}
+
+\paragraph{5) Intégration front-end / back-end}
+Malek a contribué à la connexion des interfaces front-end aux services back-end, notamment pour :
+
+\begin{itemize}
+  \item la récupération et l’actualisation de la liste des salons publics ;
+  \item la gestion des permissions des participants ;
+  \item l’intégration de la notation des vidéos ;
+  \item la participation à l’intégration des sondages (vote) ;
+  \item la connexion de la page profil utilisateur ;
+  \item la gestion des réponses serveur (succès, erreurs, messages).
+\end{itemize}
+
+\paragraph{6) Tests et amélioration continue}
+Malek a participé aux tests manuels, aux tests multi-utilisateurs, à la correction d’anomalies front-end, ainsi qu’à la préparation de la démonstration pour la soutenance finale.
+
+\subsection*{Problèmes rencontrés}
+
+\begin{itemize}
+  \item coordination entre les différentes couches de l’application ;
+  \item gestion de la complexité croissante des composants ;
+  \item ajustement progressif des interactions dynamiques.
+\end{itemize}
+
+Ces difficultés ont été résolues par un travail itératif de conception, de test, de correction et de concertation avec les autres membres de l’équipe.
+
+\subsection*{Apports spécifiques}
+
+La contribution de Malek Ghabi a permis :
+
+\begin{itemize}
+  \item la mise en place d’un front-end complet, structuré et ergonomique ;
+  \item une expérience utilisateur fluide et cohérente, centrée sur les salons ;
+  \item une intégration efficace avec le back-end ;
+  \item une meilleure organisation du travail d’équipe ;
+  \item une base front-end solide pour les évolutions futures.
+\end{itemize}
+% -------------------------
+\section{Contribution de Yanis Laftimi}
+
+\subsection*{Rôle et responsabilités}
+
+Yanis Laftimi a participé au projet en tant que développeur principalement back-end, avec une forte implication sur la structure technique globale de l’application et sur les fonctionnalités temps réel. Son rôle a consisté à poser et stabiliser les fondations techniques du projet, tout en développant des fonctionnalités centrales liées aux utilisateurs, aux salons et aux interactions en temps réel.
+
+Il est intervenu dès les premières phases du projet afin de structurer l’architecture back-end, de définir les règles métier essentielles et d’assurer une communication fiable entre le front-end et le serveur. Une attention particulière a été portée à la cohérence des états utilisateurs, notamment dans le cadre de la gestion des salons et des fonctionnalités temps réel (chat et vidéo).
+
+Ses responsabilités principales ont été :
+
+\begin{itemize}
+  \item mise en place de la structure technique back-end du projet ;
+  \item développement et intégration des routes d’authentification ;
+  \item implémentation de la logique métier liée aux salons ;
+  \item gestion des connexions et déconnexions des utilisateurs aux salons ;
+  \item mise en place du système de chat en temps réel ;
+  \item participation à l’implémentation et à la synchronisation du temps réel vidéo ;
+  \item création de pages de test front-end pour la validation des flux API ;
+  \item tests, débogage et correction des incohérences techniques.
+\end{itemize}
+
+\subsection*{Réalisations concrètes}
+
+\paragraph{1) Mise en place de l’architecture back-end}
+Yanis a participé à la définition et à la mise en place de l’architecture back-end de l’application, en veillant à une séparation claire entre la logique métier, les contrôleurs et les routes API.
+
+Ce travail a permis :
+\begin{itemize}
+  \item une meilleure lisibilité du code ;
+  \item une maintenance facilitée ;
+  \item une base évolutive pour l’ajout de nouvelles fonctionnalités.
+\end{itemize}
+
+L’architecture mise en place sert de socle à l’ensemble des fonctionnalités développées par l’équipe.
+
+\paragraph{2) Gestion des utilisateurs et authentification}
+Yanis a travaillé sur l’intégration et le bon fonctionnement du système d’authentification côté back-end, incluant :
+\begin{itemize}
+  \item la gestion des routes d’inscription et de connexion ;
+  \item la récupération des informations de l’utilisateur authentifié ;
+  \item la sécurisation de l’accès aux fonctionnalités sensibles.
+\end{itemize}
+
+Cette partie est essentielle pour garantir que seuls les utilisateurs authentifiés puissent accéder aux salons et aux fonctionnalités temps réel.
+
+\paragraph{3) Gestion des salons et logique métier}
+La gestion des salons constitue un élément central du projet. Yanis a développé la logique back-end associée aux salons, incluant :
+\begin{itemize}
+  \item la création et la gestion des entités salon ;
+  \item la connexion et la déconnexion des utilisateurs ;
+  \item la gestion des états utilisateurs liés aux salons.
+\end{itemize}
+
+Une règle métier clé a été implémentée : un utilisateur ne peut être connecté qu’à un seul salon à la fois, afin d’éviter les incohérences dans la gestion du chat et de la vidéo en temps réel.
+
+\paragraph{4) Chat en temps réel}
+Yanis a mis en place le système de chat en temps réel permettant aux utilisateurs d’échanger instantanément des messages au sein d’un salon. Cette fonctionnalité repose sur :
+\begin{itemize}
+  \item l’envoi d’événements temps réel ;
+  \item la diffusion des messages à l’ensemble des utilisateurs connectés au même salon ;
+  \item l’association stricte des messages à un salon donné.
+\end{itemize}
+
+\paragraph{5) Temps réel vidéo}
+Yanis a contribué à la mise en place de la synchronisation vidéo en temps réel, visant à garantir une expérience partagée cohérente entre les utilisateurs d’un même salon. Le travail réalisé a porté sur :
+\begin{itemize}
+  \item la synchronisation des actions vidéo (lecture, pause, changements d’état) ;
+  \item la gestion cohérente des événements temps réel ;
+  \item l’interaction entre la vidéo et la logique des salons.
+\end{itemize}
+
+Cette partie représente l’un des aspects les plus techniques du projet.
+
+\paragraph{6) Pages de test et validation des flux}
+Afin de valider le bon fonctionnement des fonctionnalités, Yanis a développé des pages de test front-end permettant de :
+\begin{itemize}
+  \item tester les routes d’authentification ;
+  \item vérifier la gestion des salons ;
+  \item valider le fonctionnement du chat et du temps réel ;
+  \item contrôler la communication entre le front-end et le back-end.
+\end{itemize}
+
+Ces pages ont joué un rôle important dans le débogage et la stabilisation du projet.
+
+\subsection*{Problèmes rencontrés}
+
+\begin{itemize}
+  \item gestion des états utilisateurs dans un contexte temps réel ;
+  \item synchronisation des événements entre plusieurs utilisateurs connectés simultanément ;
+  \item coordination entre logique métier, API et temps réel ;
+  \item débogage des interactions front-end / back-end.
+\end{itemize}
+
+Ces difficultés ont été résolues par une approche itérative combinant tests, corrections progressives et ajustements de la logique serveur.
+
+\subsection*{Apports spécifiques}
+
+La contribution de Yanis Laftimi a permis :
+\begin{itemize}
+  \item la mise en place d’une base technique back-end solide et cohérente ;
+  \item une gestion fiable des utilisateurs et des salons ;
+  \item l’implémentation des fonctionnalités temps réel clés (chat et vidéo) ;
+  \item une meilleure stabilité globale de l’application ;
+  \item la création d’un socle technique facilitant les évolutions futures du projet.
+\end{itemize}
+% -------------------------
+\section{Contribution de Taleb Wissame}
+
+\subsection*{Rôle et responsabilités}
+
+Taleb Wissame a principalement travaillé sur le développement back-end de l'application, en se concentrant sur l'architecture de la base de données, l'implémentation des fonctionnalités critiques et la communication temps réel. Il a également assuré l'intégration entre le back-end et le front-end pour plusieurs fonctionnalités majeures.
+
+\subsection*{Réalisations concrètes}
+
+\paragraph{Architecture de la base de données}
+Taleb a conçu et mis en place la structure complète de la base de données, incluant la création et la modification des tables (salons, playlists, vidéos, historique, sondages, notations), la définition des relations entre les modèles Eloquent et la gestion des migrations. Il a également créé les modèles Laravel correspondants (\texttt{Salon}, \texttt{Playlist}, \texttt{Video}, \texttt{HistoriqueVideo}, \texttt{SondageSalon}, \texttt{PlaylistVideo}) avec leurs relations et méthodes associées.
+
+\paragraph{Système de salons publics et privés}
+Il a développé le système complet de gestion des salons avec deux types distincts : salons publics (accessibles via une liste) et salons privés (protégés par mot de passe). Il a implémenté la génération automatique de codes d'invitation uniques (format \texttt{XXXX-XXXX}), créé les routes API de création et d'accès aux salons (\texttt{POST /salons}, \texttt{GET /salons/by-code/\{code\}}), et développé la logique de vérification du mot de passe pour les salons privés.
+
+\paragraph{Synchronisation vidéo en temps réel (front de test)}
+Taleb a travaillé sur la synchronisation vidéo en temps réel en implémentant le système de diffusion des événements vidéo (lecture, pause, seek, changement de vidéo) via Laravel Reverb. Il a créé l'événement \texttt{VideoUpdated}, développé le contrôleur \texttt{VideoSyncController}, et mis en place le système de sauvegarde de l'état vidéo en base de données (position actuelle, statut lecture/pause).
+
+\paragraph{Fonctionnalité historique des vidéos}
+Il a développé le système complet d'historique permettant d'enregistrer automatiquement chaque vidéo lue dans un salon. Cela inclut la création de la table \texttt{historiquevideos} et du modèle associé, le développement du contrôleur \texttt{HistoriqueController} avec les routes d'enregistrement et de récupération, ainsi que l'enregistrement automatique des métadonnées (ID YouTube, titre, utilisateur, date et heure).
+
+\paragraph{Système de playlist}
+Il a implémenté la gestion complète des playlists avec la création de la table de liaison \texttt{playlist\_video}, le développement des routes API d'ajout, de suppression et de récupération des vidéos, ainsi que la gestion du chargement automatique de la vidéo initiale lors de la création d'un salon.
+
+\paragraph{Système de sondages}
+Taleb a créé le système de sondages interactifs incluant la table \texttt{sondage\_salon} et le modèle \texttt{SondageSalon}, les routes API de création, de vote et de récupération des résultats, ainsi que le calcul des statistiques (nombre de votes, classement des options).
+
+\paragraph{Système de notation des vidéos}
+Il a développé le système de notation permettant aux utilisateurs d'évaluer les vidéos sur cinq étoiles, avec l'enregistrement des notes en base de données, le calcul automatique de la note moyenne par vidéo et la possibilité de modifier sa note.
+
+\paragraph{Configuration et tests}
+Taleb a configuré le système CORS pour autoriser les communications entre le front-end et le back-end, configuré Laravel Reverb et les canaux WebSocket, créé des pages HTML de test pour valider l'authentification, les salons, la synchronisation vidéo et les WebSockets, et effectué des tests approfondis de l'ensemble des fonctionnalités développées.
+
+\paragraph{Intégration back-end / front-end}
+Il a assuré l'intégration de plusieurs fonctionnalités entre le back-end et le front-end, notamment la gestion des salons (création, accès par code), la récupération de l'historique des vidéos et le début de l'intégration de la playlist (en cours de finalisation).
+
+\subsection*{Technologies utilisées}
+
+Laravel (API RESTful, Eloquent ORM, migrations), PostgreSQL / Supabase (base de données), Laravel Reverb (WebSocket), JWT (authentification), PHP (logique back-end), HTML / JavaScript (pages de test).
+
+\subsection*{Problèmes rencontrés}
+
+La configuration initiale de Laravel Reverb et des WebSockets a nécessité plusieurs ajustements afin d'assurer une communication stable. La gestion de la synchronisation vidéo multi-utilisateurs a demandé de nombreux tests pour garantir la cohérence des états. La configuration CORS a également posé des difficultés initiales pour permettre les échanges entre ports différents (5173 côté front-end, 8000 côté back-end).
+
+\subsection*{Apports spécifiques}
+
+Taleb Wissame a posé les fondations solides du back-end en créant une architecture de base de données cohérente et évolutive. Son travail sur les systèmes de salons, de synchronisation vidéo, d'historique, de playlists, de sondages et de notations a permis de couvrir l'ensemble des fonctionnalités métier critiques du projet. Ses pages de test ont grandement facilité le débogage et la validation des fonctionnalités avant l'intégration finale avec le front-end React.
+% --------------------
+% -------------------------
+\chapter{Problèmes rencontrés et solutions}
+
+Au cours du projet, l’équipe a rencontré plusieurs difficultés, tant sur le plan technique qu’organisationnel. Les principaux problèmes identifiés ainsi que les solutions apportées sont présentés ci-dessous.
+
+\paragraph{Configuration de Laravel Reverb et des WebSockets}
+Le serveur WebSocket ne se connectait pas correctement au front-end et les événements diffusés n’étaient pas reçus.  
+\textbf{Solution :} configuration des variables d’environnement (ports, clés), intégration de Laravel Echo avec le protocole Pusher et mise en place de tests progressifs.
+
+\paragraph{Synchronisation vidéo}
+Les événements de lecture (lecture, pause, changement de vidéo) étaient parfois perdus ou reçus avec un décalage.  
+\textbf{Solution :} implémentation d’un événement dédié \texttt{VideoUpdated}, ajout de logs pour tracer les échanges et création de pages HTML de test pour valider les WebSockets.
+
+\paragraph{Problèmes CORS}
+Les requêtes entre le front-end (port 5173) et le back-end (port 8000) étaient bloquées par la politique de sécurité du navigateur.  
+\textbf{Solution :} configuration du fichier \texttt{cors.php} afin d’autoriser les origines locales et activation du middleware CORS.
+
+\paragraph{Envoi d’e-mails de vérification}
+Les e-mails de confirmation n’étaient pas envoyés correctement.  
+\textbf{Solution :} configuration des paramètres SMTP dans le fichier \texttt{.env} et utilisation d’un service de test fiable (Mailtrap).
+
+\paragraph{Types de données PostgreSQL}
+Des erreurs SQL sont apparues concernant les UUID et les horodatages automatiques.  
+\textbf{Solution :} désactivation des timestamps sur certains modèles (\texttt{public \$timestamps = false}) et utilisation correcte de \texttt{Str::uuid()}.
+
+\paragraph{Intégration front-end / back-end}
+Les formats de données entre les mocks front-end et l’API réelle n’étaient pas cohérents.  
+\textbf{Solution :} définition claire des contrats d’API, typage TypeScript des interfaces et synchronisation régulière entre les équipes.
+
+\paragraph{Conflits Git et gestion des versions}
+Des conflits sont apparus lors des fusions et certains commits ont été perdus.  
+\textbf{Solution :} adoption de bonnes pratiques Git (branches de fonctionnalités, commits fréquents, \texttt{git pull --rebase}) et sessions de sensibilisation au sein de l’équipe.
+
+\paragraph{Retard initial}
+Une phase d’apprentissage des technologies (Laravel, React, WebSockets) a ralenti le démarrage.  
+\textbf{Solution :} réorganisation du planning en sprints courts et priorisation du MVP (Minimum Viable Product).
+
+\subsection*{Mesures préventives mises en place}
+
+\begin{itemize}
+  \item Réunions hebdomadaires d’avancement
+  \item Documentation des solutions (README, Notion)
+  \item Backlog partagé (Jira / Notion)
+  \item Pages de test HTML pour valider les fonctionnalités isolément
+  \item Revue de code avant chaque fusion
+\end{itemize}
+
+% -------------------------
+\chapter{Tests et validation}
+
+Conformément à la méthodologie en cascade adoptée, les phases de test ont été réalisées principalement en fin de développement, après l’implémentation des fonctionnalités principales. Les tests ont été effectués essentiellement de manière manuelle.
+
+\paragraph{Tests fonctionnels manuels}
+Chaque fonctionnalité clé (authentification, création de salons, playlist, chat, sondages, notation, historique) a été testée pas à pas afin de vérifier la cohérence des parcours utilisateurs, la gestion des erreurs (champs manquants, identifiants invalides, codes erronés) et la persistance des données dans PostgreSQL / Supabase.
+
+\paragraph{Tests d’intégration API}
+Les routes back-end ont été testées à l’aide de Postman et de pages HTML dédiées afin de vérifier les réponses JSON, l’authentification JWT et la cohérence des échanges entre le front-end et le back-end.
+
+\paragraph{Tests de communication temps réel}
+La synchronisation vidéo et le chat ont été testés en ouvrant plusieurs sessions simultanées afin de valider la réception des événements WebSocket, y compris dans des situations limites (déconnexion, reconnexion, utilisateurs multiples).
+
+\paragraph{Limites et perspectives}
+L’absence de tests automatisés a rendu le débogage plus long en fin de projet. La synchronisation vidéo reste partiellement stabilisée et nécessite encore des ajustements. Une approche plus itérative et l’ajout de tests unitaires et d’intégration automatisés permettraient d’améliorer la fiabilité et la maintenabilité de l’application.
+
+% -------------------------
+\chapter{Conclusion}
+
+Le projet \textbf{WithYou} constitue une plateforme collaborative fonctionnelle et cohérente. Les fonctionnalités principales sont opérationnelles : authentification sécurisée avec vérification par e-mail, création de salons publics et privés avec codes d’invitation, interface de visionnage collaboratif, chat en temps réel, gestion de playlists, sondages interactifs, système de notation et historique des vidéos.
+
+Bien que l’infrastructure de synchronisation temps réel soit en place (Laravel Reverb et Laravel Echo), des ajustements sont encore nécessaires pour garantir une propagation parfaitement fiable des événements. De légères améliorations restent également à apporter à la gestion de la playlist.
+
+Ce projet nous a permis de mettre en pratique les principes de l’ingénierie logicielle : analyse des besoins, conception d’architecture, développement full-stack, gestion collaborative du code et résolution de problématiques techniques complexes.
+
+\textbf{WithYou} constitue aujourd’hui une base solide, évolutive et exploitable, qui pourra être enrichie par de nouvelles fonctionnalités en fonction des retours utilisateurs. Ce projet reflète notre progression collective et représente une réalisation dont nous sommes fiers.
+% --------------------
+
+\end{document}
