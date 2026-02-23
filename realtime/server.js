@@ -4,12 +4,15 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+const port = Number(process.env.PORT || 3000);
+const corsOrigin = process.env.CORS_ORIGIN || "*";
+
+app.use(cors({ origin: corsOrigin }));
 
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: corsOrigin,
         methods: ["GET", "POST"]
     }
 });
@@ -33,33 +36,19 @@ io.on("connection", (socket) => {
         });
     });
 
-    socket.on("disconnect", () => {
-        console.log("❌ Client déconnecté");
-    });
-});
-
-server.listen(3000, () => {
-    console.log("🔥 Socket.io écoute sur http://localhost:3000");
-});
-
-// ======================
-// VOTES TEMPS RÉEL
-// ======================
-io.on("connection", (socket) => {
-
-    socket.on("join_salon", (salonId) => {
-        socket.join(salonId);
-        console.log("👤 Client rejoint le salon :", salonId);
-    });
-
-    // Vote pour une vidéo
     socket.on("video_vote", (data) => {
         console.log("🗳️ Vote reçu :", data);
 
-        // Diffuser à tous les utilisateurs du salon
         io.to(data.salonId).emit("video_vote_update", {
             videoId: data.videoId
         });
     });
 
+    socket.on("disconnect", () => {
+        console.log("❌ Client déconnecté");
+    });
+});
+
+server.listen(port, () => {
+    console.log(`🔥 Socket.io écoute sur le port ${port}`);
 });

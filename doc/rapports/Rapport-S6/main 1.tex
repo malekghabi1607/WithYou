@@ -80,7 +80,7 @@
 \vspace{1.5cm}
 
 {\large Université d’Avignon \par}
-{\large 16 février \par}
+{\large 16 février 2026 \par}
 
 \vspace{2cm}
 
@@ -186,313 +186,517 @@ Chaque groupe devait :
     \item Évaluer la faisabilité
 \end{itemize}
 
-
 % ==========================================================
-\subsection{Piste 1 : Mode Cours interactif}
+\newpage
+\section{Piste 1 : Mode Cours interactif}
+\label{sec:piste1}
 
-\subsubsection*{1. Contexte et justification}
+\subsection{Présentation de la piste}
 
-Le projet étant développé dans un cadre universitaire, l’adaptation de la plateforme vers un environnement pédagogique apparaît cohérente. 
-Cette piste vise à transformer WithYou en outil d’accompagnement des cours en ligne.
+La piste étudiée consiste à faire évoluer la plateforme collaborative existante
+vers un \textit{Mode Cours interactif}, destiné à un usage pédagogique structuré.
+Cette évolution vise à adapter la plateforme aux besoins de l’enseignement
+universitaire et de la formation à distance.
 
-\subsubsection*{2. Objectifs fonctionnels}
-
+Le Mode Cours interactif permettrait notamment :
 \begin{itemize}
-    \item Permettre la diffusion structurée de cours vidéo
-    \item Offrir des outils interactifs pour enrichir l’apprentissage
-    \item Centraliser contenu vidéo et annotations
+  \item la diffusion synchronisée d’une vidéo pédagogique ;
+  \item le contrôle du déroulement du cours par l’enseignant ;
+  \item la prise de notes individuelle par les étudiants ;
+  \item l’association des notes à des repères temporels (timestamps) ;
+  \item la recherche et l’organisation des notes à l’aide de mots-clés.
 \end{itemize}
 
-\subsubsection*{3. Public cible}
+Cette piste transforme la plateforme en un outil pédagogique structuré,
+favorisant l’organisation des contenus et le suivi du cours.
 
+% ----------------------------------------------------------
+\subsection{Identification des risques majeurs}
+
+Le développement du Mode Cours interactif implique plusieurs risques,
+tant sur le plan stratégique que technique et fonctionnel.
+
+\subsubsection{Risque stratégique principal}
+
+Le risque stratégique principal concerne l’adéquation entre l’ambition
+pédagogique de cette piste et le niveau de maturité actuel de la plateforme.
+Avant d’introduire des fonctionnalités pédagogiques avancées, il est essentiel
+de s’assurer que l’architecture de la plateforme est suffisamment stable,
+sécurisée et adaptée à un contexte académique.
+
+Un mauvais cadrage à ce stade pourrait conduire à développer des fonctionnalités
+complexes sans disposer d’une base technique suffisamment solide.
+
+\subsubsection{Risques techniques}
+
+La mise en œuvre du Mode Cours interactif implique plusieurs risques techniques :
 \begin{itemize}
-    \item Enseignants
-    \item Étudiants
-    \item Intervenants académiques
+  \item synchronisation stable de la vidéo pour l’ensemble des utilisateurs ;
+  \item gestion des actions de l’enseignant en temps réel ;
+  \item stockage structuré des notes associées aux timestamps ;
+  \item gestion des rôles et des permissions ;
+  \item surcharge potentielle du serveur liée aux événements synchronisés.
 \end{itemize}
 
-\subsubsection*{4. Fonctionnalités détaillées}
+Le principal risque technique identifié concerne la synchronisation temps réel,
+qui peut fortement complexifier l’architecture existante.
 
-\textbf{Tableau blanc pour professeur :}
+\subsubsection{Risques fonctionnels}
+
+Sur le plan fonctionnel, plusieurs risques peuvent affecter l’expérience utilisateur :
 \begin{itemize}
-    \item Dessin en temps réel
-    \item Ajout de texte
-    \item Export du tableau
+  \item complexité excessive de l’interface liée à la multiplicité des outils ;
+  \item mauvaise compréhension des rôles entre enseignant et étudiants ;
+  \item faible adoption des fonctionnalités avancées si leur utilité n’est pas
+  immédiatement perçue.
 \end{itemize}
 
-\textbf{Prise de notes côté étudiant :}
-\begin{itemize}
-    \item Notes personnelles synchronisées avec le cours
-    \item Sauvegarde automatique en base de données
-    \item Association des notes à un timestamp vidéo
-\end{itemize}
+% ----------------------------------------------------------
+\subsection{Comparaison et évaluation du niveau de risque}
 
-\textbf{Recherche par hashtags :}
-\begin{itemize}
-    \item Indexation des notes
-    \item Recherche rapide par mot-clé
-    \item Organisation thématique
-\end{itemize}
-
-\subsubsection*{5. Impacts techniques}
-
-\begin{itemize}
-    \item Nécessité d’un système temps réel (WebSocket)
-    \item Gestion du stockage des notes
-    \item Synchronisation vidéo/annotation
-\end{itemize}
-
-\subsubsection*{6. Analyse des risques}
-
-\begin{itemize}
-    \item Complexité du tableau blanc collaboratif
-    \item Volume de données généré par les notes
-    \item Risque de surcharge serveur
-\end{itemize}
-
-\subsubsection*{7. Faisabilité}
-
-La piste est faisable si elle est développée progressivement, en commençant par des fonctionnalités simples.
-
-\subsubsection*{8. Conclusion}
-
-Piste cohérente avec le contexte académique, présentant un risque technique modéré.
-
-% ==========================================================
-\subsection{Piste 2 : Régie Vidéo avancée}
-
-\subsubsection*{1. Contexte et justification}
-
-Cette piste vise à professionnaliser la plateforme en proposant une gestion avancée des flux vidéo, similaire à une régie événementielle.
-
-\subsubsection*{2. Objectifs fonctionnels}
-
-\begin{itemize}
-    \item Permettre la gestion de plusieurs vidéos simultanées
-    \item Introduire un rôle spécifique de régisseur
-    \item Contrôler dynamiquement le flux diffusé
-\end{itemize}
-
-\subsubsection*{3. Public cible}
-
-\begin{itemize}
-    \item Organisateurs d’événements
-    \item Créateurs de contenu
-    \item Conférences universitaires
-\end{itemize}
-
-\subsubsection*{4. Fonctionnalités détaillées}
-
-\begin{itemize}
-    \item Interface de sélection des flux
-    \item Diffusion synchronisée pour tous les utilisateurs
-    \item Gestion des priorités vidéo
-    \item Possibilité de basculer entre plusieurs intervenants
-\end{itemize}
-
-\subsubsection*{5. Impacts techniques}
-
-\begin{itemize}
-    \item Gestion complexe de synchronisation
-    \item Nécessité de gérer la latence
-    \item Infrastructure serveur plus lourde
-\end{itemize}
-
-\subsubsection*{6. Analyse des risques}
-
-\begin{itemize}
-    \item Risque technique élevé
-    \item Forte dépendance aux performances réseau
-    \item Dépassement possible du cadre semestriel
-\end{itemize}
-
-\subsubsection*{7. Faisabilité}
-
-Cette piste est ambitieuse et pourrait dépasser les capacités temporelles du projet.
-
-\subsubsection*{8. Conclusion}
-
-Innovante mais risquée dans le cadre académique.
-
-% ==========================================================
-\subsection{Piste 3 : Plateforme de formation interne sécurisée}
-
-\subsubsection*{1. Contexte et justification}
-
-La sécurisation de la plateforme constitue une étape essentielle pour toute évolution fonctionnelle. 
-Cette piste vise à structurer l’accès et protéger les données.
-
-\subsubsection*{2. Objectifs fonctionnels}
-
-\begin{itemize}
-    \item Restreindre l’accès via authentification forte
-    \item Mettre en place une gestion fine des rôles
-    \item Organiser les offres de formation
-\end{itemize}
-
-\subsubsection*{3. Public cible}
-
-\begin{itemize}
-    \item Étudiants
-    \item Enseignants
-    \item Personnel interne
-\end{itemize}
-
-\subsubsection*{4. Fonctionnalités détaillées}
-
-\textbf{Authentification sérieuse :}
-\begin{itemize}
-    \item Email universitaire ou professionnel
-    \item Mot de passe sécurisé
-    \item Hashage avant stockage
-\end{itemize}
-
-\textbf{Gestion des rôles :}
-\begin{itemize}
-    \item Étudiant : accès aux cours
-    \item Professeur : création/modification
-    \item Administrateur : gestion complète
-\end{itemize}
-
-\textbf{Gestion des offres :}
-\begin{itemize}
-    \item Catalogue de formations
-    \item Attribution des accès
-    \item Restriction selon le rôle
-\end{itemize}
-
-\textbf{Sécurité des données :}
-\begin{itemize}
-    \item Protection des informations personnelles
-    \item Sécurisation des sessions
-\end{itemize}
-
-\subsubsection*{5. Impacts techniques}
-
-\begin{itemize}
-    \item Modification du schéma de base de données
-    \item Gestion des permissions côté backend
-    \item Contrôle d’accès aux API
-\end{itemize}
-
-\subsubsection*{6. Analyse des risques}
-
-\begin{itemize}
-    \item Mauvaise gestion des permissions
-    \item Vulnérabilités de sécurité
-\end{itemize}
-
-\subsubsection*{7. Faisabilité}
-
-Cette piste est réaliste et maîtrisable. 
-De plus, certaines fonctionnalités ont déjà été implémentées durant le Cycle 1.
-
-\subsubsection*{8. Conclusion}
-
-Piste structurante permettant de réduire les risques globaux du projet.
-Elle constitue une base solide pour les cycles suivants.
-
-
-% ==========================================================
-\section{Comparaison globale des pistes}
-
-Afin de prendre une décision stratégique cohérente, les trois pistes ont été comparées selon plusieurs critères : 
-le risque technique, le risque fonctionnel et la complexité globale de mise en œuvre dans le cadre du semestre.
+L’analyse des risques associés à cette piste permet de proposer l’évaluation
+suivante :
 
 \begin{center}
-\begin{tabular}{|p{3cm}|p{3cm}|p{3cm}|p{3cm}|}
+\begin{tabular}{|l|c|}
 \hline
-\textbf{Piste} & \textbf{Risque technique} & \textbf{Risque fonctionnel} & \textbf{Complexité globale} \\
+\textbf{Type de risque} & \textbf{Niveau estimé} \\
 \hline
-Mode Cours & Moyen & Moyen & Modérée \\
-\hline
-Régie Vidéo & Élevé & Moyen & Élevée \\
-\hline
-Plateforme interne sécurisée & Faible à moyen & Faible & Modérée \\
+Stratégique & Moyen \\
+Technique & Moyen à élevé \\
+Fonctionnel & Moyen \\
 \hline
 \end{tabular}
 \end{center}
 
-\subsection*{Analyse comparative}
+Le risque principal est d’ordre technique, en raison des contraintes liées à la
+synchronisation des contenus et des interactions pédagogiques.
 
+% ----------------------------------------------------------
+\subsection{Choix de la piste}
+
+Au regard de l’analyse menée, la piste Mode Cours interactif présente un intérêt
+pédagogique réel, mais son implémentation complète apparaît ambitieuse pour le
+Cycle 1.
+
+Afin de limiter les risques identifiés, une approche progressive est privilégiée,
+reposant sur une version simplifiée du mode cours, avec des fonctionnalités
+pédagogiques avancées reportées aux cycles suivants.
+
+% ----------------------------------------------------------
+\subsection{Scénario utilisateur}
+
+Un enseignant organise une séance de cours à distance via la plateforme.
+Avant le début de la session, il lance une vidéo pédagogique et en contrôle
+la lecture.
+
+Les étudiants rejoignent la session et visionnent la vidéo de manière
+synchronisée.
+Ils peuvent prendre des notes personnelles associées à des repères temporels,
+leur permettant de retrouver facilement les passages importants du cours.
+
+Ce scénario illustre un usage pédagogique simple et maîtrisé, cohérent avec
+les objectifs de réduction des risques du Cycle 1.
+
+% ----------------------------------------------------------
+\subsection{Évaluation synthétique des risques}
+
+Les risques associés au Mode Cours interactif sont principalement techniques,
+en raison de la synchronisation en temps réel et de la gestion des interactions.
+Toutefois, ces risques restent maîtrisables dans le cadre d’une implémentation
+progressive et simplifiée.
+
+% ----------------------------------------------------------
+\subsection{Liste préliminaire des fonctionnalités}
+
+L’implémentation de cette piste implique les fonctionnalités suivantes :
 \begin{itemize}
-    \item La \textbf{Régie Vidéo} présente le risque technique le plus élevé en raison de la synchronisation multi-flux et de la gestion de la latence.
-    
-    \item Le \textbf{Mode Cours} est cohérent avec le contexte académique mais nécessite des mécanismes temps réel (tableau blanc, prise de notes synchronisée).
-    
-    \item La \textbf{Plateforme interne sécurisée} constitue une base structurante permettant de sécuriser l’accès et de préparer l’implémentation des autres fonctionnalités.
+  \item diffusion vidéo synchronisée ;
+  \item contrôle de la lecture par l’enseignant ;
+  \item prise de notes individuelle ;
+  \item association des notes à des timestamps ;
+  \item recherche et organisation des notes.
 \end{itemize}
 
+% ----------------------------------------------------------
+\subsection{Conclusion du cycle 1}
+
+L’analyse de la piste Mode Cours interactif a permis d’identifier plusieurs
+risques, principalement techniques.
+Bien que cette piste soit pertinente sur le plan pédagogique, son implémentation
+complète n’est pas retenue pour le Cycle 1.
+
+Elle pourra être réévaluée ultérieurement, lorsque l’architecture technique de
+la plateforme sera suffisamment stabilisée pour supporter des interactions
+pédagogiques plus avancées.
 % ==========================================================
-\section{Choix stratégique pour le Cycle 1}
+\newpage
+\section{Piste 2 : Régie Vidéo avancée}
+\label{sec:piste2}
 
-Après analyse détaillée, l’équipe a décidé de prioriser :
+\subsection{Présentation de la piste}
 
+La piste étudiée consiste à intégrer un rôle de \og Régie vidéo \fg{} au sein de la plateforme.
+Ce rôle permettrait à un utilisateur spécifique de :
 \begin{itemize}
-    \item La mise en place d’une \textbf{authentification sérieuse}
-    \item L’implémentation d’une \textbf{gestion des rôles}
-    \item La structuration d’une \textbf{gestion des offres}
+  \item sélectionner plusieurs vidéos à l’avance ;
+  \item contrôler la lecture (lecture, pause, changement de vidéo) ;
+  \item choisir dynamiquement la vidéo diffusée ;
+  \item synchroniser automatiquement la diffusion pour l’ensemble des utilisateurs connectés.
+\end{itemize}
+Cette fonctionnalité introduit un contrôle centralisé de la diffusion, rapprochant la plateforme d’un
+usage événementiel ou collaboratif structuré.
+
+% ----------------------------------------------------------
+\subsection{Identification des risques majeurs}
+
+\subsubsection{Risque stratégique principal}
+
+Le risque stratégique principal concerne le mauvais positionnement de la fonctionnalité par
+rapport au public cible.
+Plusieurs questions doivent être posées :
+\begin{itemize}
+  \item Le public actuel a-t-il réellement besoin d’un rôle centralisé de régie ?
+  \item Cette fonctionnalité correspond-elle aux usages actuels de la plateforme ?
+  \item Existe-t-il un risque de complexification excessive de l’expérience utilisateur ?
+\end{itemize}
+Un mauvais choix à ce stade pourrait orienter le projet vers un usage peu exploité ou inadapté, ce
+qui compromettrait la pertinence globale de l’évolution.
+
+\subsubsection{Risques techniques}
+
+Le développement d’une régie vidéo synchronisée implique plusieurs risques techniques :
+\begin{itemize}
+  \item gestion dynamique du changement de vidéo en cours de session ;
+  \item propagation correcte du changement de source à l’ensemble des clients ;
+  \item maintien de la cohérence d’état lors d’un basculement rapide ;
+  \item gestion des permissions, des rôles et prévention des conflits d’autorité ;
+  \item adaptation de l’architecture actuelle à une logique multi-vidéos.
+\end{itemize}
+Le principal risque technique identifié est la gestion des rôles entre les utilisateurs, pouvant nuire
+à l’expérience.
+
+\subsubsection{Risques fonctionnels}
+
+Sur le plan fonctionnel, les risques identifiés sont :
+\begin{itemize}
+  \item complexité de l’interface de contrôle ;
+  \item mauvaise compréhension du rôle par les utilisateurs ;
+  \item conflit potentiel entre autonomie des participants et contrôle centralisé.
 \end{itemize}
 
-Ces éléments correspondent principalement à la piste :
+% ----------------------------------------------------------
+\subsection{Comparaison et évaluation du niveau de risque}
+
+L’analyse qualitative des risques liés à cette piste permet de proposer l’évaluation suivante :
+le risque majeur identifié pour ce cycle est principalement stratégique et fonctionnel.
+Il réside dans le positionnement de la fonctionnalité par rapport au public cible et dans la
+pertinence réelle de l’usage proposé. Un mauvais cadrage pourrait conduire au développement
+d’une fonctionnalité complexe, peu utilisée ou mal intégrée à l’expérience globale.
+
+% ----------------------------------------------------------
+\subsection{Choix de la piste}
+
+Au regard de l’analyse menée, la piste Régie vidéo synchronisée est retenue pour les raisons
+suivantes :
+\begin{itemize}
+  \item elle apporte une valeur ajoutée différenciante ;
+  \item elle ouvre un nouvel usage événementiel et structuré ;
+  \item elle reste cohérente avec la logique collaborative de la plateforme ;
+  \item le risque principal semble maîtrisable.
+\end{itemize}
+Le choix du public cible est donc orienté vers des enseignants souhaitant organiser des sessions
+de cours vidéo structurées avec des élèves.
+
+% ----------------------------------------------------------
+\subsection{Scénario utilisateur}
+
+Mr Doe organise une session de visionnage en ligne.
+Il active le rôle \og Régie vidéo \fg{} et prépare une sélection de plusieurs vidéos.
+Pendant la session, il choisit la vidéo à diffuser et contrôle la lecture.
+Les participants (élèves) reçoivent automatiquement la vidéo sélectionnée et la voient
+synchronisée en temps réel.
+Ce scénario illustre un usage clair et cohérent avec l’objectif de la fonctionnalité.
+
+% ----------------------------------------------------------
+\subsection{Évaluation synthétique des risques}
 
 \begin{center}
-\textbf{Plateforme de formation interne sécurisée}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Type de risque} & \textbf{Niveau estimé} \\
+\hline
+Stratégique & Moyen \\
+Technique & Faible \\
+Fonctionnel & Moyen \\
+\hline
+\end{tabular}
 \end{center}
 
-Ce choix repose sur plusieurs arguments :
+% ----------------------------------------------------------
+\subsection{Liste préliminaire des fonctionnalités}
 
+L’implémentation de cette piste implique les fonctionnalités suivantes :
 \begin{itemize}
-    \item Réduction immédiate des risques liés à la sécurité
-    \item Mise en place d’une architecture solide
-    \item Cohérence avec le public universitaire
-    \item Préparation technique pour le Mode Cours au Cycle 2
+  \item création d’un rôle spécifique \og Régie \fg{} ;
+  \item gestion des permissions associées ;
+  \item sélection et gestion d’une liste de vidéos ;
+  \item diffusion des événements de lecture ;
+  \item synchronisation des états entre utilisateurs ;
+  \item interface de contrôle dédiée.
 \end{itemize}
 
-La Régie Vidéo, bien qu’innovante, est jugée trop complexe pour être prioritaire dans ce cycle exploratoire.
+% ----------------------------------------------------------
+\subsection{Conclusion du cycle 1}
+
+Ce premier cycle a permis :
+\begin{itemize}
+  \item d’identifier les risques stratégiques et techniques ;
+  \item de comparer le niveau de risque associé à la piste étudiée ;
+  \item de vérifier que le risque principal n’est pas bloquant ;
+  \item de valider une orientation claire pour le cycle suivant.
+\end{itemize}
+La décision est donc arrêtée en faveur de la piste Régie vidéo synchronisée, qui sera approfondie
+lors du cycle 2 avec une conception plus détaillée et une implémentation progressive.
+
 
 % ==========================================================
-\section{Première liste de fonctionnalités retenues}
+\newpage
+\section{Piste 3 : Plateforme de formation interne sécurisée}
+\label{sec:piste3}
 
-Les fonctionnalités suivantes ont été retenues pour le Cycle 1 :
+\subsection{Présentation de la piste}
 
+La piste étudiée consiste à faire évoluer la plateforme \textit{WithYou} vers une
+plateforme de formation interne sécurisée, destinée à un public universitaire ou
+professionnel.
+
+Cette évolution implique :
 \begin{itemize}
-    \item Système d’inscription avec email universitaire ou professionnel
-    \item Vérification du format d’email
-    \item Hashage sécurisé des mots de passe
-    \item Gestion des rôles (Étudiant / Professeur / Administrateur)
-    \item Restriction d’accès aux contenus selon le rôle
-    \item Mise en place d’un catalogue d’offres de formation
+  \item une authentification sérieuse via une adresse email universitaire ou professionnelle ;
+  \item une gestion différenciée des rôles (étudiant, professeur, administrateur) ;
+  \item un accès aux cours vidéo selon les droits associés ;
+  \item une sécurisation des données personnelles et des contenus pédagogiques.
 \end{itemize}
 
-Ces fonctionnalités constituent la base sécuritaire nécessaire au développement futur du Mode Cours.
+Cette orientation repositionne la plateforme vers un usage institutionnel structuré,
+reposant sur un contrôle d’accès renforcé.
 
-% ==========================================================
-\section{Risques principaux identifiés et levés}
+% ----------------------------------------------------------
+\subsection{Identification des risques majeurs}
 
-Durant le Cycle 1, plusieurs risques critiques ont été identifiés puis partiellement ou totalement levés :
+\subsubsection{Risque stratégique principal}
 
+Le principal risque stratégique concerne le choix du public cible et le positionnement
+de la plateforme.
+
+Plusieurs questions doivent être posées :
 \begin{itemize}
-    \item \textbf{Risque d’accès non contrôlé :} corrigé par la mise en place d’une authentification sécurisée.
-    
-    \item \textbf{Risque de mauvaise gestion des permissions :} réduit grâce à l’implémentation des rôles distincts.
-    
-    \item \textbf{Risque de stockage non sécurisé des mots de passe :} supprimé par l’utilisation d’un mécanisme de hashage.
-    
-    \item \textbf{Risque d’accès aux contenus sans autorisation :} contrôlé par des vérifications côté backend.
+  \item le public universitaire a-t-il réellement besoin d’une plateforme interne distincte ?
+  \item la plateforme apporte-t-elle une valeur ajoutée par rapport aux outils existants
+  (Moodle, Teams, etc.) ?
+  \item un système d’authentification renforcée risque-t-il de freiner l’adoption ?
 \end{itemize}
 
-Le Cycle 1 a ainsi permis de transformer une incertitude stratégique en une base technique sécurisée et validée.
+Un mauvais cadrage pourrait conduire au développement d’une plateforme sécurisée,
+mais peu utilisée.
 
+\subsubsection{Risques techniques}
 
+Cette piste implique plusieurs risques techniques :
+\begin{itemize}
+  \item validation correcte des emails universitaires ou professionnels ;
+  \item gestion sécurisée des mots de passe (hashage, protection contre les attaques
+  par force brute) ;
+  \item gestion fine des rôles et des permissions ;
+  \item protection des données personnelles ;
+  \item contrôle d’accès aux contenus selon le rôle ;
+  \item sécurisation des sessions et prévention des accès non autorisés.
+\end{itemize}
 
+Le principal risque technique identifié concerne la gestion correcte des rôles et des
+permissions, qui peut engendrer des failles si elle est mal implémentée.
 
+\subsubsection{Risques fonctionnels}
 
+Sur le plan fonctionnel, les risques identifiés sont :
+\begin{itemize}
+  \item complexité excessive du système d’authentification ;
+  \item confusion possible entre les droits des étudiants et des professeurs ;
+  \item mauvaise expérience utilisateur si l’accès aux contenus est trop restreint ;
+  \item difficulté de gestion des offres de formation.
+\end{itemize}
 
+% ----------------------------------------------------------
+\subsection{Comparaison et évaluation du niveau de risque}
 
+L’analyse qualitative des risques liés à cette piste permet d’estimer le niveau
+de risque suivant :
 
+\begin{center}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Type de risque} & \textbf{Niveau estimé} \\
+\hline
+Stratégique & Moyen \\
+Technique & Moyen \\
+Fonctionnel & Faible à Moyen \\
+\hline
+\end{tabular}
+\end{center}
 
+Le risque principal reste stratégique, lié au bon positionnement de la plateforme
+vis-à-vis du public cible.
 
+% ----------------------------------------------------------
+\subsection{Choix de la piste}
+
+La piste \textit{Plateforme de formation interne sécurisée} est retenue pour les
+raisons suivantes :
+\begin{itemize}
+  \item elle permet une structuration claire des rôles et des accès ;
+  \item elle renforce la crédibilité institutionnelle de la plateforme ;
+  \item elle apporte une valeur ajoutée significative en matière de sécurité ;
+  \item les risques identifiés apparaissent maîtrisables.
+\end{itemize}
+
+Le public cible retenu est constitué des étudiants, enseignants et administrateurs
+universitaires.
+
+% ----------------------------------------------------------
+\subsection{Scénario utilisateur}
+
+Meriem est étudiante à l’Université d’Avignon.
+Elle s’inscrit sur la plateforme à l’aide de son adresse email universitaire.
+
+Après validation de son compte :
+\begin{itemize}
+  \item elle accède uniquement aux cours qui lui sont attribués ;
+  \item elle ne peut pas modifier les contenus pédagogiques ;
+  \item elle peut consulter les vidéos mises à disposition.
+\end{itemize}
+
+Un professeur peut, de son côté :
+\begin{itemize}
+  \item créer une offre de formation ;
+  \item publier des vidéos pédagogiques ;
+  \item gérer l’accès des étudiants aux contenus.
+\end{itemize}
+
+Ce scénario illustre un usage structuré et sécurisé de la plateforme.
+
+% ----------------------------------------------------------
+\subsection{Évaluation synthétique des risques}
+
+Les risques associés à cette piste sont principalement d’ordre stratégique et
+technique.
+Ils restent toutefois maîtrisables grâce à une implémentation progressive et à
+l’utilisation de mécanismes de sécurité éprouvés.
+
+% ----------------------------------------------------------
+\subsection{Liste préliminaire des fonctionnalités}
+
+L’implémentation de cette piste implique :
+\begin{itemize}
+  \item validation des adresses email universitaires ou professionnelles ;
+  \item gestion des rôles (étudiant, professeur, administrateur) ;
+  \item contrôle d’accès aux contenus pédagogiques ;
+  \item gestion des offres de formation ;
+  \item sécurisation des données personnelles ;
+  \item interfaces adaptées aux différents rôles.
+\end{itemize}
+
+% ----------------------------------------------------------
+\subsection{Conclusion du cycle 1}
+
+Ce cycle 1 a permis :
+\begin{itemize}
+  \item d’identifier les risques stratégiques liés au positionnement ;
+  \item d’analyser les risques techniques liés à la sécurité ;
+  \item de vérifier la faisabilité d’une authentification renforcée ;
+  \item de valider une orientation claire vers une plateforme institutionnelle sécurisée.
+\end{itemize}
+
+La décision est donc arrêtée en faveur de la piste
+\textit{Plateforme de formation interne sécurisée}, qui sera approfondie lors du
+Cycle 2 avec la conception d’un prototype fonctionnel.
+
+\newpage
+\section{Comparaison globale des pistes}
+\label{sec:comparaison_globale}
+
+Cette section propose une comparaison synthétique des trois pistes étudiées lors
+du Cycle 1, selon les critères de risque stratégique, technique et fonctionnel.
+L’objectif est d’identifier une stratégie de développement progressive, en
+priorisant les pistes les plus maîtrisables tout en conservant une cohérence
+globale entre les évolutions envisagées.
+
+% ----------------------------------------------------------
+\subsection{Comparaison des niveaux de risque}
+
+\begin{center}
+\begin{tabular}{|p{4.2cm}|c|c|c|}
+\hline
+\textbf{Piste étudiée} & \textbf{Risque stratégique} & \textbf{Risque technique} & \textbf{Risque fonctionnel} \\
+\hline
+Mode Cours interactif & Moyen & Moyen à élevé & Moyen \\
+\hline
+Régie Vidéo avancée & Moyen & Faible & Moyen \\
+\hline
+Plateforme de formation interne sécurisée & Moyen & Moyen & Faible à Moyen \\
+\hline
+\end{tabular}
+\end{center}
+
+% ----------------------------------------------------------
+\subsection{Analyse comparative}
+
+Les trois pistes étudiées apparaissent techniquement faisables, mais présentent
+des niveaux de complexité et de risque différents.
+
+La piste \textit{Mode Cours interactif} présente un fort intérêt pédagogique,
+mais implique des contraintes techniques importantes, notamment liées à la
+synchronisation en temps réel et à la gestion d’interactions multiples.
+Elle nécessite un temps de développement plus long et une architecture technique
+plus avancée, ce qui la rend moins adaptée à une implémentation prioritaire lors
+du Cycle 1.
+
+La piste \textit{Régie Vidéo avancée} se distingue par une complexité technique
+plus faible et une bonne maîtrise des risques.
+Elle repose sur des mécanismes de synchronisation simples et s’intègre
+naturellement à l’architecture existante de la plateforme.
+
+La piste \textit{Plateforme de formation interne sécurisée} est étroitement liée
+à la régie vidéo, notamment à travers la gestion des rôles, des permissions et des
+droits d’accès aux contenus.
+Les risques techniques associés à la sécurité sont modérés et bien identifiés,
+tandis que les risques fonctionnels restent limités.
+Cette piste complète donc logiquement la mise en place d’une régie vidéo
+structurée.
+
+% ----------------------------------------------------------
+\subsection{Choix final à l’issue du Cycle 1}
+
+Au regard de cette comparaison globale, le choix du Cycle 1 s’oriente vers une
+approche progressive et réaliste.
+
+La \textit{Régie Vidéo avancée} est retenue comme point d’entrée principal, en
+raison de sa faisabilité technique et de son niveau de risque maîtrisable.
+Elle constitue une base fonctionnelle solide pour l’évolution de la plateforme.
+
+La \textit{Plateforme de formation interne sécurisée}, fortement liée à la régie
+vidéo, est également intégrée dans cette phase, afin de structurer les rôles,
+les accès et la sécurité des contenus.
+
+Le \textit{Mode Cours interactif}, plus complexe sur le plan technique, notamment
+en raison de l’intégration d’un tableau blanc interactif, n’est pas prioritaire
+pour le Cycle 1.
+Il pourra être envisagé ultérieurement si le temps de développement et la
+stabilité technique le permettent.
+
+Cette stratégie s’inscrit dans une démarche conforme au modèle de développement
+en spirale, visant à sécuriser progressivement les fondations du projet avant
+d’introduire des fonctionnalités pédagogiques plus avancées.
 
 % =========================
 % Cycle 2 – Prototype (à venir)
