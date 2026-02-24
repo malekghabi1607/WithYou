@@ -25,7 +25,7 @@
  * - Les membres peuvent avoir des permissions limitées
  */
 import { useState } from "react";
-import { Button } from "../ui/button";
+import { Button } from "../ui/Button";
 import { X, MessageSquare, Video, Trash2, Crown, Users as UsersIcon } from "lucide-react";
 
 interface Participant {

@@ -22,8 +22,8 @@
 
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { Send, Smile, Heart, ThumbsUp, Laugh, Flame } from "lucide-react";
 import { toast } from "sonner";
 

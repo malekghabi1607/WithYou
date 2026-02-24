@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import { Button } from "../ui/button";
+import { Button } from "../ui/Button";
 import { Logo } from "../ui/Logo";
 import { 
   User, 

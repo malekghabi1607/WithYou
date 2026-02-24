@@ -29,8 +29,8 @@
  */
 import { useState } from "react";
 import { X, Plus, Trash2, Video, List, Search } from "lucide-react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { extractYouTubeId, getYouTubeThumbnail } from "../../utils/youtube";
 import { toast } from "sonner";
 

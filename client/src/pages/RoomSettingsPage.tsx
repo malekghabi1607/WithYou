@@ -19,7 +19,7 @@
  * Chaque onglet délègue la logique à un composant spécialisé
  * afin de garantir une architecture modulaire, lisible et maintenable.
  */
-import { Button } from "../components/ui/button";
+import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { 

@@ -26,8 +26,8 @@
  * au sein d’un salon de visionnage.
  */
 import { useState, useRef, useEffect } from "react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { Send, Smile } from "lucide-react";
 
 interface Message {

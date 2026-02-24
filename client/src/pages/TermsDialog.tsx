@@ -20,7 +20,7 @@
  * - Interface claire, lisible et accessible
  * - Design cohérent avec le reste de l’application
  */
-import { Button } from "../components/ui/button";
+import { Button } from "../components/ui/Button";
 import {
   Dialog,
   DialogContent,

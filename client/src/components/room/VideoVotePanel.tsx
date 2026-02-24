@@ -27,7 +27,7 @@
 import { X, ThumbsUp, Clock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Button } from "../ui/button";
+import { Button } from "../ui/Button";
 import { hasVotedForVideo, recordVideoVote, getTimeUntilNextVote, formatTimeUntilNextVote } from "../../utils/voteStorage";
 
 interface Video {

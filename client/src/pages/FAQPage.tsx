@@ -23,7 +23,7 @@ import {
   AccordionTrigger,
 } from "../components/ui/accordion";
 import { HelpCircle, MessageCircle } from "lucide-react";
-import { Button } from "../components/ui/button";
+import { Button } from "../components/ui/Button";
 
 interface FAQPageProps {
   onNavigate: (page: string) => void;

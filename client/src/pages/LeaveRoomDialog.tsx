@@ -13,7 +13,7 @@
  * Il est utilisé lorsqu’un utilisateur
  * souhaite quitter un salon de visionnage.
  */
-import { Button } from "../components/ui/button";
+import { Button } from "../components/ui/Button";
 import {
   AlertDialog,
   AlertDialogContent,

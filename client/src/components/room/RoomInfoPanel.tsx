@@ -25,7 +25,7 @@
  * - Améliorer l’expérience utilisateur et la compréhension du contexte
  */
 import { X, Users, Crown, Copy, Check } from "lucide-react";
-import { Button } from "../ui/button";
+import { Button } from "../ui/Button";
 import { fetchSalonByCode } from "../../api/rooms";
 import { fetchParticipants } from "../../api/participants";
 import { supabase } from "../../api/supabase";

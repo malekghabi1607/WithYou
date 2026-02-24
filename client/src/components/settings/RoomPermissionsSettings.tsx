@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { Button } from "../ui/button";
+import { Button } from "../ui/Button";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";

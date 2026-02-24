@@ -11,7 +11,7 @@
  *
  * Première page vue par un nouvel utilisateur.
  */
-import { Button } from "../components/ui/button";
+import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/card";
 import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";

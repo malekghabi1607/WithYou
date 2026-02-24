@@ -29,7 +29,7 @@
  * @param theme          Thème actuel de l’application ("light" | "dark")
  * @param onThemeToggle  Fonction permettant de changer le thème
  */
-import { Button } from "../components/ui/button";
+import { Button } from "../components/ui/Button";
 import { Logo } from "../components/ui/Logo";
 import { Mail, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";

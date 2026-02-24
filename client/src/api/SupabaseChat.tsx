@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useChat } from '../../api/useChat';
-import { Button } from '../ui/button';
+import { Button } from "../ui/Button";
 import { Send, Loader2 } from 'lucide-react';
 
 interface SupabaseChatProps {

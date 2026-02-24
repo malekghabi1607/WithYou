@@ -4,8 +4,8 @@
  * Garantit une utilisation respectueuse et sécurisée du salon.
  */
 import { useState } from "react";
-import { Button } from "../components/ui/button";
-import { Checkbox } from "../components/ui/checkbox";
+import { Button } from "../components/ui/Button";
+import { Checkbox } from "../components/ui/Checkbox";
 import { Play, Camera, Mic, Volume2, Shield, Check, X } from "lucide-react";
 
 interface RoomRulesPageProps {
