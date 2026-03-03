@@ -26,12 +26,12 @@
  */
 import { useState } from "react";
 import { Button } from "../ui/Button";
-import { X, MessageSquare, Video, Trash2, Crown, Users as UsersIcon } from "lucide-react";
+import { X, MessageSquare, Video, Trash2, Crown, Users as UsersIcon, Clapperboard } from "lucide-react";
 
 interface Participant {
   id: string;
   name: string;
-  role: "admin" | "teacher" | "student" | "guest" | "member";
+  role: "admin" | "regie" | "teacher" | "student" | "guest" | "member";
   status?: "online" | "offline";
   avatar: string;
   permissions: {
@@ -45,7 +45,7 @@ interface ParticipantsPermissionsPanelProps {
   participants: Array<{
     id: string;
     name: string;
-    role: "admin" | "teacher" | "student" | "guest" | "member";
+    role: "admin" | "regie" | "teacher" | "student" | "guest" | "member";
     status?: "online" | "offline";
     avatar: string;
     permissions?: {
@@ -56,6 +56,7 @@ interface ParticipantsPermissionsPanelProps {
   }>;
   onClose: () => void;
   onUpdatePermissions?: (participants: any[]) => void;
+  onAssignRegie?: (participantId: string, enabled: boolean) => void | Promise<void>;
   theme?: "light" | "dark";
   isReadOnly?: boolean;
 }
@@ -63,6 +64,7 @@ interface ParticipantsPermissionsPanelProps {
 const getRoleLabel = (role: string) => {
   switch (role) {
     case 'admin': return 'Administrateur';
+    case 'regie': return 'Régie vidéo';
     case 'teacher': return 'Professeur';
     case 'student': return 'Étudiant';
     case 'guest': return 'Invité';
@@ -74,6 +76,7 @@ export function ParticipantsPermissionsPanel({
   participants: initialParticipants,
   onClose,
   onUpdatePermissions,
+  onAssignRegie,
   theme = "dark",
   isReadOnly = false
 }: ParticipantsPermissionsPanelProps) {
@@ -101,6 +104,22 @@ export function ParticipantsPermissionsPanel({
         !p.id.startsWith('current-user-')
       );
       onUpdatePermissions(participantsWithoutCurrentUser);
+    }
+  };
+
+  const handleRegieToggle = async (id: string, makeRegie: boolean) => {
+    if (!onAssignRegie) return;
+    try {
+      await onAssignRegie(id, makeRegie);
+      setParticipants((prev) =>
+        prev.map((participant) =>
+          participant.id === id
+            ? { ...participant, role: makeRegie ? "regie" : "member" }
+            : participant
+        )
+      );
+    } catch (error) {
+      console.error("Impossible de mettre a jour le role regie", error);
     }
   };
 
@@ -192,8 +211,27 @@ export function ParticipantsPermissionsPanel({
                   </div>
 
                   {/* Permissions */}
-                  {participant.role === "member" && (
+                  {participant.role !== "admin" && (
                     <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          handleRegieToggle(participant.id, participant.role !== "regie");
+                        }}
+                        className={`h-10 px-3 ${
+                          participant.role === "regie"
+                            ? "bg-red-600 hover:bg-red-700 text-white"
+                            : theme === "dark"
+                              ? "bg-zinc-700 hover:bg-zinc-600 text-gray-200"
+                              : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+                        }`}
+                        title={participant.role === "regie" ? "Retirer le role Regie video" : "Nommer Regie video"}
+                        disabled={isReadOnly}
+                      >
+                        <Clapperboard className="w-4 h-4 mr-1.5" />
+                        {participant.role === "regie" ? "Retirer regie" : "Nommer regie"}
+                      </Button>
+
                       {/* Chat Permission */}
                       <button
                         onClick={() => togglePermission(participant.id, "chat")}

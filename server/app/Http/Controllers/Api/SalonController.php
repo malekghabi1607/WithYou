@@ -58,6 +58,7 @@ public function store(Request $request)
         'id_salon_member' => (string) Str::uuid(),
         'user_id' => $salon->owner_id,
         'salon_id' => $salon->id_salon,
+        'role' => 'member',
         'join_date' => now(),
         'is_active' => true,
     ]);
@@ -155,6 +156,7 @@ public function join(Request $request)
             'id_salon_member' => (string) Str::uuid(),
             'user_id' => $userId,
             'salon_id' => $salon->id_salon,
+            'role' => 'member',
             'join_date' => now(),
             'is_active' => true,
         ]);
@@ -196,13 +198,16 @@ public function participants(string $salon)
             'users.id_user',
             'users.username',
             'users.email',
+            'salon_member.role',
             'salon_member.is_active',
             'salon_member.join_date'
         )
         ->get();
 
     $participants = $rows->map(function ($row) use ($salonModel) {
-        $role = $row->id_user === $salonModel->owner_id ? 'admin' : 'member';
+        $role = $row->id_user === $salonModel->owner_id
+            ? 'admin'
+            : (($row->role === 'regie') ? 'regie' : 'member');
         return [
             'id' => $row->id_user,
             'name' => $row->username ?? $row->email ?? 'Utilisateur',
@@ -244,6 +249,7 @@ public function connect(string $salon)
             'id_salon_member' => (string) Str::uuid(),
             'user_id' => $userId,
             'salon_id' => $salonModel->id_salon,
+            'role' => 'member',
             'join_date' => now(),
             'is_active' => true,
         ]);

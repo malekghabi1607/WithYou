@@ -4,9 +4,16 @@ export interface ParticipantApi {
   id: string;
   name: string;
   email?: string | null;
-  role: "admin" | "member";
+  role: "admin" | "regie" | "member";
   is_active: boolean;
   joined_at?: string | null;
+}
+
+export type SalonRole = "admin" | "regie" | "member";
+
+function normalizeParticipantRole(role: unknown): SalonRole {
+  if (role === "admin" || role === "regie") return role;
+  return "member";
 }
 
 function getJoinedRoomsStorageKey(userId: string) {
@@ -81,10 +88,15 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
 
   const ownerId = salonData?.owner_id || null;
 
-  const { data, error } = await supabase
+  let members: any[] | null = null;
+  let error: any = null;
+
+  // Prefer reading role directly from salon_member when available.
+  ({ data: members, error } = await supabase
     .from('salon_member')
     .select(`
       user_id,
+      role,
       is_active,
       join_date,
       users (
@@ -93,7 +105,24 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
         email
       )
     `)
-    .eq('salon_id', salonId);
+    .eq('salon_id', salonId));
+
+  // Backward compatibility: old schemas may not have salon_member.role yet.
+  if (error && String(error.message || "").toLowerCase().includes("role")) {
+    ({ data: members, error } = await supabase
+      .from('salon_member')
+      .select(`
+        user_id,
+        is_active,
+        join_date,
+        users (
+          id_user,
+          username,
+          email
+        )
+      `)
+      .eq('salon_id', salonId));
+  }
 
   if (error) {
     console.error("Supabase fetch participants error:", error);
@@ -101,11 +130,11 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
   }
 
   // Transform Supabase result to match ParticipantApi interface
-  return (data || []).map((item: any) => ({
+  return (members || []).map((item: any) => ({
     id: item.users?.id_user,
     name: item.users?.username || "Inconnu",
     email: item.users?.email,
-    role: item.users?.id_user === ownerId ? "admin" : "member",
+    role: item.users?.id_user === ownerId ? "admin" : normalizeParticipantRole(item.role),
     is_active: item.is_active,
     joined_at: item.join_date
   }));
@@ -135,15 +164,29 @@ export async function connectToSalon(roomId: string) {
     return { message: "Connected" };
   }
 
-  const { error: insertError } = await supabase
+  let insertError: any = null;
+  ({ error: insertError } = await supabase
     .from('salon_member')
     .insert({
       id_salon_member: crypto.randomUUID(),
       salon_id: salonId,
       user_id: userId,
+      role: "member",
       is_active: true,
       join_date: new Date().toISOString()
-    });
+    }));
+
+  if (insertError && String(insertError.message || "").toLowerCase().includes("role")) {
+    ({ error: insertError } = await supabase
+      .from('salon_member')
+      .insert({
+        id_salon_member: crypto.randomUUID(),
+        salon_id: salonId,
+        user_id: userId,
+        is_active: true,
+        join_date: new Date().toISOString()
+      }));
+  }
 
   if (insertError) throw new Error(insertError.message || "Erreur connexion salon");
   persistJoinedSalonLocally(userId, salonId);
@@ -163,4 +206,28 @@ export async function disconnectFromSalon(roomId: string) {
 
   if (error) throw new Error(error.message || "Erreur déconnexion salon");
   return { message: "Disconnected" };
+}
+
+export async function setParticipantRole(
+  roomId: string,
+  participantId: string,
+  role: Exclude<SalonRole, "admin">
+) {
+  const salonId = await resolveSalonId(roomId);
+
+  const { error } = await supabase
+    .from("salon_member")
+    .update({ role })
+    .eq("salon_id", salonId)
+    .eq("user_id", participantId);
+
+  if (error) {
+    const message = String(error.message || "");
+    if (message.includes("Could not find the 'role' column")) {
+      throw new Error(
+        "La colonne `salon_member.role` manque dans Supabase. Ajoute-la avec: ALTER TABLE public.salon_member ADD COLUMN role text NOT NULL DEFAULT 'member';"
+      );
+    }
+    throw new Error(error.message || "Impossible de mettre a jour le role");
+  }
 }

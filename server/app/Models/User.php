@@ -66,7 +66,7 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
     // Un user peut participer à plusieurs salons via salon_member
     public function salons()
     {
-        return $this->belongsToMany(Salon::class, 'salon_member', 'user_id', 'salon_id')->withPivot(['join_date', 'is_active']);
+        return $this->belongsToMany(Salon::class, 'salon_member', 'user_id', 'salon_id')->withPivot(['role', 'join_date', 'is_active']);
     }
 
     // Un user peut envoyer plusieurs messages

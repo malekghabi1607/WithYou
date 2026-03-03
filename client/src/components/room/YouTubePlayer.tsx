@@ -16,6 +16,7 @@ interface YouTubePlayerProps {
   videoId: string;
   isPlaying: boolean;
   onPlayPause: () => void;
+  canControl?: boolean;
   syncTime?: number;
   syncNonce?: number;
   onTimeUpdate?: (seconds: number) => void;
@@ -27,6 +28,7 @@ export function YouTubePlayer({
   videoId,
   isPlaying,
   onPlayPause,
+  canControl = true,
   syncTime,
   syncNonce,
   onTimeUpdate,
@@ -155,13 +157,15 @@ export function YouTubePlayer({
       
       <div className="relative w-full aspect-video">
         <div ref={containerRef} className="w-full h-full" />
+        {!canControl && <div className="absolute inset-0 z-10" />}
       </div>
       
       {/* Contrôle overlay (optionnel) */}
       <div className="absolute bottom-4 right-4 z-10">
         <button 
           onClick={onPlayPause}
-          className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-all"
+          disabled={!canControl}
+          className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isPlaying ? (
             <Pause className="w-6 h-6 text-white" />

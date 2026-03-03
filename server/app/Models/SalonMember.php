@@ -16,6 +16,7 @@ class SalonMember extends Model
     protected $fillable = [
         'user_id',
         'salon_id',
+        'role',
         'join_date',
         'is_active',
     ];

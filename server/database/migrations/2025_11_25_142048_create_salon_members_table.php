@@ -16,6 +16,7 @@ return new class extends Migration
                 $table->string('id_salon_member', 36)->primary();
                 $table->string('user_id', 36);
                 $table->string('salon_id', 36);
+                $table->string('role', 20)->default('member');
                 $table->timestamp('join_date')->nullable();
                 $table->boolean('is_active')->default(true);
             });

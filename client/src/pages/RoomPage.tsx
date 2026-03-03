@@ -58,7 +58,7 @@ import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
 import { addVideoToPlaylist, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
-import { fetchParticipants, connectToSalon, disconnectFromSalon } from "../api/participants";
+import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantRole, type SalonRole } from "../api/participants";
 import { supabase } from "../api/supabase";
 
 const THUMBNAIL_MOVIE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 225' fill='none'%3E%3Crect width='400' height='225' fill='%231F2937'/%3E%3Crect x='30' y='40' width='340' height='145' rx='8' fill='%23374151'/%3E%3Cpath d='M160 100 L160 170 L220 135 Z' fill='%23DC2626'/%3E%3C/svg%3E";
@@ -72,7 +72,7 @@ const createAvatarDataUrl = (name: string) => {
 interface Participant {
   id: string;
   name: string;
-  role: "admin" | "member";
+  role: SalonRole;
   status: "online" | "offline";
   avatar: string;
 }
@@ -86,6 +86,31 @@ interface Message {
   isYou: boolean;
   reactions?: { emoji: string; count: number; userIds: string[] }[];
 }
+
+const mapDbMessageToUi = (
+  msg: any,
+  currentUser: { email: string; name: string; id: string }
+): Message => {
+  const senderId = msg.user_id || msg.id_user || msg.user_name || "unknown";
+  const senderName = msg.user?.username || msg.user_name || "Inconnu";
+  const id = msg.id || msg.id_message || `${senderId}-${msg.created_at || msg.sent_at || Date.now()}`;
+  const rawDate = msg.sent_at || msg.created_at || Date.now();
+  const isYouById = msg.user_id === currentUser.id || msg.id_user === currentUser.id;
+  const isYouByName = msg.user_name && msg.user_name === currentUser.name;
+
+  return {
+    id,
+    sender: senderName,
+    senderId,
+    content: msg.content,
+    timestamp: new Date(rawDate).toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    isYou: Boolean(isYouById || isYouByName || msg.user?.email === currentUser.email),
+    reactions: [],
+  };
+};
 
 interface VideoInPlaylist {
   id: string;
@@ -131,6 +156,47 @@ const getErrorMessage = (error: any, fallback: string) => {
   return message === fallback ? fallback : `${fallback}: ${message}`;
 };
 
+const MESSAGE_ROOM_COLUMNS = ["salon_id", "id_salon", "room_id"] as const;
+type MessageRoomColumn = (typeof MESSAGE_ROOM_COLUMNS)[number];
+const MESSAGE_AUTHOR_COLUMNS = ["user_id", "id_user", "user_name"] as const;
+type MessageAuthorColumn = (typeof MESSAGE_AUTHOR_COLUMNS)[number];
+
+const hasMissingColumnError = (error: any, column: string) => {
+  const blob = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.error_description,
+  ]
+    .filter(Boolean)
+    .join(" | ")
+    .toLowerCase();
+
+  return (
+    blob.includes(`could not find the '${column}' column`) ||
+    blob.includes(`column "${column}" does not exist`) ||
+    blob.includes(`column ${column} does not exist`) ||
+    blob.includes(`unknown column '${column}'`)
+  );
+};
+
+const getNextMessageRoomColumn = (column: MessageRoomColumn): MessageRoomColumn => {
+  const idx = MESSAGE_ROOM_COLUMNS.indexOf(column);
+  return MESSAGE_ROOM_COLUMNS[(idx + 1) % MESSAGE_ROOM_COLUMNS.length];
+};
+
+const getMessageAuthorValue = (
+  column: MessageAuthorColumn,
+  currentUser: { id: string; name: string }
+) => (column === "user_name" ? currentUser.name : currentUser.id);
+
+const getRoleLabel = (role: SalonRole | null) => {
+  if (role === "admin") return "Administrateur";
+  if (role === "regie") return "Regie video";
+  if (role === "member") return "Invite";
+  return "...";
+};
+
 export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigate, theme = "dark", onThemeToggle }: RoomPageProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -154,8 +220,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showHistory, setShowHistory] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [roomCode, setRoomCode] = useState<string>("");
-  const [role, setRole] = useState<"admin" | "teacher" | "student" | "guest" | "member" | null>(null);
+  const [role, setRole] = useState<SalonRole | null>(null);
   const [videoVoteCounts, setVideoVoteCounts] = useState<Record<string, number>>({});
+  const [messageSalonColumn, setMessageSalonColumn] = useState<MessageRoomColumn>("salon_id");
+  const [messageUserColumn, setMessageUserColumn] = useState<MessageAuthorColumn>("user_id");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const roomChannelRef = useRef<any>(null);
@@ -163,6 +231,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const lastTrackedVideoIdRef = useRef<string | null>(null);
 
   const isAdmin = role === "admin";
+  const canControlVideo = role === "admin" || role === "regie";
   const voteStorageKey = `room_${roomId}_videoVotes`;
 
   const withFallback = async <T,>(
@@ -207,18 +276,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const loadParticipantsSnapshot = useCallback(async () => {
     const data = await withFallback(backendSalonId, roomId, fetchParticipants);
-    if (role === null) {
-      const current = (data || []).find((participant: any) =>
-        participant?.id === currentUser.id || participant?.email === currentUser.email
-      );
-      if (current?.role) {
-        setRole(current.role === "admin" ? "admin" : "member");
-      }
+    const current = (data || []).find((participant: any) =>
+      participant?.id === currentUser.id || participant?.email === currentUser.email
+    );
+    if (current?.role && current.role !== role) {
+      setRole(current.role as SalonRole);
     }
     const mapped = (data || []).map((participant: any) => ({
       id: participant.id,
       name: participant.name ?? "Utilisateur",
-      role: (participant.role || "member") as "admin" | "teacher" | "student" | "guest" | "member",
+      role: (participant.role || "member") as SalonRole,
       status: (participant.is_active ? "online" : "offline") as "online" | "offline",
       avatar: createAvatarDataUrl(participant.name ?? "Utilisateur"),
     }));
@@ -226,28 +293,37 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [backendSalonId, roomId, role, currentUser.id, currentUser.email]);
 
   const loadRoomSnapshot = useCallback(async () => {
-    if (!backendSalonId) return;
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
 
     // Load Messages
-    const { data: messagesData, error: msgError } = await supabase
+    let messagesData: any[] | null = null;
+    let msgError: any = null;
+    let resolvedSalonColumn: MessageRoomColumn = messageSalonColumn;
+
+    ({ data: messagesData, error: msgError } = await supabase
       .from('messages')
-      .select('*, user:users(username, email, id_user)')
-      .eq('salon_id', backendSalonId)
-      .order('sent_at', { ascending: true });
+      .select('*')
+      .eq(resolvedSalonColumn, backendSalonId));
+
+    // Schema fallback for messages room column.
+    for (let i = 0; msgError && i < MESSAGE_ROOM_COLUMNS.length - 1; i += 1) {
+      if (!hasMissingColumnError(msgError, resolvedSalonColumn)) break;
+      resolvedSalonColumn = getNextMessageRoomColumn(resolvedSalonColumn);
+      ({ data: messagesData, error: msgError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq(resolvedSalonColumn, backendSalonId));
+      if (!msgError) setMessageSalonColumn(resolvedSalonColumn);
+    }
 
     if (!msgError) {
-      const mappedMessages = (messagesData || []).map((msg: any) => ({
-        id: msg.id_message,
-        sender: msg.user?.username || "Inconnu",
-        senderId: msg.user_id,
-        content: msg.content,
-        timestamp: new Date(msg.sent_at).toLocaleTimeString("fr-FR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        isYou: msg.user?.email === currentUser.email,
-        reactions: [],
-      }));
+      const mappedMessages = (messagesData || [])
+        .sort((a: any, b: any) => {
+          const ta = new Date(a.sent_at || a.created_at || 0).getTime();
+          const tb = new Date(b.sent_at || b.created_at || 0).getTime();
+          return ta - tb;
+        })
+        .map((msg: any) => mapDbMessageToUi(msg, currentUser));
       setMessages(mappedMessages);
     }
 
@@ -289,7 +365,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       };
     });
     setPlaylist(mapped);
-  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts]);
+  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts, messageSalonColumn]);
 
   useEffect(() => {
     setRoomCode(roomId);
@@ -300,7 +376,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [roomId]);
 
   useEffect(() => {
-    if (!backendSalonId) return;
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
     const connect = async () => {
       try {
         await connectToSalon(backendSalonId);
@@ -319,13 +395,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [backendSalonId]);
 
   useEffect(() => {
-    if (!roomCode) return;
+    if (!roomId) return;
     const fetchSalonId = async () => {
       try {
-        const data = await fetchSalonByCode(roomCode);
-        setBackendSalonId(data.id_salon || data.id || roomCode);
+        const data = await fetchSalonByCode(roomId);
+        const resolvedSalonId = data.id_salon || data.id;
+        if (!resolvedSalonId || !UUID_REGEX.test(String(resolvedSalonId))) {
+          throw new Error("Salon introuvable");
+        }
+        setBackendSalonId(resolvedSalonId);
         // Always expose a shareable join code in the UI dialog.
-        setRoomCode(data.invitation_code || data.room_code || data.id_salon || roomCode);
+        setRoomCode(data.invitation_code || data.room_code || resolvedSalonId);
         if (data.owner_id) {
           setRole(currentUser.id === data.owner_id ? "admin" : "member");
         }
@@ -334,7 +414,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
     };
     fetchSalonId();
-  }, [roomCode, currentUser.id]);
+  }, [roomId, currentUser.id]);
 
   useEffect(() => {
     if (role !== null) return;
@@ -377,7 +457,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [currentUser.id]);
 
   useEffect(() => {
-    if (!backendSalonId) return;
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
 
     loadRoomSnapshot().catch((error) => {
       console.error("Erreur chargement initial", error);
@@ -388,20 +468,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       .channel(`room-${backendSalonId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `salon_id=eq.${backendSalonId}` },
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `${messageSalonColumn}=eq.${backendSalonId}` },
         async (payload) => {
-          // ... existing message logic ...
           const newMsg = payload.new;
-          const { data: userData } = await supabase.from('users').select('username, email').eq('id_user', newMsg.user_id).single();
-          const mapped: Message = {
-            id: newMsg.id_message,
-            sender: userData?.username || "...",
-            senderId: newMsg.user_id,
-            content: newMsg.content,
-            timestamp: new Date(newMsg.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-            isYou: userData?.email === currentUser.email,
-            reactions: [],
-          };
+          const mapped = mapDbMessageToUi(newMsg, currentUser);
           setMessages(prev => {
             if (prev.some(m => m.id === mapped.id)) return prev;
             return [...prev, mapped];
@@ -452,7 +522,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, messageSalonColumn, currentUser.email]);
 
   // Keep favorite flags in sync without blocking initial playlist load.
   useEffect(() => {
@@ -577,19 +647,48 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !backendSalonId) return;
+    if (!UUID_REGEX.test(backendSalonId)) {
+      toast.error("Salon introuvable pour l'envoi du message");
+      return;
+    }
 
     try {
       // Direct Insert to Supabase
-      const { error } = await supabase
-        .from('messages')
-        .insert([
-          {
-            salon_id: backendSalonId,
-            user_id: currentUser.id, // Assuming currentUser.id is the UUID from users table
-            content: newMessage.trim(),
-            // sent_at is default now()
+      let error: any = null;
+
+      const roomColumnCandidates = [messageSalonColumn, ...MESSAGE_ROOM_COLUMNS.filter((col) => col !== messageSalonColumn)];
+      const userColumnCandidates = [messageUserColumn, ...MESSAGE_AUTHOR_COLUMNS.filter((col) => col !== messageUserColumn)];
+      let lastInsertError: any = null;
+
+      for (const roomColumn of roomColumnCandidates) {
+        for (const userColumn of userColumnCandidates) {
+          ({ error } = await supabase
+            .from('messages')
+            .insert([
+              {
+                [roomColumn]: backendSalonId,
+                [userColumn]: getMessageAuthorValue(userColumn, { id: currentUser.id, name: currentUser.name }),
+                content: newMessage.trim(),
+              }
+            ]));
+
+          if (!error) {
+            if (roomColumn !== messageSalonColumn) setMessageSalonColumn(roomColumn);
+            if (userColumn !== messageUserColumn) setMessageUserColumn(userColumn);
+            lastInsertError = null;
+            break;
           }
-        ]);
+
+          lastInsertError = error;
+          const roomMissing = hasMissingColumnError(error, roomColumn);
+          const userMissing = hasMissingColumnError(error, userColumn);
+          if (!roomMissing && !userMissing) break;
+        }
+
+        if (!lastInsertError) break;
+      }
+
+      if (lastInsertError) error = lastInsertError;
 
       if (error) throw error;
 
@@ -656,6 +755,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handlePlayPause = async () => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent controler la lecture");
+      return;
+    }
     const newPlayingState = !isPlaying;
     setIsPlaying(newPlayingState);
 
@@ -741,8 +844,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleSync = async () => {
-    if (!isAdmin) {
-      toast.error("Seul l'admin peut synchroniser");
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent synchroniser");
       return;
     }
     if (!backendSalonId) {
@@ -778,6 +881,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleAddVideo = async (url: string, title: string) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent modifier la playlist");
+      return;
+    }
     try {
       const existingCurrentId = playlist.find(v => v.isCurrent)?.id;
       const targetId = backendSalonId || roomId;
@@ -808,6 +915,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleRemoveVideo = async (videoId: string) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent modifier la playlist");
+      return;
+    }
     const videoToRemove = playlist.find(v => v.id === videoId);
     try {
       const targetId = backendSalonId || roomId;
@@ -842,6 +953,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const handlePlayVideo = async (video: VideoInPlaylist) => {
     try {
       if (!video?.id) return;
+      if (!canControlVideo) {
+        toast.error("Seuls l'admin ou la regie video peuvent changer de video");
+        return;
+      }
 
       toast.success(`Lecture de "${video.title}"`, {
         duration: 3000,
@@ -857,8 +972,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setIsPlaying(true);
       setSyncNonce(Date.now());
 
-      // Seul l'admin persiste/synchronise l'état global du salon
-      if (isAdmin && backendSalonId) {
+      // Admin et regie peuvent persister/synchroniser l'etat global du salon
+      if (canControlVideo && backendSalonId) {
         if (roomChannelRef.current) {
           try {
             await roomChannelRef.current.send({
@@ -897,6 +1012,22 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
+  const handleAssignRegie = async (participantId: string, enabled: boolean) => {
+    try {
+      await setParticipantRole(backendSalonId || roomId, participantId, enabled ? "regie" : "member");
+      setParticipants((prev) =>
+        prev.map((participant) =>
+          participant.id === participantId
+            ? { ...participant, role: enabled ? "regie" : "member" }
+            : participant
+        )
+      );
+      toast.success(enabled ? "Role Regie video attribue" : "Role Regie video retire");
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, "Impossible de mettre a jour le role"));
+    }
+  };
+
   return (
     <div className={`min-h-screen flex flex-col ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
       {/* Header Fixed - ne scroll pas */}
@@ -918,13 +1049,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Badge className="bg-red-600 text-white hover:bg-red-600 px-3 py-1 flex items-center gap-1.5">
               <Crown className="w-3 h-3" />
-              {role === null ? "..." : isAdmin ? "Admin" : "Invité"}
+              {role === null ? "..." : role === "admin" ? "Admin" : role === "regie" ? "Regie" : "Invite"}
             </Badge>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {isAdmin && (
+          {canControlVideo && (
             <Button
               type="button"
               onClick={(e) => {
@@ -949,6 +1080,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             }}
             variant="ghost"
             size="sm"
+            disabled={!canControlVideo}
             className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} text-sm h-9`}
           >
             {isPlaying ? (
@@ -973,6 +1105,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             }}
             variant="ghost"
             size="sm"
+            disabled={!canControlVideo}
             className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} text-sm h-9`}
           >
             <RotateCcw className="w-4 h-4 mr-1.5" />
@@ -1022,13 +1155,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               videoId={currentVideo.youtubeId}
               isPlaying={isPlaying}
               onPlayPause={handlePlayPause}
+              canControl={canControlVideo}
               syncTime={currentTime}
               syncNonce={syncNonce}
               onTimeUpdate={(seconds) => {
-                if (isAdmin) setCurrentTime(seconds);
+                if (canControlVideo) setCurrentTime(seconds);
               }}
               onPlaybackStateChange={(playing) => {
-                if (isAdmin) setIsPlaying(playing);
+                if (canControlVideo) setIsPlaying(playing);
               }}
               theme={theme}
             />
@@ -1040,6 +1174,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
               <button
                 onClick={handlePlayPause}
+                disabled={!canControlVideo}
                 className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all"
               >
                 {isPlaying ? (
@@ -1068,7 +1203,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   <div
                     key={video.id}
                     onClick={() => {
-                      handlePlayVideo(video);
+                      if (canControlVideo) {
+                        handlePlayVideo(video);
+                      }
                     }}
                     className={`relative group rounded-lg overflow-hidden ${video.isCurrent ? "ring-2 ring-red-600" : ""
                       } cursor-pointer hover:ring-2 hover:ring-red-400 transition-all`}
@@ -1262,7 +1399,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                           {isAdmin && <Crown className="w-3 h-3 text-yellow-500" />}
                         </p>
                         <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
-                          {role === null ? "..." : isAdmin ? "Administrateur" : "Invité"}
+                          {getRoleLabel(role)}
                         </p>
                       </div>
                     </div>
@@ -1286,7 +1423,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                               {participant.role === "admin" && <Crown className="w-3 h-3 text-yellow-500" />}
                             </p>
                             <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
-                              {participant.role === "admin" ? "Administrateur" : "Invité"}
+                              {getRoleLabel(participant.role)}
                             </p>
                           </div>
                         </div>
@@ -1411,6 +1548,23 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               </>
             )}
 
+            {!isAdmin && canControlVideo && (
+              <>
+                <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
+                <Button
+                  onClick={() => {
+                    setShowVideoManagement(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Gérer les vidéos
+                </Button>
+              </>
+            )}
+
             <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
 
             <Button
@@ -1486,12 +1640,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           ]}
           onClose={() => setShowPermissions(false)}
           onUpdatePermissions={handleUpdatePermissions}
+          onAssignRegie={handleAssignRegie}
           theme={theme}
           isReadOnly={false}
         />
       )}
 
-      {showVideoManagement && isAdmin && (
+      {showVideoManagement && canControlVideo && (
         <VideoManagementPanel
           videos={playlist}
           onClose={() => setShowVideoManagement(false)}

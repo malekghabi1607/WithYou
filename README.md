@@ -36,6 +36,7 @@ Ce projet est développé dans le cadre du module Ingénierie Logicielle (IL –
 - Axios
 - Sonner (notifications)
 - Supabase JS
+- Typescript
 
 ### Back-end
 
@@ -121,15 +122,19 @@ Les fichiers de configuration sont déjà présents dans le dépôt :
 ## 🖼️ Maquettes & visuels
 
 Les maquettes UI du projet sont disponibles dans :
+
 - `doc/ressources/maquettee/`
 
 Logo :
+
 - `doc/ressources/logos/logo.png`
 
 Écrans principaux (issus du dossier maquettes) :
 
 | Écran | Aperçu |
+
 |---|---|
+
 | Landing page | ![Landing Page](doc/ressources/maquettee/LandingPage.jpg) |
 | Connexion | ![Login Page](doc/ressources/maquettee/LoginPage.jpg) |
 | Inscription | ![Register Page](doc/ressources/maquettee/RegisterPage.jpg) |
