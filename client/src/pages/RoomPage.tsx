@@ -87,6 +87,9 @@ interface Message {
   reactions?: { emoji: string; count: number; userIds: string[] }[];
 }
 
+type MessageReactionEntry = { emoji: string; userIds: string[] };
+type MessageReactionsById = Record<string, MessageReactionEntry[]>;
+
 const mapDbMessageToUi = (
   msg: any,
   currentUser: { email: string; name: string; id: string }
@@ -224,6 +227,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [videoVoteCounts, setVideoVoteCounts] = useState<Record<string, number>>({});
   const [messageSalonColumn, setMessageSalonColumn] = useState<MessageRoomColumn>("salon_id");
   const [messageUserColumn, setMessageUserColumn] = useState<MessageAuthorColumn>("user_id");
+  const [storedReactionsByMessage, setStoredReactionsByMessage] = useState<MessageReactionsById>({});
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const roomChannelRef = useRef<any>(null);
@@ -233,6 +237,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const isAdmin = role === "admin";
   const canControlVideo = role === "admin" || role === "regie";
   const voteStorageKey = `room_${roomId}_videoVotes`;
+  const reactionStorageKey = `room_${roomId}_messageReactions`;
 
   const withFallback = async <T,>(
     primaryId: string | null,
@@ -292,10 +297,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     setParticipants(mapped);
   }, [backendSalonId, roomId, role, currentUser.id, currentUser.email]);
 
-  const loadRoomSnapshot = useCallback(async () => {
+  const loadMessagesSnapshot = useCallback(async () => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
 
-    // Load Messages
     let messagesData: any[] | null = null;
     let msgError: any = null;
     let resolvedSalonColumn: MessageRoomColumn = messageSalonColumn;
@@ -316,16 +320,33 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       if (!msgError) setMessageSalonColumn(resolvedSalonColumn);
     }
 
-    if (!msgError) {
-      const mappedMessages = (messagesData || [])
-        .sort((a: any, b: any) => {
-          const ta = new Date(a.sent_at || a.created_at || 0).getTime();
-          const tb = new Date(b.sent_at || b.created_at || 0).getTime();
-          return ta - tb;
-        })
-        .map((msg: any) => mapDbMessageToUi(msg, currentUser));
-      setMessages(mappedMessages);
-    }
+    if (msgError) return;
+
+    const mappedMessages = (messagesData || [])
+      .sort((a: any, b: any) => {
+        const ta = new Date(a.sent_at || a.created_at || 0).getTime();
+        const tb = new Date(b.sent_at || b.created_at || 0).getTime();
+        return ta - tb;
+      })
+      .map((msg: any) => mapDbMessageToUi(msg, currentUser))
+      .map((msg) => {
+        const stored = storedReactionsByMessage[msg.id] || [];
+        return {
+          ...msg,
+          reactions: stored.map((entry) => ({
+            emoji: entry.emoji,
+            count: entry.userIds.length,
+            userIds: entry.userIds,
+          })),
+        };
+      });
+    setMessages(mappedMessages);
+  }, [backendSalonId, messageSalonColumn, currentUser.email, currentUser.id, currentUser.name, storedReactionsByMessage]);
+
+  const loadRoomSnapshot = useCallback(async () => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
+
+    await loadMessagesSnapshot();
 
     // Load salon + current video
     const { data: salonData } = await supabase
@@ -365,7 +386,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       };
     });
     setPlaylist(mapped);
-  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts, messageSalonColumn]);
+  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts, loadMessagesSnapshot]);
 
   useEffect(() => {
     setRoomCode(roomId);
@@ -468,9 +489,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       .channel(`room-${backendSalonId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `${messageSalonColumn}=eq.${backendSalonId}` },
+        { event: 'INSERT', schema: 'public', table: 'messages' },
         async (payload) => {
-          const newMsg = payload.new;
+          const newMsg = payload.new as any;
+          const belongsToRoom = MESSAGE_ROOM_COLUMNS.some((column) => {
+            const value = newMsg?.[column];
+            return typeof value === "string" && value === backendSalonId;
+          });
+          if (!belongsToRoom) return;
           const mapped = mapDbMessageToUi(newMsg, currentUser);
           setMessages(prev => {
             if (prev.some(m => m.id === mapped.id)) return prev;
@@ -522,7 +548,23 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, messageSalonColumn, currentUser.email]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email]);
+
+  useEffect(() => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
+
+    const refreshMessages = async () => {
+      try {
+        await loadMessagesSnapshot();
+      } catch (error) {
+        console.error("Erreur refresh messages", error);
+      }
+    };
+
+    refreshMessages();
+    const interval = window.setInterval(refreshMessages, 3000);
+    return () => window.clearInterval(interval);
+  }, [backendSalonId, loadMessagesSnapshot]);
 
   // Keep favorite flags in sync without blocking initial playlist load.
   useEffect(() => {
@@ -606,6 +648,29 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [voteStorageKey]);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(reactionStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === "object") {
+        setStoredReactionsByMessage(parsed as MessageReactionsById);
+      } else {
+        setStoredReactionsByMessage({});
+      }
+    } catch (error) {
+      console.error("Erreur chargement reactions messages:", error);
+      setStoredReactionsByMessage({});
+    }
+  }, [reactionStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(reactionStorageKey, JSON.stringify(storedReactionsByMessage));
+    } catch (error) {
+      console.error("Erreur sauvegarde reactions messages:", error);
+    }
+  }, [reactionStorageKey, storedReactionsByMessage]);
+
+  useEffect(() => {
     setPlaylist((prev) =>
       prev.map((video) => ({
         ...video,
@@ -652,8 +717,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       return;
     }
 
-    try {
-      // Direct Insert to Supabase
+    const sendChatContent = async (content: string) => {
       let error: any = null;
 
       const roomColumnCandidates = [messageSalonColumn, ...MESSAGE_ROOM_COLUMNS.filter((col) => col !== messageSalonColumn)];
@@ -689,13 +753,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
 
       if (lastInsertError) error = lastInsertError;
-
       if (error) throw error;
+    };
+
+    try {
+      await sendChatContent(newMessage.trim());
 
       // We don't need to manually update state here because the Realtime subscription
       // will pick up the new message (INSERT event) and add it to the list.
       // But we clear the input immediately.
       setNewMessage("");
+      await loadMessagesSnapshot();
 
     } catch (error: any) {
       toast.error(getErrorMessage(error, "Erreur envoi message"));
@@ -703,55 +771,105 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
-  const handleReactionClick = (emoji: string) => {
-    const reactionMsg: Message = {
-      id: Date.now().toString(),
-      sender: "Vous",
-      senderId: "current",
-      content: emoji,
-      timestamp: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      isYou: true,
-      reactions: []
-    };
+  const handleReactionClick = async (emoji: string) => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+      toast.error("Salon introuvable pour l'envoi de l'emoji");
+      return;
+    }
 
-    setMessages([...messages, reactionMsg]);
+    try {
+      let error: any = null;
+      const roomColumnCandidates = [messageSalonColumn, ...MESSAGE_ROOM_COLUMNS.filter((col) => col !== messageSalonColumn)];
+      const userColumnCandidates = [messageUserColumn, ...MESSAGE_AUTHOR_COLUMNS.filter((col) => col !== messageUserColumn)];
+      let lastInsertError: any = null;
+
+      for (const roomColumn of roomColumnCandidates) {
+        for (const userColumn of userColumnCandidates) {
+          ({ error } = await supabase
+            .from('messages')
+            .insert([
+              {
+                [roomColumn]: backendSalonId,
+                [userColumn]: getMessageAuthorValue(userColumn, { id: currentUser.id, name: currentUser.name }),
+                content: emoji,
+              }
+            ]));
+
+          if (!error) {
+            if (roomColumn !== messageSalonColumn) setMessageSalonColumn(roomColumn);
+            if (userColumn !== messageUserColumn) setMessageUserColumn(userColumn);
+            lastInsertError = null;
+            break;
+          }
+
+          lastInsertError = error;
+          const roomMissing = hasMissingColumnError(error, roomColumn);
+          const userMissing = hasMissingColumnError(error, userColumn);
+          if (!roomMissing && !userMissing) break;
+        }
+
+        if (!lastInsertError) break;
+      }
+
+      if (lastInsertError) throw lastInsertError;
+      await loadMessagesSnapshot();
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, "Erreur envoi emoji"));
+      console.error(error);
+    }
   };
 
   const handleMessageReaction = (messageId: string, emoji: string) => {
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === messageId) {
-        const reactions = msg.reactions || [];
-        const existingReaction = reactions.find(r => r.emoji === emoji);
+    const userId = currentUser.id || currentUser.email || "current";
+    setStoredReactionsByMessage((prev) => {
+      const currentEntries = prev[messageId] || [];
+      const reactionIndex = currentEntries.findIndex((entry) => entry.emoji === emoji);
+      let nextEntries = [...currentEntries];
 
-        if (existingReaction) {
-          if (existingReaction.userIds.includes("current")) {
-            return {
-              ...msg,
-              reactions: reactions.map(r =>
-                r.emoji === emoji
-                  ? { ...r, count: r.count - 1, userIds: r.userIds.filter(id => id !== "current") }
-                  : r
-              ).filter(r => r.count > 0)
-            };
+      if (reactionIndex >= 0) {
+        const existing = nextEntries[reactionIndex];
+        const alreadyReacted = existing.userIds.includes(userId);
+        if (alreadyReacted) {
+          const filteredUsers = existing.userIds.filter((id) => id !== userId);
+          if (filteredUsers.length === 0) {
+            nextEntries.splice(reactionIndex, 1);
           } else {
-            return {
-              ...msg,
-              reactions: reactions.map(r =>
-                r.emoji === emoji
-                  ? { ...r, count: r.count + 1, userIds: [...r.userIds, "current"] }
-                  : r
-              )
-            };
+            nextEntries[reactionIndex] = { ...existing, userIds: filteredUsers };
           }
         } else {
-          return {
-            ...msg,
-            reactions: [...reactions, { emoji, count: 1, userIds: ["current"] }]
+          nextEntries[reactionIndex] = {
+            ...existing,
+            userIds: [...existing.userIds, userId],
           };
         }
+      } else {
+        nextEntries.push({ emoji, userIds: [userId] });
       }
-      return msg;
-    }));
+
+      const nextMap: MessageReactionsById = { ...prev };
+      if (nextEntries.length === 0) {
+        delete nextMap[messageId];
+      } else {
+        nextMap[messageId] = nextEntries;
+      }
+
+      setMessages((oldMessages) =>
+        oldMessages.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                reactions: (nextMap[messageId] || []).map((entry) => ({
+                  emoji: entry.emoji,
+                  count: entry.userIds.length,
+                  userIds: entry.userIds,
+                })),
+              }
+            : msg
+        )
+      );
+
+      return nextMap;
+    });
   };
 
   const handlePlayPause = async () => {
