@@ -95,14 +95,24 @@ export function YouTubePlayer({
                 }
                 tickIntervalRef.current = window.setInterval(() => {
                   if (!playerRef.current?.getCurrentTime) return;
-                  const t = Math.floor(playerRef.current.getCurrentTime());
+                  const t = Number(playerRef.current.getCurrentTime().toFixed(2));
                   onTimeUpdate?.(t);
                 }, 1000);
+              } else if (event.data === yt.PlayerState.BUFFERING) {
+                // Seek from scrub often goes through BUFFERING first.
+                if (playerRef.current?.getCurrentTime) {
+                  const t = Number(playerRef.current.getCurrentTime().toFixed(2));
+                  onTimeUpdate?.(t);
+                }
               } else if (
                 event.data === yt.PlayerState.PAUSED ||
                 event.data === yt.PlayerState.ENDED
               ) {
                 onPlaybackStateChange?.(false);
+                if (playerRef.current?.getCurrentTime) {
+                  const t = Number(playerRef.current.getCurrentTime().toFixed(2));
+                  onTimeUpdate?.(t);
+                }
                 if (tickIntervalRef.current) {
                   window.clearInterval(tickIntervalRef.current);
                   tickIntervalRef.current = null;

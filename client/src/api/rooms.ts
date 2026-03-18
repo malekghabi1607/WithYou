@@ -674,6 +674,97 @@ export async function addVideoToPlaylist(
   return { success: true };
 }
 
+// 🔹 Ajouter plusieurs vidéos d'un coup
+export async function addVideosToPlaylistBatch(
+  roomId: string,
+  items: Array<{ title: string; url: string }>
+) {
+  const salonRef = await resolveSalonReference(roomId);
+  const resolvedSalonId = salonRef?.id_salon || roomId;
+  const cleanedItems = (items || [])
+    .map((item) => ({
+      title: String(item?.title || "").trim(),
+      url: String(item?.url || "").trim(),
+    }))
+    .filter((item) => item.url.length > 0);
+
+  if (cleanedItems.length === 0) {
+    throw new Error("Aucune video valide a ajouter");
+  }
+
+  // 1. Get Playlist once
+  let { data: playlist } = await supabase
+    .from('playlist')
+    .select('id_playlist')
+    .eq('salon_id', resolvedSalonId)
+    .maybeSingle();
+
+  if (!playlist && salonRef?.id_playlist) {
+    playlist = { id_playlist: salonRef.id_playlist };
+  }
+
+  if (!playlist?.id_playlist) {
+    throw new Error("Playlist introuvable pour ce salon");
+  }
+
+  // 2. Get current position once
+  const { count } = await supabase
+    .from('playlist_video')
+    .select('*', { count: 'exact', head: true })
+    .eq('id_playlist', playlist.id_playlist);
+
+  let position = (count || 0) + 1;
+  const added: string[] = [];
+  const failed: Array<{ url: string; reason: string }> = [];
+
+  // 3. Insert videos sequentially to preserve order
+  for (const item of cleanedItems) {
+    try {
+      const youtubeId = extractYoutubeId(item.url);
+      if (!youtubeId) {
+        failed.push({ url: item.url, reason: "URL YouTube invalide" });
+        continue;
+      }
+
+      const { data: videoData, error: videoError } = await upsertVideoRecord(
+        youtubeId,
+        item.title || `Video ${position}`
+      );
+
+      if (videoError || !videoData?.id_video) {
+        failed.push({ url: item.url, reason: getSupabaseErrorMessage(videoError, "Video invalide") });
+        continue;
+      }
+
+      const { error: playlistInsertError } = await supabase
+        .from('playlist_video')
+        .insert({
+          id: crypto.randomUUID(),
+          id_playlist: playlist.id_playlist,
+          id_video: videoData.id_video,
+          position
+        });
+
+      if (playlistInsertError) {
+        failed.push({ url: item.url, reason: getSupabaseErrorMessage(playlistInsertError, "Erreur ajout playlist") });
+        continue;
+      }
+
+      added.push(videoData.id_video);
+      position += 1;
+    } catch (error: any) {
+      failed.push({ url: item.url, reason: String(error?.message || "Erreur inconnue") });
+    }
+  }
+
+  return {
+    success: failed.length === 0,
+    addedCount: added.length,
+    failedCount: failed.length,
+    failed,
+  };
+}
+
 // 🔹 Supprimer une vidéo
 export async function removeVideoFromPlaylist(roomId: string, videoId: string) {
   const salonRef = await resolveSalonReference(roomId);

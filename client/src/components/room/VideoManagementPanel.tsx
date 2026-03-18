@@ -49,6 +49,7 @@ interface VideoManagementPanelProps {
   onClose: () => void;
   videos: VideoInPlaylist[];
   onAddVideo: (url: string, title: string, youtubeId?: string) => void;
+  onAddVideosBatch?: (items: Array<{ url: string; title: string }>) => Promise<void> | void;
   onRemoveVideo: (videoId: string) => void;
   theme?: "light" | "dark";
 }
@@ -57,12 +58,14 @@ export function VideoManagementPanel({
   onClose, 
   videos, 
   onAddVideo, 
+  onAddVideosBatch,
   onRemoveVideo,
   theme = "dark" 
 }: VideoManagementPanelProps) {
   const [activeTab, setActiveTab] = useState<"add" | "manage">("add");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoTitle, setVideoTitle] = useState("");
+  const [bulkUrls, setBulkUrls] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleAddVideo = () => {
@@ -79,6 +82,29 @@ export function VideoManagementPanel({
     setVideoUrl("");
     setVideoTitle("");
     toast.success("Vidéo YouTube ajoutée avec succès !");
+  };
+
+  const handleBulkAddVideos = async () => {
+    const lines = bulkUrls
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) return;
+
+    const items = lines.map((url, index) => ({
+      url,
+      title: `Video ${index + 1}`,
+    }));
+
+    if (onAddVideosBatch) {
+      await onAddVideosBatch(items);
+    } else {
+      for (const item of items) {
+        onAddVideo(item.url, item.title);
+      }
+    }
+    setBulkUrls("");
   };
 
   const filteredVideos = videos.filter(v => 
@@ -181,6 +207,30 @@ export function VideoManagementPanel({
                 <Plus className="w-4 h-4 mr-2" />
                 Ajouter à la playlist
               </Button>
+
+              <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-zinc-800 border border-zinc-700' : 'bg-gray-100 border border-gray-200'}`}>
+                <p className={`text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-800'}`}>
+                  Ajout multiple (préparer la playlist à l'avance)
+                </p>
+                <textarea
+                  value={bulkUrls}
+                  onChange={(e) => setBulkUrls(e.target.value)}
+                  placeholder={"1 URL YouTube par ligne\nhttps://youtube.com/watch?v=...\nhttps://youtu.be/..."}
+                  className={`w-full min-h-[110px] rounded-md px-3 py-2 text-sm resize-y ${
+                    theme === 'dark'
+                      ? 'bg-zinc-900 border border-zinc-700 text-white placeholder:text-gray-500'
+                      : 'bg-white border border-gray-300 text-black placeholder:text-gray-400'
+                  }`}
+                />
+                <Button
+                  onClick={handleBulkAddVideos}
+                  disabled={!bulkUrls.trim()}
+                  className="w-full mt-2 bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Ajouter plusieurs vidéos
+                </Button>
+              </div>
 
               <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-zinc-800 border border-zinc-700' : 'bg-gray-100 border border-gray-200'}`}>
                 <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-700'}`}>

@@ -43,7 +43,8 @@ import {
   BarChart3,
   Shield,
   History,
-  Share2
+  Share2,
+  Clapperboard
 } from "lucide-react";
 import { LeaveRoomDialog } from "./LeaveRoomDialog";
 import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
@@ -56,7 +57,7 @@ import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
 import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
-import { addVideoToPlaylist, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
+import { addVideoToPlaylist, addVideosToPlaylistBatch, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
 import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantRole, type SalonRole } from "../api/participants";
 import { supabase } from "../api/supabase";
@@ -72,6 +73,7 @@ const createAvatarDataUrl = (name: string) => {
 interface Participant {
   id: string;
   name: string;
+  email?: string | null;
   role: SalonRole;
   status: "online" | "offline";
   avatar: string;
@@ -161,6 +163,8 @@ const getErrorMessage = (error: any, fallback: string) => {
 
 const MESSAGE_ROOM_COLUMNS = ["salon_id", "id_salon", "room_id"] as const;
 type MessageRoomColumn = (typeof MESSAGE_ROOM_COLUMNS)[number];
+const SALON_ID_COLUMNS = ["id_salon", "id"] as const;
+type SalonIdColumn = (typeof SALON_ID_COLUMNS)[number];
 const MESSAGE_AUTHOR_COLUMNS = ["user_id", "id_user", "user_name"] as const;
 type MessageAuthorColumn = (typeof MESSAGE_AUTHOR_COLUMNS)[number];
 
@@ -177,9 +181,11 @@ const hasMissingColumnError = (error: any, column: string) => {
 
   return (
     blob.includes(`could not find the '${column}' column`) ||
+    blob.includes(`could not find the "${column}" column`) ||
     blob.includes(`column "${column}" does not exist`) ||
     blob.includes(`column ${column} does not exist`) ||
-    blob.includes(`unknown column '${column}'`)
+    blob.includes(`unknown column '${column}'`) ||
+    (blob.includes("schema cache") && blob.includes(column))
   );
 };
 
@@ -224,18 +230,52 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [roomCode, setRoomCode] = useState<string>("");
   const [role, setRole] = useState<SalonRole | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [videoVoteCounts, setVideoVoteCounts] = useState<Record<string, number>>({});
   const [messageSalonColumn, setMessageSalonColumn] = useState<MessageRoomColumn>("salon_id");
   const [messageUserColumn, setMessageUserColumn] = useState<MessageAuthorColumn>("user_id");
+  const [salonIdColumn, setSalonIdColumn] = useState<SalonIdColumn>("id_salon");
   const [storedReactionsByMessage, setStoredReactionsByMessage] = useState<MessageReactionsById>({});
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const roomChannelRef = useRef<any>(null);
+  const messageSalonColumnRef = useRef<MessageRoomColumn>("salon_id");
+  const salonIdColumnRef = useRef<SalonIdColumn>("id_salon");
   const historyLoadedRef = useRef(false);
   const lastTrackedVideoIdRef = useRef<string | null>(null);
+  const lastAdminPlayerTimeRef = useRef<number | null>(null);
+  const lastSeekBroadcastAtRef = useRef<number>(0);
+  const currentTimeRef = useRef<number>(0);
+  const isPlayingRef = useRef<boolean>(false);
+  const lastPlaybackPersistAtRef = useRef<number>(0);
+  const lastPlaybackBroadcastStateRef = useRef<boolean | null>(null);
+  const lastRealtimeSyncAtRef = useRef<number>(0);
+  const lastViewerCorrectionAtRef = useRef<number>(0);
+  const canControlVideoRef = useRef<boolean>(false);
+  const lastCurrentVideoIdRef = useRef<string | null>(null);
+  const syncAnchorRef = useRef<{ time: number; at: number; playing: boolean; videoId?: string | null }>({
+    time: 0,
+    at: Date.now(),
+    playing: false,
+    videoId: null,
+  });
 
-  const isAdmin = role === "admin";
-  const canControlVideo = role === "admin" || role === "regie";
+  const isCurrentParticipant = useCallback((participant: { id?: string; email?: string | null; name?: string }) => {
+    const pid = participant?.id || "";
+    const pmail = participant?.email || "";
+    if (pid && (pid === currentUser.id || (authUserId && pid === authUserId))) return true;
+    if (pmail && currentUser.email && pmail === currentUser.email) return true;
+    if (participant?.name && participant.name === currentUser.name) return true;
+    return false;
+  }, [authUserId, currentUser.email, currentUser.id, currentUser.name]);
+
+  const roleFromParticipants =
+    participants.find((participant) => isCurrentParticipant(participant))?.role || null;
+  const effectiveRole: SalonRole | null = roleFromParticipants || role;
+  const isAdmin = effectiveRole === "admin";
+  const canControlVideo = effectiveRole === "admin" || effectiveRole === "regie";
+  // Keep a ref updated so Supabase Realtime closures always see the current value
+  canControlVideoRef.current = canControlVideo;
   const voteStorageKey = `room_${roomId}_videoVotes`;
   const reactionStorageKey = `room_${roomId}_messageReactions`;
 
@@ -272,37 +312,100 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   // Filtrer les participants pour éviter que l'admin soit dans la liste
   const otherParticipants = participants.filter(p =>
     p.id !== currentUser.id &&
+    p.id !== authUserId &&
+    p.email !== currentUser.email &&
     p.id !== currentUser.email &&
     p.name !== currentUser.name
   );
 
   const participantCount = otherParticipants.filter(p => p.status === "online").length + 1; // +1 pour l'utilisateur courant
   const currentVideo = playlist.find(v => v.isCurrent);
+  useEffect(() => {
+    messageSalonColumnRef.current = messageSalonColumn;
+  }, [messageSalonColumn]);
 
+  useEffect(() => {
+    salonIdColumnRef.current = salonIdColumn;
+  }, [salonIdColumn]);
+
+  const updateSalonState = useCallback(
+    async (patch: Record<string, any>) => {
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+        return { error: new Error("Salon introuvable") };
+      }
+
+      const normalizedPatch: Record<string, any> = { ...patch };
+      if (normalizedPatch.video_time !== undefined && normalizedPatch.video_time !== null) {
+        const n = Number(normalizedPatch.video_time);
+        normalizedPatch.video_time = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+      }
+
+      const candidates = [salonIdColumnRef.current, ...SALON_ID_COLUMNS.filter((c) => c !== salonIdColumnRef.current)];
+      let lastError: any = null;
+      for (const column of candidates) {
+        const { error } = await supabase.from('salon').update(normalizedPatch).eq(column, backendSalonId);
+        if (!error) {
+          salonIdColumnRef.current = column;
+          if (column !== salonIdColumn) setSalonIdColumn(column);
+          return { error: null };
+        }
+        lastError = error;
+        if (!hasMissingColumnError(error, column)) break;
+      }
+      return { error: lastError || new Error("Erreur update salon") };
+    },
+    [backendSalonId, salonIdColumn]
+  );
+
+  const selectSalonSingle = useCallback(
+    async (selectClause: string) => {
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+        return { data: null, error: new Error("Salon introuvable") };
+      }
+
+      const candidates = [salonIdColumnRef.current, ...SALON_ID_COLUMNS.filter((c) => c !== salonIdColumnRef.current)];
+      let lastError: any = null;
+      for (const column of candidates) {
+        const { data, error } = await supabase
+          .from('salon')
+          .select(selectClause)
+          .eq(column, backendSalonId)
+          .single();
+        if (!error) {
+          salonIdColumnRef.current = column;
+          if (column !== salonIdColumn) setSalonIdColumn(column);
+          return { data, error: null };
+        }
+        lastError = error;
+        if (!hasMissingColumnError(error, column)) break;
+      }
+      return { data: null, error: lastError || new Error("Erreur lecture salon") };
+    },
+    [backendSalonId, salonIdColumn]
+  );
   const loadParticipantsSnapshot = useCallback(async () => {
     const data = await withFallback(backendSalonId, roomId, fetchParticipants);
-    const current = (data || []).find((participant: any) =>
-      participant?.id === currentUser.id || participant?.email === currentUser.email
-    );
+    const current = (data || []).find((participant: any) => isCurrentParticipant(participant));
     if (current?.role && current.role !== role) {
       setRole(current.role as SalonRole);
     }
     const mapped = (data || []).map((participant: any) => ({
       id: participant.id,
       name: participant.name ?? "Utilisateur",
+      email: participant.email ?? null,
       role: (participant.role || "member") as SalonRole,
       status: (participant.is_active ? "online" : "offline") as "online" | "offline",
       avatar: createAvatarDataUrl(participant.name ?? "Utilisateur"),
     }));
     setParticipants(mapped);
-  }, [backendSalonId, roomId, role, currentUser.id, currentUser.email]);
+  }, [backendSalonId, roomId, role, currentUser.id, currentUser.email, isCurrentParticipant]);
 
   const loadMessagesSnapshot = useCallback(async () => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
 
     let messagesData: any[] | null = null;
     let msgError: any = null;
-    let resolvedSalonColumn: MessageRoomColumn = messageSalonColumn;
+    let resolvedSalonColumn: MessageRoomColumn = messageSalonColumnRef.current;
 
     ({ data: messagesData, error: msgError } = await supabase
       .from('messages')
@@ -317,7 +420,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         .from('messages')
         .select('*')
         .eq(resolvedSalonColumn, backendSalonId));
-      if (!msgError) setMessageSalonColumn(resolvedSalonColumn);
+      if (!msgError) {
+        messageSalonColumnRef.current = resolvedSalonColumn;
+        if (resolvedSalonColumn !== messageSalonColumn) {
+          setMessageSalonColumn(resolvedSalonColumn);
+        }
+      }
     }
 
     if (msgError) return;
@@ -348,28 +456,55 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     await loadMessagesSnapshot();
 
-    // Load salon + current video
-    const { data: salonData } = await supabase
-      .from('salon')
-      .select('current_video_id, id_playlist, video(*), video_time, video_status')
-      .eq('id_salon', backendSalonId)
-      .single();
+    // Load salon state (without video(*) join which can fail if FK is not properly configured)
+    const { data: salonData, error: salonError } = await selectSalonSingle(
+      'current_video_id, id_playlist, video_time, video_status'
+    );
 
-    const dbTime = Number(salonData?.video_time || 0);
+    if (salonError || !salonData) {
+      // Fallback: attempt to load playlist even if salon state read fails
+      console.warn("Erreur lecture état salon, tentative chargement playlist directement", salonError);
+      try {
+        const fallbackData = await fetchPlaylist(backendSalonId);
+        setPlaylistId(fallbackData.playlistId);
+        const fallbackMapped = (fallbackData.items || []).map((item: any, index: number) => {
+          const youtubeId = item.youtube_id;
+          return {
+            id: item.id,
+            youtubeId,
+            title: item.titre ?? "Sans titre",
+            thumbnail: youtubeId
+              ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`
+              : THUMBNAIL_MOVIE,
+            duration: item.duration ? String(item.duration) : "0:00",
+            isCurrent: index === 0,
+            votes: videoVoteCounts[item.id] ?? 0,
+            isFavorite: youtubeId ? favoriteIds.has(youtubeId) : false,
+          };
+        });
+        if (fallbackMapped.length > 0) setPlaylist(fallbackMapped);
+      } catch (fallbackErr) {
+        console.error("Fallback playlist load failed", fallbackErr);
+      }
+      return;
+    }
+
+    const sd = salonData as any;
+    const dbTime = Number(sd?.video_time || 0);
     setCurrentTime(dbTime);
-    setIsPlaying(salonData?.video_status === "playing");
+    setIsPlaying(sd?.video_status === "playing");
     setSyncNonce(Date.now());
 
     // Load playlist
-    const playlistData = salonData?.id_playlist
-      ? await fetchPlaylistById(salonData.id_playlist)
+    const playlistData = sd?.id_playlist
+      ? await fetchPlaylistById(sd.id_playlist)
       : await fetchPlaylist(backendSalonId);
 
     setPlaylistId(playlistData.playlistId);
     const mapped = (playlistData.items || []).map((item: any, index: number) => {
       const youtubeId = item.youtube_id;
-      const isCurrent = salonData?.current_video_id
-        ? item.id === salonData.current_video_id
+      const isCurrent = sd?.current_video_id
+        ? item.id === sd.current_video_id
         : index === 0;
 
       return {
@@ -386,7 +521,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       };
     });
     setPlaylist(mapped);
-  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts, loadMessagesSnapshot]);
+  }, [backendSalonId, currentUser.email, favoriteIds, videoVoteCounts, loadMessagesSnapshot, selectSalonSingle]);
 
   useEffect(() => {
     setRoomCode(roomId);
@@ -436,6 +571,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     };
     fetchSalonId();
   }, [roomId, currentUser.id]);
+
+  useEffect(() => {
+    const loadAuthUser = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        setAuthUserId(data?.user?.id || null);
+      } catch {
+        setAuthUserId(null);
+      }
+    };
+    loadAuthUser();
+  }, []);
 
   useEffect(() => {
     if (role !== null) return;
@@ -508,18 +655,45 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'salon', filter: `id_salon=eq.${backendSalonId}` },
         async (payload) => {
+          lastRealtimeSyncAtRef.current = Date.now();
           const newSalonState = payload.new;
+          const nextTime = Number(newSalonState?.video_time || 0);
+
+          // Viewers follow salon state strictly.
+          if (!canControlVideoRef.current) {
+            setCurrentTime(nextTime);
+            setIsPlaying(newSalonState?.video_status === "playing");
+            setSyncNonce(Date.now());
+            lastAdminPlayerTimeRef.current = nextTime;
+            syncAnchorRef.current = {
+              time: nextTime,
+              at: Date.now(),
+              playing: newSalonState?.video_status === "playing",
+              videoId: newSalonState?.current_video_id ? String(newSalonState.current_video_id) : null,
+            };
+          }
+
           if (newSalonState.current_video_id) {
-            // Fetch video details if changed
-            const { data: vid } = await supabase.from('video').select('*').eq('id_video', newSalonState.current_video_id).single();
-            if (vid) {
-              // Update playlist state to show this as current
-              setPlaylist(prev => prev.map(p => ({
-                ...p,
-                isCurrent: p.id === vid.id_video
-              })));
-              // If it wasn't in playlist, maybe add it? 
-              toast.info(`Vidéo changée: ${vid.title ?? vid.titre ?? "Sans titre"}`);
+            const targetVideoId = String(newSalonState.current_video_id);
+            const videoChanged = lastCurrentVideoIdRef.current !== targetVideoId;
+            lastCurrentVideoIdRef.current = targetVideoId;
+
+            let found = false;
+            setPlaylist((prev) =>
+              prev.map((p) => {
+                const isCurrent = p.id === targetVideoId;
+                if (isCurrent) found = true;
+                return { ...p, isCurrent };
+              })
+            );
+
+            // If video not found in playlist, reload. No toast here — the broadcast handles it.
+            if (!found) {
+              await loadRoomSnapshot();
+            } else if (videoChanged) {
+              // Only notify via this channel if no broadcast is expected
+              // (broadcast from admin will show its own toast)
+              // So we skip toast here — broadcasts handle all notifications
             }
           }
         }
@@ -535,9 +709,54 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         'broadcast',
         { event: 'room_force_sync' },
         async (payload) => {
-          if (payload?.payload?.by === currentUser.id) return;
-          await loadRoomSnapshot();
-          toast.info("Synchronisation reçue");
+          lastRealtimeSyncAtRef.current = Date.now();
+          const data = payload?.payload || {};
+          // Ignore messages sent by the current user
+          if (data?.by === currentUser.id) return;
+
+          // Apply time sync
+          if (typeof data.time === "number") {
+            const nextTime = Math.max(0, data.time);
+            setCurrentTime(nextTime);
+            setSyncNonce(Date.now());
+            lastAdminPlayerTimeRef.current = nextTime;
+            syncAnchorRef.current = {
+              time: nextTime,
+              at: Date.now(),
+              playing: typeof data.isPlaying === "boolean" ? data.isPlaying : isPlayingRef.current,
+              videoId: data.videoId ? String(data.videoId) : syncAnchorRef.current.videoId,
+            };
+          }
+          if (typeof data.isPlaying === "boolean") {
+            setIsPlaying(data.isPlaying);
+          }
+
+          // Update playlist if videoId changed
+          if (data.videoId) {
+            let found = false;
+            setPlaylist((prev) =>
+              prev.map((item) => {
+                const isCurrent = item.id === data.videoId;
+                if (isCurrent) found = true;
+                return { ...item, isCurrent };
+              })
+            );
+            if (!found) {
+              await loadRoomSnapshot();
+            }
+          }
+
+          if (data.forceReload) {
+            await loadRoomSnapshot();
+          }
+
+          // Show toast only for explicit syncs triggered by admin (not automatic heartbeats/seeks)
+          // data.seek is set on auto-seeks, data.explicit is set on manual sync button
+          if (data.restart) {
+            toast.info("La vidéo redémarre depuis le début 🔄");
+          } else if (data.explicit) {
+            toast.info("📡 Synchronisation reçue");
+          }
         }
       )
       .subscribe();
@@ -548,7 +767,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -565,6 +784,50 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const interval = window.setInterval(refreshMessages, 3000);
     return () => window.clearInterval(interval);
   }, [backendSalonId, loadMessagesSnapshot]);
+
+  useEffect(() => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
+    if (canControlVideo) return;
+
+    let isSyncing = false;
+    const syncFromSalon = async () => {
+      if (isSyncing) return; // Éviter les appels overlapping
+      isSyncing = true;
+      try {
+        const { data, error } = await selectSalonSingle('current_video_id, video_time, video_status');
+        if (error || !data) return;
+
+        const salonData = data as any;
+        const nextTime = Number(salonData.video_time || 0);
+        const nextPlaying = salonData.video_status === "playing";
+
+        setCurrentTime(nextTime);
+        setSyncNonce(Date.now());
+        setIsPlaying(nextPlaying);
+
+        if (salonData.current_video_id) {
+          const target = String(salonData.current_video_id);
+          setPlaylist((prev) => {
+            const exists = prev.some((item) => item.id === target);
+            if (!exists) {
+              // trigger reload asynchronously outside setState
+              setTimeout(() => loadRoomSnapshot(), 0);
+              return prev;
+            }
+            return prev.map((item) => ({ ...item, isCurrent: item.id === target }));
+          });
+        }
+      } catch (err) {
+        console.error("Erreur sync automatique salon", err);
+      } finally {
+        isSyncing = false;
+      }
+    };
+
+    syncFromSalon();
+    const interval = window.setInterval(syncFromSalon, 3000);
+    return () => window.clearInterval(interval);
+  }, [backendSalonId, canControlVideo, loadRoomSnapshot, selectSalonSingle]);
 
   // Keep favorite flags in sync without blocking initial playlist load.
   useEffect(() => {
@@ -631,6 +894,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   useEffect(() => {
     try {
@@ -732,7 +1003,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               {
                 [roomColumn]: backendSalonId,
                 [userColumn]: getMessageAuthorValue(userColumn, { id: currentUser.id, name: currentUser.name }),
-                content: newMessage.trim(),
+                content,
               }
             ]));
 
@@ -857,13 +1128,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         oldMessages.map((msg) =>
           msg.id === messageId
             ? {
-                ...msg,
-                reactions: (nextMap[messageId] || []).map((entry) => ({
-                  emoji: entry.emoji,
-                  count: entry.userIds.length,
-                  userIds: entry.userIds,
-                })),
-              }
+              ...msg,
+              reactions: (nextMap[messageId] || []).map((entry) => ({
+                emoji: entry.emoji,
+                count: entry.userIds.length,
+                userIds: entry.userIds,
+              })),
+            }
             : msg
         )
       );
@@ -879,13 +1150,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
     const newPlayingState = !isPlaying;
     setIsPlaying(newPlayingState);
+    isPlayingRef.current = newPlayingState;
+    setSyncNonce(Date.now());
 
     if (backendSalonId) {
       try {
-        await supabase.from('salon').update({
+        const { error: playPauseError } = await updateSalonState({
           video_status: newPlayingState ? 'playing' : 'paused',
-          video_time: currentTime
-        }).eq('id_salon', backendSalonId);
+          video_time: currentTimeRef.current,
+          current_video_id: currentVideo?.id || null,
+        });
+        if (playPauseError) throw playPauseError;
 
         if (roomChannelRef.current) {
           await roomChannelRef.current.send({
@@ -895,7 +1170,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               by: currentUser.id,
               at: Date.now(),
               isPlaying: newPlayingState,
-              time: currentTime
+              time: currentTimeRef.current,
+              videoId: currentVideo?.id || null,
+              forceSeek: true,
+              forceReload: true,
             }
           });
         }
@@ -972,11 +1250,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
 
     try {
-      await supabase.from('salon').update({
-        video_time: currentTime,
+      const { error: syncError } = await updateSalonState({
+        video_time: currentTimeRef.current,
         video_status: isPlaying ? 'playing' : 'paused',
         current_video_id: currentVideo?.id || null
-      }).eq('id_salon', backendSalonId);
+      });
+      if (syncError) throw syncError;
 
       await loadRoomSnapshot();
       if (roomChannelRef.current) {
@@ -986,12 +1265,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           payload: {
             by: currentUser.id,
             at: Date.now(),
-            time: currentTime,
-            isPlaying
+            time: currentTimeRef.current,
+            isPlaying,
+            videoId: currentVideo?.id || null,
+            seek: true,
+            forceSeek: true,
+            forceReload: true,
+            explicit: true,
           }
         });
       }
-      toast.success("Synchronisation envoyée à tous les invités");
+      toast.success("📡 Synchronisation envoyée à tous les invités");
     } catch (error: any) {
       toast.error(error?.message || "Erreur synchronisation");
       console.error("Erreur sync salon", error);
@@ -1089,9 +1373,21 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setCurrentTime(0);
       setIsPlaying(true);
       setSyncNonce(Date.now());
+      lastAdminPlayerTimeRef.current = 0;
 
       // Admin et regie peuvent persister/synchroniser l'etat global du salon
       if (canControlVideo && backendSalonId) {
+        const { error: updateError } = await updateSalonState({
+          current_video_id: video.id,
+          video_status: 'playing',
+          video_time: 0
+        });
+
+        if (updateError) {
+          console.error("Error updating salon video state", updateError);
+          throw updateError;
+        }
+
         if (roomChannelRef.current) {
           try {
             await roomChannelRef.current.send({
@@ -1103,24 +1399,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 videoId: video.id,
                 isPlaying: true,
                 time: 0,
+                forceSeek: true,
+                forceReload: true,
+                explicit: true,
               }
             });
           } catch (broadcastError) {
             console.warn("Broadcast error", broadcastError);
           }
-        }
-
-        const { error: updateError } = await supabase
-          .from('salon')
-          .update({
-            current_video_id: video.id,
-            video_status: 'playing',
-            video_time: 0
-          })
-          .eq('id_salon', backendSalonId);
-
-        if (updateError) {
-          console.error("Error updating salon video state", updateError);
         }
       }
 
@@ -1130,9 +1416,172 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
+  const handleAddVideosBatch = async (items: Array<{ url: string; title: string }>) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent modifier la playlist");
+      return;
+    }
+    try {
+      const targetId = backendSalonId || roomId;
+      const result = await addVideosToPlaylistBatch(targetId, items);
+      const data = await fetchPlaylist(targetId);
+      setPlaylistId(data.playlistId);
+      const existingCurrentId = playlist.find(v => v.isCurrent)?.id;
+      const mapped = (data.items || []).map((item: any, index: number) => {
+        const youtubeId = item.youtube_id;
+        return {
+          id: item.id,
+          youtubeId,
+          title: item.titre ?? "Sans titre",
+          thumbnail: youtubeId
+            ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`
+            : THUMBNAIL_MOVIE,
+          duration: item.duration ? String(item.duration) : "0:00",
+          isCurrent: existingCurrentId ? item.id === existingCurrentId : index === 0,
+          votes: videoVoteCounts[item.id] ?? 0,
+          isFavorite: youtubeId ? favoriteIds.has(youtubeId) : false,
+        };
+      });
+      setPlaylist(mapped);
+
+      if (result.failedCount > 0) {
+        toast.warning(`${result.addedCount} video(s) ajoutee(s), ${result.failedCount} echec(s)`);
+      } else {
+        toast.success(`${result.addedCount} video(s) ajoutee(s) a la playlist`);
+      }
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, "Erreur ajout multiple de videos"));
+      console.error(error);
+    }
+  };
+
+  const handlePlayerTimeUpdate = useCallback((seconds: number) => {
+    if (!canControlVideoRef.current) {
+      const anchor = syncAnchorRef.current;
+      const expected = Math.max(
+        0,
+        anchor.time + (anchor.playing ? (Date.now() - anchor.at) / 1000 : 0)
+      );
+      const drift = Math.abs(seconds - expected);
+      const now = Date.now();
+      // Only correct if drift is significant (>3s) and enough time has passed (5s cooldown)
+      if (drift > 3 && now - lastViewerCorrectionAtRef.current > 5000) {
+        lastViewerCorrectionAtRef.current = now;
+        setCurrentTime(expected);
+        setSyncNonce(now);
+      }
+      return;
+    }
+
+    setCurrentTime(seconds);
+
+    const previous = lastAdminPlayerTimeRef.current;
+    lastAdminPlayerTimeRef.current = seconds;
+    if (previous === null || !backendSalonId) return;
+
+    // Keep salon timeline fresh while admin is playing (fallback for clients).
+    const now = Date.now();
+    if (
+      isPlayingRef.current &&
+      now - lastPlaybackPersistAtRef.current >= 2000
+    ) {
+      lastPlaybackPersistAtRef.current = now;
+      void (async () => {
+        const { error } = await updateSalonState({ video_time: seconds, video_status: 'playing' });
+        if (error) {
+          console.error("Erreur heartbeat lecture salon", error);
+        }
+      })();
+    }
+
+    // Detect explicit seeks (jump) and push the new timeline to all clients.
+    const delta = Math.abs(seconds - previous);
+    if (delta < 1) return;
+    if (now - lastSeekBroadcastAtRef.current < 250) return;
+    lastSeekBroadcastAtRef.current = now;
+
+    void (async () => {
+      const { error } = await updateSalonState({ video_time: seconds, video_status: isPlayingRef.current ? 'playing' : 'paused' });
+      if (error) {
+        console.error("Erreur update seek salon", error);
+      }
+    })();
+
+    if (roomChannelRef.current) {
+      void (async () => {
+        try {
+          await roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'room_force_sync',
+            payload: {
+              by: currentUser.id,
+              at: now,
+              time: seconds,
+              videoId: currentVideo?.id || null,
+              isPlaying: isPlayingRef.current,
+              seek: true,
+              forceSeek: true,
+              forceReload: false,
+            }
+          });
+        } catch (error: any) {
+          console.error("Erreur broadcast seek", error);
+        }
+      })();
+    }
+  }, [backendSalonId, canControlVideo, currentUser.id, currentVideo?.id, updateSalonState]);
+
+  const handleAdminPlaybackStateChange = useCallback((playing: boolean) => {
+    if (!canControlVideo) return;
+
+    const prev = isPlayingRef.current;
+    setIsPlaying(playing);
+    isPlayingRef.current = playing;
+    if (prev === playing) return;
+    if (!backendSalonId) return;
+
+    const now = Date.now();
+    const time = currentTimeRef.current;
+
+    void (async () => {
+      const { error } = await updateSalonState({ video_status: playing ? 'playing' : 'paused', video_time: time });
+      if (error) {
+        console.error("Erreur update playback state", error);
+      }
+    })();
+
+    if (!roomChannelRef.current) return;
+    if (lastPlaybackBroadcastStateRef.current === playing && now - lastSeekBroadcastAtRef.current < 700) {
+      return;
+    }
+    lastPlaybackBroadcastStateRef.current = playing;
+
+    if (roomChannelRef.current) {
+      void (async () => {
+        try {
+          await roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'room_force_sync',
+            payload: {
+              by: currentUser.id,
+              at: now,
+              time,
+              isPlaying: playing,
+              forceSeek: true,
+              forceReload: false,
+            }
+          });
+        } catch (error: any) {
+          console.error("Erreur broadcast playback state", error);
+        }
+      })();
+    }
+  }, [backendSalonId, canControlVideo, currentUser.id, updateSalonState]);
+
   const handleAssignRegie = async (participantId: string, enabled: boolean) => {
     try {
       await setParticipantRole(backendSalonId || roomId, participantId, enabled ? "regie" : "member");
+      // Optimistic update in local state
       setParticipants((prev) =>
         prev.map((participant) =>
           participant.id === participantId
@@ -1140,7 +1589,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             : participant
         )
       );
-      toast.success(enabled ? "Role Regie video attribue" : "Role Regie video retire");
+      // Immediately reload from DB so the promoted user's client also gets their new role
+      await loadParticipantsSnapshot();
+      toast.success(enabled ? "🎬 Rôle Régie vidéo attribué" : "Rôle Régie vidéo retiré");
     } catch (error: any) {
       toast.error(getErrorMessage(error, "Impossible de mettre a jour le role"));
     }
@@ -1167,7 +1618,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             <Badge className="bg-red-600 text-white hover:bg-red-600 px-3 py-1 flex items-center gap-1.5">
               <Crown className="w-3 h-3" />
-              {role === null ? "..." : role === "admin" ? "Admin" : role === "regie" ? "Regie" : "Invite"}
+              {effectiveRole === null ? "..." : effectiveRole === "admin" ? "Admin" : effectiveRole === "regie" ? "Regie" : "Invite"}
             </Badge>
           </div>
         </div>
@@ -1276,12 +1727,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               canControl={canControlVideo}
               syncTime={currentTime}
               syncNonce={syncNonce}
-              onTimeUpdate={(seconds) => {
-                if (canControlVideo) setCurrentTime(seconds);
-              }}
-              onPlaybackStateChange={(playing) => {
-                if (canControlVideo) setIsPlaying(playing);
-              }}
+              onTimeUpdate={handlePlayerTimeUpdate}
+              onPlaybackStateChange={handleAdminPlaybackStateChange}
               theme={theme}
             />
           ) : (
@@ -1517,7 +1964,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                           {isAdmin && <Crown className="w-3 h-3 text-yellow-500" />}
                         </p>
                         <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
-                          {getRoleLabel(role)}
+                          {getRoleLabel(effectiveRole)}
                         </p>
                       </div>
                     </div>
@@ -1539,6 +1986,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                             <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm flex items-center gap-2`}>
                               {participant.name}
                               {participant.role === "admin" && <Crown className="w-3 h-3 text-yellow-500" />}
+                              {participant.role === "regie" && <Clapperboard className="w-3 h-3 text-red-400" />}
                             </p>
                             <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
                               {getRoleLabel(participant.role)}
@@ -1769,6 +2217,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           videos={playlist}
           onClose={() => setShowVideoManagement(false)}
           onAddVideo={handleAddVideo}
+          onAddVideosBatch={handleAddVideosBatch}
           onRemoveVideo={handleRemoveVideo}
           theme={theme}
         />
