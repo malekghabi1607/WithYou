@@ -28,12 +28,17 @@ public function register(Request $request)
         $user = new User();
         $user->id_user       = (string) Str::uuid();
         $user->username      = $data['username'];
-        $user->email         = $data['email'];
+        $user->email         = null;
+
+
+        
         $user->password_hash = Hash::make($data['password']);
         $user->password_changed_at = now();
+
         if (app()->environment('local')) {
             $user->email_verified_at = now();
         }
+
         $user->save();
 
         event(new Registered($user));
