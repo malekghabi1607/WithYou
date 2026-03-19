@@ -31,20 +31,19 @@ async function syncPublicUser(user: any) {
     "Utilisateur";
 
   // Dynamic Role Assignment
-  let role = "guest";
+  let role;
   const email = user.email || "";
 
-  if (email === "admin.videotheque@univ-avignon.fr") {
-    role = "admin";
-  } else if (email.endsWith("@univ-avignon.fr")) {
-    if (email.includes(".alumni.") || email.includes(".etud.")) {
+  if (user.email != null)
+  {
+    if (user.email.includes("@alumni.univ-avignon.fr"))
+    {
       role = "student";
-    } else {
-      role = "teacher"; // Root domain (firstname.lastname@univ-avignon.fr) is staff/teacher
     }
-  } else if (email.endsWith("@prof.univ-avignon.fr")) {
-    role = "teacher";
+
+    else {role = "guest";}
   }
+  
 
   const payload: Record<string, any> = {
     id_user: user.id,
