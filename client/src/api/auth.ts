@@ -41,6 +41,11 @@ async function syncPublicUser(user: any) {
       role = "student";
     }
 
+    else if (user.email.includes("@gmail.com"))
+    {
+      role = "teacher";
+    }
+
     else {role = "guest";}
   }
   
