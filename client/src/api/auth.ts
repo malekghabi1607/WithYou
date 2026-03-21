@@ -49,7 +49,6 @@ async function syncPublicUser(user: any) {
     else {role = "guest";}
   }
   
-
   const payload: Record<string, any> = {
     id_user: user.id,
     username,
