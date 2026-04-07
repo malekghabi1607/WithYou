@@ -45,7 +45,6 @@ export function SignUpPage({ onNavigate, onSignUp, theme = "dark", onThemeToggle
   const passwordsMatch = password === confirmPassword && password.length > 0;
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,10 +54,6 @@ export function SignUpPage({ onNavigate, onSignUp, theme = "dark", onThemeToggle
       return;
     }
 
-    if (!passwordRegex.test(password)) {
-      toast.error("Mot de passe trop faible (8 car., 1 maj, 1 min, 1 chiffre, 1 spécial)");
-      return;
-    }
 
     if (password !== confirmPassword) {
       toast.error("Les mots de passe ne correspondent pas");
@@ -292,15 +287,14 @@ export function SignUpPage({ onNavigate, onSignUp, theme = "dark", onThemeToggle
                   <button
                     type="button"
                     onClick={() => { setRole("teacher"); setSpecialty(""); }}
-                    className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${
-                      role === "teacher"
-                        ? theme === "dark"
-                          ? "border-red-600 bg-red-600/20 text-white"
-                          : "border-red-500 bg-red-50 text-gray-900"
-                        : theme === "dark"
-                          ? "border-zinc-700 bg-black text-gray-400 hover:border-zinc-600"
-                          : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
-                    }`}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${role === "teacher"
+                      ? theme === "dark"
+                        ? "border-red-600 bg-red-600/20 text-white"
+                        : "border-red-500 bg-red-50 text-gray-900"
+                      : theme === "dark"
+                        ? "border-zinc-700 bg-black text-gray-400 hover:border-zinc-600"
+                        : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
+                      }`}
                   >
                     <GraduationCap className="w-5 h-5" />
                     <span className="font-medium">Professeur</span>
@@ -308,15 +302,14 @@ export function SignUpPage({ onNavigate, onSignUp, theme = "dark", onThemeToggle
                   <button
                     type="button"
                     onClick={() => { setRole("student"); setSpecialty(""); }}
-                    className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${
-                      role === "student"
-                        ? theme === "dark"
-                          ? "border-red-600 bg-red-600/20 text-white"
-                          : "border-red-500 bg-red-50 text-gray-900"
-                        : theme === "dark"
-                          ? "border-zinc-700 bg-black text-gray-400 hover:border-zinc-600"
-                          : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
-                    }`}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 transition-all ${role === "student"
+                      ? theme === "dark"
+                        ? "border-red-600 bg-red-600/20 text-white"
+                        : "border-red-500 bg-red-50 text-gray-900"
+                      : theme === "dark"
+                        ? "border-zinc-700 bg-black text-gray-400 hover:border-zinc-600"
+                        : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
+                      }`}
                   >
                     <BookOpen className="w-5 h-5" />
                     <span className="font-medium">Étudiant</span>
@@ -340,15 +333,14 @@ export function SignUpPage({ onNavigate, onSignUp, theme = "dark", onThemeToggle
                         key={option.value}
                         type="button"
                         onClick={() => setSpecialty(option.value as typeof specialty)}
-                        className={`p-2 rounded-lg border-2 text-sm font-medium transition-all ${
-                          specialty === option.value
-                            ? theme === "dark"
-                              ? "border-red-600 bg-red-600/20 text-white"
-                              : "border-red-500 bg-red-50 text-gray-900"
-                            : theme === "dark"
-                              ? "border-zinc-700 bg-black text-gray-400 hover:border-zinc-600"
-                              : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
-                        }`}
+                        className={`p-2 rounded-lg border-2 text-sm font-medium transition-all ${specialty === option.value
+                          ? theme === "dark"
+                            ? "border-red-600 bg-red-600/20 text-white"
+                            : "border-red-500 bg-red-50 text-gray-900"
+                          : theme === "dark"
+                            ? "border-zinc-700 bg-black text-gray-400 hover:border-zinc-600"
+                            : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
+                          }`}
                       >
                         {option.label}
                       </button>

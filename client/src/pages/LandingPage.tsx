@@ -2,31 +2,26 @@
  * Projet : WithYou
  * Fichier : pages/LandingPage.tsx
  *
- * Description :
- * Page d’accueil publique (non connectée).
- * Présente :
- *    - Le concept du projet
- *    - Les fonctionnalités principales
- *    - Des boutons vers Connexion et Inscription
- *
- * Première page vue par un nouvel utilisateur.
+ * Plateforme éducative universitaire.
+ * Public cible : Étudiants & Professeurs.
  */
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/card";
 import { Header } from "../components/layouts/Header";
 import { Footer } from "../components/layouts/Footer";
-import { 
-  Play, 
-  Users, 
-  MessageCircle, 
-  Shield, 
-  Zap, 
-  Globe,
+import {
+  Play,
+  Users,
+  MessageCircle,
+  Shield,
   Crown,
-  Heart,
-  Star,
   CheckCircle,
-  ArrowRight
+  ArrowRight,
+  GraduationCap,
+  BookOpen,
+  BarChart2,
+  Video,
+  Zap,
 } from "lucide-react";
 
 interface LandingPageProps {
@@ -38,76 +33,125 @@ interface LandingPageProps {
 export function LandingPage({ onNavigate, theme = "dark", onThemeToggle }: LandingPageProps) {
   const features = [
     {
-      icon: Play,
-      title: "Synchronisation Parfaite",
-      description: "Regardez des vidéos en parfaite synchronisation avec vos amis, peu importe la distance."
+      icon: Video,
+      title: "Cours Vidéo Synchronisés",
+      description: "Professeurs et étudiants visionnent le même cours en temps réel, sans aucun décalage."
     },
     {
       icon: MessageCircle,
-      title: "Chat en Direct",
-      description: "Discutez en temps réel avec des réactions emoji et partagez vos impressions."
+      title: "Questions en Direct",
+      description: "Les étudiants posent leurs questions pendant le cours. Les professeurs répondent instantanément."
     },
     {
       icon: Users,
-      title: "Salons Illimités",
-      description: "Créez autant de salons que vous voulez, publics ou privés."
+      title: "Salons de Cours & TD",
+      description: "Créez des espaces dédiés à chaque matière, groupe ou promotion — publics ou privés."
     },
     {
       icon: Crown,
-      title: "Contrôle Administrateur",
-      description: "Gérez les permissions, modérez les membres et contrôlez la lecture."
+      title: "Contrôle Pédagogique",
+      description: "Les professeurs gèrent la lecture, les droits de parole et modèrent les participants."
+    },
+    {
+      icon: BarChart2,
+      title: "Sondages & Quiz",
+      description: "Lancez des sondages en direct pour évaluer la compréhension et engager les étudiants."
     },
     {
       icon: Shield,
-      title: "Sécurisé & Privé",
-      description: "Vos données sont protégées. Salons privés avec mot de passe."
+      title: "Environnement Sécurisé",
+      description: "Accès réservé aux membres inscrits. Données protégées, espace de confiance."
     },
-    {
-      icon: Zap,
-      title: "Ultra Rapide",
-      description: "Temps de latence minimal pour une expérience fluide et agréable."
-    }
   ];
-
-
 
   return (
     <div className={`min-h-screen flex flex-col ${theme === "dark" ? "bg-black" : "bg-white"}`}>
-      <Header 
-        currentPage="landing" 
+      <Header
+        currentPage="landing"
         onNavigate={onNavigate}
         theme={theme}
         onThemeToggle={onThemeToggle}
       />
 
-      {/* Hero Section */}
-      <section className={`relative overflow-hidden ${theme === "dark" ? "bg-gradient-to-b from-black via-red-950/20 to-black" : "bg-gradient-to-b from-gray-50 via-red-50 to-white"} py-20 md:py-32`}>
-        {/* Animated Background */}
+      {/* ─── HERO ─── */}
+      <section className={`relative overflow-hidden py-20 md:py-32 ${theme === "dark"
+          ? "bg-gradient-to-b from-black via-red-950/20 to-black"
+          : "bg-gradient-to-b from-gray-50 via-red-50 to-white"
+        }`}>
+        {/* Glow blobs */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className={`absolute top-20 left-10 w-96 h-96 ${theme === "dark" ? "bg-red-600/20" : "bg-red-300/20"} rounded-full blur-3xl animate-pulse-glow`}></div>
-          <div className={`absolute bottom-20 right-10 w-96 h-96 ${theme === "dark" ? "bg-red-800/20" : "bg-red-200/20"} rounded-full blur-3xl animate-pulse-glow`} style={{ animationDelay: '1s' }}></div>
+          <div className={`absolute top-20 left-10 w-96 h-96 ${theme === "dark" ? "bg-red-600/20" : "bg-red-300/20"} rounded-full blur-3xl animate-pulse-glow`} />
+          <div className={`absolute bottom-20 right-10 w-96 h-96 ${theme === "dark" ? "bg-red-800/20" : "bg-red-200/20"} rounded-full blur-3xl animate-pulse-glow`} style={{ animationDelay: "1s" }} />
         </div>
 
         <div className="container mx-auto px-4 relative z-10">
           <div className="text-center max-w-4xl mx-auto">
-            <h1 className={`text-4xl md:text-5xl mb-6 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-              <span className="gradient-text">Partagez vos moments vidéo</span>
+
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-red-600/40 bg-red-600/10 mb-8">
+              <GraduationCap className="w-4 h-4 text-red-400" />
+              <span className={`text-sm font-medium ${theme === "dark" ? "text-red-300" : "text-red-700"}`}>
+                Plateforme Universitaire · Étudiants &amp; Professeurs
+              </span>
+            </div>
+
+            <h1 className={`text-4xl md:text-6xl font-bold mb-6 leading-tight ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+              <span className="gradient-text">Apprenez ensemble,</span>
               <br />
-              <span className={theme === "dark" ? "text-white" : "text-gray-900"}>avec ceux que vous aimez</span>
+              <span className={theme === "dark" ? "text-white" : "text-gray-900"}>en temps réel</span>
             </h1>
-            <p className={`text-lg md:text-xl ${theme === "dark" ? "text-gray-300" : "text-gray-700"} mb-6 max-w-2xl mx-auto`}>
-              Une plateforme de visionnage collaboratif en temps réel. 
-              Synchronisez vos vidéos, chattez et profitez ensemble, même à distance.
+
+            <p className={`text-lg md:text-xl mb-4 max-w-2xl mx-auto ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
+              WithYou est la plateforme éducative qui connecte professeurs et étudiants
+              autour de vidéos pédagogiques synchronisées — cours, TD, révisions.
             </p>
-            <p className={`text-xl md:text-2xl mb-8 ${theme === "dark" ? "text-red-400" : "text-red-600"}`}>
-              100% Gratuit • Sans publicité • Sans limites
+            <p className={`text-lg mb-10 ${theme === "dark" ? "text-red-400" : "text-red-600"}`}>
+              Réservé aux membres · 100% Gratuit · Sans publicité
             </p>
-            
-            {/* Preview Image */}
-            <div className="mt-12 rounded-2xl overflow-hidden shadow-2xl max-w-3xl mx-auto">
-              <img 
-                src="https://images.unsplash.com/photo-1692188071339-2825a8a997f1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRzJTIwd2F0Y2hpbmclMjBtb3ZpZSUyMHRvZ2V0aGVyfGVufDF8fHx8MTc2NDc2NDQxNXww&ixlib=rb-4.1.0&q=80&w=1080"
-                alt="Amis regardant des vidéos ensemble"
+
+            {/* CTAs */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+              <Button
+                size="lg"
+                onClick={() => onNavigate("signup")}
+                className="bg-red-600 hover:bg-red-700 text-white group px-8"
+              >
+                <GraduationCap className="w-5 h-5 mr-2" />
+                Créer mon compte
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => onNavigate("signin")}
+                className={theme === "dark"
+                  ? "border-red-600/40 text-red-400 hover:bg-red-600/10 px-8"
+                  : "border-red-400 text-red-600 hover:bg-red-50 px-8"
+                }
+              >
+                Se connecter
+              </Button>
+            </div>
+
+            {/* Stats */}
+            <div className={`grid grid-cols-3 gap-6 max-w-lg mx-auto py-6 border-t border-b ${theme === "dark" ? "border-zinc-800" : "border-gray-200"} mb-14`}>
+              {[
+                { value: "100%", label: "Gratuit" },
+                { value: "Temps réel", label: "Synchronisation" },
+                { value: "∞", label: "Salons de cours" },
+              ].map((s, i) => (
+                <div key={i} className="text-center">
+                  <div className={`text-xl font-bold ${theme === "dark" ? "text-red-400" : "text-red-600"}`}>{s.value}</div>
+                  <div className={`text-xs mt-1 ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Preview image */}
+            <div className="rounded-2xl overflow-hidden shadow-2xl max-w-3xl mx-auto border border-red-900/20">
+              <img
+                src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
+                alt="Cours universitaire en ligne"
                 className="w-full h-auto"
               />
             </div>
@@ -115,30 +159,102 @@ export function LandingPage({ onNavigate, theme = "dark", onThemeToggle }: Landi
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className={`py-20 ${theme === "dark" ? "bg-black" : "bg-white"}`}>
+      {/* ─── POUR QUI ─── */}
+      <section className={`py-20 ${theme === "dark" ? "bg-zinc-950" : "bg-gray-50"}`}>
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className={`text-3xl md:text-4xl mb-3 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-              Fonctionnalités
+            <h2 className={`text-3xl md:text-4xl font-bold mb-3 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+              Conçu pour vous
             </h2>
             <p className={`text-lg ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-              Tout ce dont vous avez besoin pour regarder ensemble
+              Des outils adaptés aux besoins de chaque acteur de l'université
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Étudiants */}
+            <Card className={`${theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-white border-gray-200"} hover:border-red-600 transition-all duration-300`}>
+              <CardContent className="p-8">
+                <div className="w-14 h-14 bg-red-600/20 rounded-xl flex items-center justify-center mb-5">
+                  <BookOpen className="w-7 h-7 text-red-500" />
+                </div>
+                <h3 className={`text-xl font-semibold mb-4 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                  🎓 Pour les Étudiants
+                </h3>
+                <ul className="space-y-3">
+                  {[
+                    "Suivez les cours en direct, où que vous soyez",
+                    "Posez vos questions pendant la séance",
+                    "Révisez en groupe dans des salons privés",
+                    "Répondez aux quiz et sondages du professeur",
+                    "Accédez aux replays des cours enregistrés",
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-3">
+                      <CheckCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                      <span className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+
+            {/* Professeurs */}
+            <Card className={`${theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-white border-gray-200"} hover:border-red-600 transition-all duration-300`}>
+              <CardContent className="p-8">
+                <div className="w-14 h-14 bg-red-600/20 rounded-xl flex items-center justify-center mb-5">
+                  <GraduationCap className="w-7 h-7 text-red-500" />
+                </div>
+                <h3 className={`text-xl font-semibold mb-4 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                  📚 Pour les Professeurs
+                </h3>
+                <ul className="space-y-3">
+                  {[
+                    "Diffusez vos cours vidéo à toute la promotion",
+                    "Contrôlez la lecture pour tous les participants",
+                    "Modérez les échanges en temps réel",
+                    "Lancez des sondages et quiz interactifs",
+                    "Gérez les rôles et droits de chaque étudiant",
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-3">
+                      <CheckCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                      <span className={`text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── FONCTIONNALITÉS ─── */}
+      <section className={`py-20 ${theme === "dark" ? "bg-black" : "bg-white"}`}>
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className={`text-3xl md:text-4xl font-bold mb-3 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+              Fonctionnalités
+            </h2>
+            <p className={`text-lg ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+              Tout ce dont vous avez besoin pour enseigner et apprendre ensemble
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature, index) => (
               <Card
                 key={index}
-                className={`${theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-gray-50 border-gray-200"} hover:border-red-600 transition-all transform hover:scale-105 hover:-translate-y-1`}
+                className={`${theme === "dark" ? "bg-zinc-900 border-red-900/20" : "bg-gray-50 border-gray-200"} hover:border-red-600 transition-all duration-300 hover:-translate-y-1`}
               >
                 <CardContent className="p-6">
-                  <div className="w-14 h-14 bg-red-600/20 rounded-lg flex items-center justify-center mb-4">
-                    <feature.icon className="w-7 h-7 text-red-500" />
+                  <div className="w-12 h-12 bg-red-600/20 rounded-lg flex items-center justify-center mb-4">
+                    <feature.icon className="w-6 h-6 text-red-500" />
                   </div>
-                  <h3 className={`text-lg mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>{feature.title}</h3>
-                  <p className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>{feature.description}</p>
+                  <h3 className={`text-base font-semibold mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                    {feature.title}
+                  </h3>
+                  <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
+                    {feature.description}
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -146,85 +262,100 @@ export function LandingPage({ onNavigate, theme = "dark", onThemeToggle }: Landi
         </div>
       </section>
 
-      {/* How It Works */}
-      <section className={`py-20 ${theme === "dark" ? "bg-gradient-to-b from-black via-red-950/10 to-black" : "bg-gradient-to-b from-white via-red-50/30 to-gray-50"}`}>
+      {/* ─── COMMENT ÇA MARCHE ─── */}
+      <section className={`py-20 ${theme === "dark"
+          ? "bg-gradient-to-b from-black via-red-950/10 to-black"
+          : "bg-gradient-to-b from-white via-red-50/30 to-gray-50"
+        }`}>
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className={`text-3xl md:text-4xl mb-3 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+            <h2 className={`text-3xl md:text-4xl font-bold mb-3 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
               Comment ça marche
             </h2>
             <p className={`text-lg ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>
-              Commencez en 3 étapes simples
+              Démarrez en 3 étapes simples
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="text-center">
-              <div className="mb-6 rounded-xl overflow-hidden shadow-lg">
-                <img 
-                  src="https://images.unsplash.com/photo-1762330470472-d88a6565e7c1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx2aWRlbyUyMHN0cmVhbWluZyUyMGludGVyZmFjZXxlbnwxfHx8fDE3NjQ3MTAzMzd8MA&ixlib=rb-4.1.0&q=80&w=1080"
-                  alt="Interface de streaming"
-                  className="w-full h-48 object-cover"
-                />
+            {[
+              {
+                step: 1,
+                title: "Inscrivez-vous",
+                desc: "Créez votre compte étudiant ou professeur en quelques secondes avec votre email universitaire.",
+                img: "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=800",
+                alt: "Inscription universitaire",
+              },
+              {
+                step: 2,
+                title: "Rejoignez un Salon",
+                desc: "Rejoignez le salon de cours de votre matière ou créez-en un pour votre groupe de révision.",
+                img: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=800",
+                alt: "Rejoindre un cours",
+              },
+              {
+                step: 3,
+                title: "Apprenez Ensemble",
+                desc: "Regardez, posez des questions, répondez aux quiz — tout en temps réel avec vos camarades.",
+                img: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=800",
+                alt: "Apprendre ensemble",
+              },
+            ].map(({ step, title, desc, img, alt }) => (
+              <div key={step} className="text-center">
+                <div className="mb-6 rounded-xl overflow-hidden shadow-lg">
+                  <img src={img} alt={alt} className="w-full h-48 object-cover" />
+                </div>
+                <div className="w-14 h-14 bg-red-600 rounded-full flex items-center justify-center text-xl font-bold text-white mx-auto mb-4">
+                  {step}
+                </div>
+                <h3 className={`text-lg font-semibold mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                  {title}
+                </h3>
+                <p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}>{desc}</p>
               </div>
-              <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center text-2xl text-white mx-auto mb-4">
-                1
-              </div>
-              <h3 className={`text-lg mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Créez un Salon</h3>
-              <p className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
-                Créez votre salon personnalisé en quelques clics
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="mb-6 rounded-xl overflow-hidden shadow-lg">
-                <img 
-                  src="https://images.unsplash.com/photo-1601510145916-f07c8e1100eb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwZW9wbGUlMjBjaGF0dGluZyUyMG9ubGluZXxlbnwxfHx8fDE3NjQ3NjQ0MTZ8MA&ixlib=rb-4.1.0&q=80&w=1080"
-                  alt="Chat en ligne"
-                  className="w-full h-48 object-cover"
-                />
-              </div>
-              <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center text-2xl text-white mx-auto mb-4">
-                2
-              </div>
-              <h3 className={`text-lg mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Invitez vos Amis</h3>
-              <p className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
-                Partagez le lien et invitez vos proches
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="mb-6 rounded-xl overflow-hidden shadow-lg">
-                <img 
-                  src="https://images.unsplash.com/photo-1692188071339-2825a8a997f1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRzJTIwd2F0Y2hpbmclMjBtb3ZpZSUyMHRvZ2V0aGVyfGVufDF8fHx8MTc2NDc2NDQxNXww&ixlib=rb-4.1.0&q=80&w=1080"
-                  alt="Regarder ensemble"
-                  className="w-full h-48 object-cover"
-                />
-              </div>
-              <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center text-2xl text-white mx-auto mb-4">
-                3
-              </div>
-              <h3 className={`text-lg mb-2 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>Regardez Ensemble</h3>
-              <p className={theme === "dark" ? "text-gray-400" : "text-gray-600"}>
-                Profitez de moments inoubliables ensemble
-              </p>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className={`py-20 ${theme === "dark" ? "bg-gradient-to-b from-black via-red-950/20 to-black" : "bg-gradient-to-b from-gray-50 via-red-50 to-white"}`}>
-        <div className="container mx-auto px-4 text-center">
-          <h2 className={`text-3xl md:text-4xl mb-4 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-            Rejoignez WithYou dès maintenant
+      {/* ─── CTA FINAL ─── */}
+      <section className={`py-20 ${theme === "dark"
+          ? "bg-gradient-to-b from-black via-red-950/20 to-black"
+          : "bg-gradient-to-b from-gray-50 via-red-50 to-white"
+        }`}>
+        <div className="container mx-auto px-4 text-center max-w-3xl">
+          <h2 className={`text-3xl md:text-4xl font-bold mb-4 ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+            Rejoignez WithYou dès aujourd'hui
           </h2>
-          <p className={`text-lg mb-6 max-w-2xl mx-auto ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
-            La meilleure plateforme pour regarder vos vidéos préférées avec vos amis, où qu'ils soient
+          <p className={`text-lg mb-4 ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
+            La plateforme éducative qui transforme l'expérience d'apprentissage universitaire
+            pour les étudiants et les professeurs.
           </p>
-          <p className={`text-xl mb-8 ${theme === "dark" ? "text-red-400" : "text-red-600"}`}>
-            Inscription rapide • Totalement gratuit • Aucune carte bancaire
+          <p className={`text-lg mb-10 ${theme === "dark" ? "text-red-400" : "text-red-600"}`}>
+            Inscription rapide · Totalement gratuit · Accès universitaire sécurisé
           </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button
+              size="lg"
+              onClick={() => onNavigate("signup")}
+              className="bg-red-600 hover:bg-red-700 text-white group px-8"
+            >
+              <GraduationCap className="w-5 h-5 mr-2" />
+              Je m'inscris
+              <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => onNavigate("signin")}
+              className={theme === "dark"
+                ? "border-red-600/40 text-red-400 hover:bg-red-600/10 px-8"
+                : "border-red-400 text-red-600 hover:bg-red-50 px-8"
+              }
+            >
+              J'ai déjà un compte
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -232,4 +363,5 @@ export function LandingPage({ onNavigate, theme = "dark", onThemeToggle }: Landi
     </div>
   );
 }
+
 export default LandingPage;

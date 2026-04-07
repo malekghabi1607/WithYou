@@ -30,18 +30,8 @@ async function syncPublicUser(user: any, role?: string, specialty?: string) {
   const username =
     user.user_metadata?.username || user.email.split("@")[0] || "Utilisateur";
 
-  // Use provided role or fallback to user_metadata or email-based detection
-  let finalRole = role || user.user_metadata?.role;
-  if (!finalRole) {
-    const email = user.email || "";
-    if (email.includes("@alumni.univ-avignon.fr")) {
-      finalRole = "student";
-    } else if (email.includes("@gmail.com")) {
-      finalRole = "teacher";
-    } else {
-      finalRole = "guest";
-    }
-  }
+  // Role comes explicitly from the form (or user_metadata), defaulting to "guest"
+  const finalRole = role || user.user_metadata?.role || "guest";
 
   // Use provided specialty or fallback to user_metadata
   const finalSpecialty = specialty || user.user_metadata?.specialty || null;
