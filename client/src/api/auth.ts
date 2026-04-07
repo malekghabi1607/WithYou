@@ -13,6 +13,8 @@ export type RegisterPayload = {
   email: string;
   password: string;
   password_confirmation: string;
+  role: "teacher" | "student";
+  specialty: "informatique" | "physique" | "mathematiques";
 };
 
 export type RegisterResult = {
@@ -22,47 +24,45 @@ export type RegisterResult = {
   email: string;
 };
 
-async function syncPublicUser(user: any) {
+async function syncPublicUser(user: any, role?: string, specialty?: string) {
   if (!user?.id || !user?.email) return;
 
   const username =
-    user.user_metadata?.username ||
-    user.email.split("@")[0] ||
-    "Utilisateur";
+    user.user_metadata?.username || user.email.split("@")[0] || "Utilisateur";
 
-  // Dynamic Role Assignment
-  let role;
-  const email = user.email || "";
-
-  if (user.email != null)
-  {
-    if (user.email.includes("@alumni.univ-avignon.fr"))
-    {
-      role = "student";
+  // Use provided role or fallback to user_metadata or email-based detection
+  let finalRole = role || user.user_metadata?.role;
+  if (!finalRole) {
+    const email = user.email || "";
+    if (email.includes("@alumni.univ-avignon.fr")) {
+      finalRole = "student";
+    } else if (email.includes("@gmail.com")) {
+      finalRole = "teacher";
+    } else {
+      finalRole = "guest";
     }
-
-    else if (user.email.includes("@gmail.com"))
-    {
-      role = "teacher";
-    }
-
-    else {role = "guest";}
   }
-  
+
+  // Use provided specialty or fallback to user_metadata
+  const finalSpecialty = specialty || user.user_metadata?.specialty || null;
+
   const payload: Record<string, any> = {
     id_user: user.id,
     username,
     email: user.email,
     password_hash: "managed_by_supabase_auth",
     email_verified_at: user.email_confirmed_at || null,
-    role,
+    role: finalRole,
+    specialty: finalSpecialty,
   };
 
   if (user.updated_at) {
     payload.password_changed_at = user.updated_at;
   }
 
-  const { error } = await supabase.from("users").upsert(payload, { onConflict: "id_user" });
+  const { error } = await supabase
+    .from("users")
+    .upsert(payload, { onConflict: "id_user" });
 
   if (error) {
     // Do not block auth for sync issues, but keep trace.
@@ -71,7 +71,10 @@ async function syncPublicUser(user: any) {
 }
 
 /** POST /api/auth/login -> Supabase SignIn */
-export async function login(email: string, password: string): Promise<AuthToken> {
+export async function login(
+  email: string,
+  password: string,
+): Promise<AuthToken> {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
@@ -97,7 +100,9 @@ export async function login(email: string, password: string): Promise<AuthToken>
 }
 
 /** POST /api/auth/register -> Supabase SignUp */
-export async function register(payload: RegisterPayload): Promise<RegisterResult> {
+export async function register(
+  payload: RegisterPayload,
+): Promise<RegisterResult> {
   if (payload.password !== payload.password_confirmation) {
     throw new Error("Les mots de passe ne correspondent pas.");
   }
@@ -108,6 +113,8 @@ export async function register(payload: RegisterPayload): Promise<RegisterResult
     options: {
       data: {
         username: payload.username,
+        role: payload.role,
+        specialty: payload.specialty,
       },
       emailRedirectTo: `${window.location.origin}/account-confirmed`,
     },
@@ -117,7 +124,7 @@ export async function register(payload: RegisterPayload): Promise<RegisterResult
     const normalized = String(error.message || "").toLowerCase();
     if (normalized.includes("error sending confirmation email")) {
       throw new Error(
-        "Error sending confirmation email. Verify Supabase Auth email provider and redirect URL settings."
+        "Error sending confirmation email. Verify Supabase Auth email provider and redirect URL settings.",
       );
     }
     throw new Error(error.message);
@@ -137,7 +144,7 @@ export async function register(payload: RegisterPayload): Promise<RegisterResult
 
   // Do not create/update public.users before confirmation when email confirmation is required.
   if (!requiresEmailConfirmation) {
-    await syncPublicUser(data.user);
+    await syncPublicUser(data.user, payload.role, payload.specialty);
   }
 
   return {
@@ -176,7 +183,7 @@ export async function forgotPassword(email: string) {
 export async function resetPassword(payload: any) {
   // Normally requires being logged in or having a recovery token session
   const { error } = await supabase.auth.updateUser({
-    password: payload.password
+    password: payload.password,
   });
 
   if (error) throw new Error(error.message);
@@ -186,7 +193,10 @@ export async function resetPassword(payload: any) {
 
 /** GET /api/auth/me -> Supabase Get User */
 export async function me(token?: string): Promise<Json> {
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
   if (error || !user) {
     throw new Error("Aucun utilisateur connecté.");
@@ -196,40 +206,51 @@ export async function me(token?: string): Promise<Json> {
 
   // Fetch real profile from 'users' table
   const { data: publicProfile } = await supabase
-    .from('users')
-    .select('username,email_verified_at,password_changed_at,role')
-    .eq('id_user', user.id)
+    .from("users")
+    .select("username,email_verified_at,password_changed_at,role,specialty")
+    .eq("id_user", user.id)
     .maybeSingle();
 
   return {
     id: user.id,
     // Prioritize public DB username, then metadata, then email
-    username: publicProfile?.username || user.user_metadata?.username || user.email?.split('@')[0],
+    username:
+      publicProfile?.username ||
+      user.user_metadata?.username ||
+      user.email?.split("@")[0],
     email: user.email,
-    role: publicProfile?.role || 'student',
+    role: publicProfile?.role || user.user_metadata?.role || "student",
+    specialty:
+      publicProfile?.specialty || user.user_metadata?.specialty || null,
     created_at: user.created_at,
-    email_verified_at: publicProfile?.email_verified_at || user.email_confirmed_at || null,
+    email_verified_at:
+      publicProfile?.email_verified_at || user.email_confirmed_at || null,
     password_changed_at: publicProfile?.password_changed_at || null,
   };
 }
 
 /** PUT /api/auth/profile -> Update User Profile */
-export async function updateProfile(payload: { username: string; email?: string }) {
-  const { data: { user } } = await supabase.auth.getUser();
+export async function updateProfile(payload: {
+  username: string;
+  email?: string;
+}) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) throw new Error("Non connecté");
 
   // 1. Update Supabase Auth (metadata)
   const { error: authError } = await supabase.auth.updateUser({
-    data: { username: payload.username }
+    data: { username: payload.username },
     // email updates require confirmation flow usually, skipping for now unless simple
   });
   if (authError) throw authError;
 
   // 2. Update Public Users Table
   const { error: dbError } = await supabase
-    .from('users')
+    .from("users")
     .update({ username: payload.username })
-    .eq('id_user', user.id);
+    .eq("id_user", user.id);
 
   if (dbError) throw dbError;
 
