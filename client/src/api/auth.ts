@@ -31,20 +31,23 @@ async function syncPublicUser(user: any, role?: string, specialty?: string) {
     user.user_metadata?.username || user.email.split("@")[0] || "Utilisateur";
 
   // Dynamic Role Assignment
-  let role = "guest";
+  let inferredRole = "guest";
   const email = user.email || "";
 
   if (email === "admin.videotheque@univ-avignon.fr") {
-    role = "admin";
+    inferredRole = "admin";
   } else if (email.endsWith("@univ-avignon.fr")) {
     if (email.includes(".alumni.") || email.includes(".etud.")) {
-      role = "student";
+      inferredRole = "student";
     } else {
-      role = "teacher"; // Root domain (firstname.lastname@univ-avignon.fr) is staff/teacher
+      inferredRole = "teacher"; // Root domain (firstname.lastname@univ-avignon.fr) is staff/teacher
     }
   } else if (email.endsWith("@prof.univ-avignon.fr")) {
-    role = "teacher";
+    inferredRole = "teacher";
   }
+
+  const finalRole = role || user.user_metadata?.role || inferredRole;
+  const finalSpecialty = specialty || user.user_metadata?.specialty || null;
 
   const payload: Record<string, any> = {
     id_user: user.id,
