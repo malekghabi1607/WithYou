@@ -30,11 +30,21 @@ async function syncPublicUser(user: any, role?: string, specialty?: string) {
   const username =
     user.user_metadata?.username || user.email.split("@")[0] || "Utilisateur";
 
-  // Role comes explicitly from the form (or user_metadata), defaulting to "guest"
-  const finalRole = role || user.user_metadata?.role || "guest";
+  // Dynamic Role Assignment
+  let role = "guest";
+  const email = user.email || "";
 
-  // Use provided specialty or fallback to user_metadata
-  const finalSpecialty = specialty || user.user_metadata?.specialty || null;
+  if (email === "admin.videotheque@univ-avignon.fr") {
+    role = "admin";
+  } else if (email.endsWith("@univ-avignon.fr")) {
+    if (email.includes(".alumni.") || email.includes(".etud.")) {
+      role = "student";
+    } else {
+      role = "teacher"; // Root domain (firstname.lastname@univ-avignon.fr) is staff/teacher
+    }
+  } else if (email.endsWith("@prof.univ-avignon.fr")) {
+    role = "teacher";
+  }
 
   const payload: Record<string, any> = {
     id_user: user.id,
