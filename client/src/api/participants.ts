@@ -1,10 +1,20 @@
 import { supabase } from "./supabase";
 
+export interface MemberPermissions {
+  chat: boolean;
+  video: boolean;
+  playlist: boolean;
+  polls: boolean;
+  pin: boolean;
+  muted: boolean;
+}
+
 export interface ParticipantApi {
   id: string;
   name: string;
   email?: string | null;
   role: "admin" | "regie" | "member";
+  permissions?: Partial<MemberPermissions>;
   is_active: boolean;
   joined_at?: string | null;
 }
@@ -14,6 +24,19 @@ export type SalonRole = "admin" | "regie" | "member";
 function normalizeParticipantRole(role: unknown): SalonRole {
   if (role === "admin" || role === "regie") return role;
   return "member";
+}
+
+function parsePermissions(raw: any): Partial<MemberPermissions> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const toBool = (value: unknown) => value === true;
+  return {
+    chat: toBool(raw.chat),
+    video: toBool(raw.video),
+    playlist: toBool(raw.playlist),
+    polls: toBool(raw.polls),
+    pin: toBool(raw.pin),
+    muted: toBool(raw.muted),
+  };
 }
 
 function getJoinedRoomsStorageKey(userId: string) {
@@ -97,6 +120,7 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
     .select(`
       user_id,
       role,
+      permissions,
       is_active,
       join_date,
       users (
@@ -106,6 +130,24 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
       )
     `)
     .eq('salon_id', salonId));
+
+  // Backward compatibility: old schemas may not have salon_member.permissions.
+  if (error && String(error.message || "").toLowerCase().includes("permissions")) {
+    ({ data: members, error } = await supabase
+      .from('salon_member')
+      .select(`
+        user_id,
+        role,
+        is_active,
+        join_date,
+        users (
+          id_user,
+          username,
+          email
+        )
+      `)
+      .eq('salon_id', salonId));
+  }
 
   // Backward compatibility: old schemas may not have salon_member.role yet.
   if (error && String(error.message || "").toLowerCase().includes("role")) {
@@ -135,6 +177,7 @@ export async function fetchParticipants(roomId: string): Promise<ParticipantApi[
     name: item.users?.username || "Inconnu",
     email: item.users?.email,
     role: item.users?.id_user === ownerId ? "admin" : normalizeParticipantRole(item.role),
+    permissions: parsePermissions(item.permissions),
     is_active: item.is_active,
     joined_at: item.join_date
   }));
@@ -229,5 +272,29 @@ export async function setParticipantRole(
       );
     }
     throw new Error(error.message || "Impossible de mettre a jour le role");
+  }
+}
+
+export async function setParticipantPermissions(
+  roomId: string,
+  participantId: string,
+  permissions: MemberPermissions
+) {
+  const salonId = await resolveSalonId(roomId);
+
+  const { error } = await supabase
+    .from("salon_member")
+    .update({ permissions })
+    .eq("salon_id", salonId)
+    .eq("user_id", participantId);
+
+  if (error) {
+    const message = String(error.message || "");
+    if (message.includes("Could not find the 'permissions' column")) {
+      throw new Error(
+        "La colonne `salon_member.permissions` manque dans Supabase. Ajoute-la avec: ALTER TABLE public.salon_member ADD COLUMN permissions jsonb NOT NULL DEFAULT '{}'::jsonb;"
+      );
+    }
+    throw new Error(error.message || "Impossible de mettre a jour les permissions");
   }
 }

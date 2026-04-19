@@ -59,7 +59,7 @@ import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
 import { addVideoToPlaylist, addVideosToPlaylistBatch, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
-import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantRole, type SalonRole } from "../api/participants";
+import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantPermissions as setParticipantPermissionsApi, setParticipantRole, type MemberPermissions, type SalonRole } from "../api/participants";
 import { supabase } from "../api/supabase";
 
 const THUMBNAIL_MOVIE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 225' fill='none'%3E%3Crect width='400' height='225' fill='%231F2937'/%3E%3Crect x='30' y='40' width='340' height='145' rx='8' fill='%23374151'/%3E%3Cpath d='M160 100 L160 170 L220 135 Z' fill='%23DC2626'/%3E%3C/svg%3E";
@@ -78,6 +78,23 @@ interface Participant {
   status: "online" | "offline";
   avatar: string;
 }
+
+type PermissionsByParticipant = Record<string, MemberPermissions>;
+
+const buildDefaultPermissions = (role: SalonRole | null): MemberPermissions => {
+  if (role === "admin" || role === "regie") {
+    return { chat: true, video: true, playlist: true, polls: true, pin: true, muted: false };
+  }
+  return { chat: true, video: false, playlist: false, polls: false, pin: false, muted: false };
+};
+
+const normalizePermissions = (
+  role: SalonRole | null,
+  partial?: Partial<MemberPermissions> | null
+): MemberPermissions => ({
+  ...buildDefaultPermissions(role),
+  ...(partial || {}),
+});
 
 interface Message {
   id: string;
@@ -217,6 +234,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participantPermissions, setParticipantPermissionsMap] = useState<PermissionsByParticipant>({});
   const [playlist, setPlaylist] = useState<VideoInPlaylist[]>([]);
   const [playlistId, setPlaylistId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -273,11 +291,33 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     participants.find((participant) => isCurrentParticipant(participant))?.role || null;
   const effectiveRole: SalonRole | null = roleFromParticipants || role;
   const isAdmin = effectiveRole === "admin";
-  const canControlVideo = effectiveRole === "admin" || effectiveRole === "regie";
+  const selfParticipant =
+    participants.find((participant) => isCurrentParticipant(participant)) || null;
+  const currentPermissionKeyCandidates = [
+    selfParticipant?.id || null,
+    authUserId,
+    currentUser.id || null,
+  ].filter(Boolean) as string[];
+  const currentPermissionsFromMap =
+    currentPermissionKeyCandidates
+      .map((id) => participantPermissions[id])
+      .find(Boolean) || null;
+  const currentPermissions =
+    currentPermissionsFromMap ||
+    normalizePermissions(effectiveRole, null);
+  const canControlVideo =
+    effectiveRole === "admin" || effectiveRole === "regie" || currentPermissions.video;
+  const canUseChat =
+    effectiveRole === "admin" ? true : currentPermissions.chat && !currentPermissions.muted;
+  const canManagePlaylist =
+    effectiveRole === "admin" || effectiveRole === "regie" || currentPermissions.playlist;
+  const canUsePolls =
+    effectiveRole === "admin" || currentPermissions.polls;
   // Keep a ref updated so Supabase Realtime closures always see the current value
   canControlVideoRef.current = canControlVideo;
   const voteStorageKey = `room_${roomId}_videoVotes`;
   const reactionStorageKey = `room_${roomId}_messageReactions`;
+  const permissionsStorageKey = `room_${roomId}_participantPermissions`;
 
   const withFallback = async <T,>(
     primaryId: string | null,
@@ -398,6 +438,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       avatar: createAvatarDataUrl(participant.name ?? "Utilisateur"),
     }));
     setParticipants(mapped);
+    setParticipantPermissionsMap((prev) => {
+      const next: PermissionsByParticipant = {};
+      for (const participant of data || []) {
+        if (!participant?.id) continue;
+        const normalizedRole = (participant.role || "member") as SalonRole;
+        next[participant.id] = normalizePermissions(
+          normalizedRole,
+          participant.permissions || prev[participant.id]
+        );
+      }
+      return next;
+    });
   }, [backendSalonId, roomId, role, currentUser.id, currentUser.email, isCurrentParticipant]);
 
   const loadMessagesSnapshot = useCallback(async () => {
@@ -430,7 +482,20 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     if (msgError) return;
 
+    const canSenderChat = (senderId: string | null) => {
+      if (!senderId) return true;
+      const senderRole =
+        participants.find((p) => p.id === senderId)?.role || null;
+      const senderPermissions =
+        participantPermissions[senderId] || normalizePermissions(senderRole, null);
+      return senderPermissions.chat && !senderPermissions.muted;
+    };
+
     const mappedMessages = (messagesData || [])
+      .filter((msg: any) => {
+        const senderId = msg.user_id || msg.id_user || null;
+        return canSenderChat(senderId ? String(senderId) : null);
+      })
       .sort((a: any, b: any) => {
         const ta = new Date(a.sent_at || a.created_at || 0).getTime();
         const tb = new Date(b.sent_at || b.created_at || 0).getTime();
@@ -449,7 +514,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         };
       });
     setMessages(mappedMessages);
-  }, [backendSalonId, messageSalonColumn, currentUser.email, currentUser.id, currentUser.name, storedReactionsByMessage]);
+  }, [backendSalonId, messageSalonColumn, currentUser.email, currentUser.id, currentUser.name, storedReactionsByMessage, participants, participantPermissions]);
 
   const loadRoomSnapshot = useCallback(async () => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -644,6 +709,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             return typeof value === "string" && value === backendSalonId;
           });
           if (!belongsToRoom) return;
+          const senderId = newMsg?.user_id || newMsg?.id_user || null;
+          if (senderId) {
+            const sid = String(senderId);
+            const senderRole = participants.find((p) => p.id === sid)?.role || null;
+            const senderPermissions =
+              participantPermissions[sid] || normalizePermissions(senderRole, null);
+            if (!senderPermissions.chat || senderPermissions.muted) return;
+          }
           const mapped = mapDbMessageToUi(newMsg, currentUser);
           setMessages(prev => {
             if (prev.some(m => m.id === mapped.id)) return prev;
@@ -767,7 +840,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -935,11 +1008,31 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   useEffect(() => {
     try {
+      const raw = localStorage.getItem(permissionsStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === "object") {
+        setParticipantPermissionsMap(parsed as PermissionsByParticipant);
+      }
+    } catch (error) {
+      console.error("Erreur chargement permissions participants:", error);
+    }
+  }, [permissionsStorageKey]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(reactionStorageKey, JSON.stringify(storedReactionsByMessage));
     } catch (error) {
       console.error("Erreur sauvegarde reactions messages:", error);
     }
   }, [reactionStorageKey, storedReactionsByMessage]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(permissionsStorageKey, JSON.stringify(participantPermissions));
+    } catch (error) {
+      console.error("Erreur sauvegarde permissions participants:", error);
+    }
+  }, [permissionsStorageKey, participantPermissions]);
 
   useEffect(() => {
     setPlaylist((prev) =>
@@ -983,6 +1076,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !backendSalonId) return;
+    if (!canUseChat) {
+      toast.error("Le chat est désactivé pour vous");
+      return;
+    }
     if (!UUID_REGEX.test(backendSalonId)) {
       toast.error("Salon introuvable pour l'envoi du message");
       return;
@@ -1043,6 +1140,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleReactionClick = async (emoji: string) => {
+    if (!canUseChat) {
+      toast.error("Le chat est désactivé pour vous");
+      return;
+    }
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
       toast.error("Salon introuvable pour l'envoi de l'emoji");
       return;
@@ -1091,6 +1192,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleMessageReaction = (messageId: string, emoji: string) => {
+    if (!canUseChat) return;
     const userId = currentUser.id || currentUser.email || "current";
     setStoredReactionsByMessage((prev) => {
       const currentEntries = prev[messageId] || [];
@@ -1283,8 +1385,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleAddVideo = async (url: string, title: string) => {
-    if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la regie video peuvent modifier la playlist");
+    if (!canManagePlaylist) {
+      toast.error("Vous n'avez pas la permission de modifier la playlist");
       return;
     }
     try {
@@ -1317,8 +1419,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleRemoveVideo = async (videoId: string) => {
-    if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la regie video peuvent modifier la playlist");
+    if (!canManagePlaylist) {
+      toast.error("Vous n'avez pas la permission de modifier la playlist");
       return;
     }
     const videoToRemove = playlist.find(v => v.id === videoId);
@@ -1335,8 +1437,69 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
-  const handleUpdatePermissions = (updatedParticipants: Participant[]) => {
-    setParticipants(updatedParticipants);
+  const handleUpdatePermissions = (updatedParticipants: any[]) => {
+    setParticipants((prev) =>
+      prev.map((participant) => {
+        const next = updatedParticipants.find((p) => p.id === participant.id);
+        if (!next) return participant;
+        const nextRole = (next.role || participant.role) as SalonRole;
+        return { ...participant, role: nextRole };
+      })
+    );
+
+    const updates: Array<{
+      participantId: string;
+      nextPermissions: MemberPermissions;
+    }> = [];
+
+    setParticipantPermissionsMap((prev) => {
+      const nextMap = { ...prev };
+      for (const participant of updatedParticipants) {
+        const participantId = participant?.id;
+        if (!participantId || String(participantId).startsWith("current-user-")) continue;
+        const resolvedRole = (participant.role || participants.find((p) => p.id === participantId)?.role || "member") as SalonRole;
+        const nextPermissions = normalizePermissions(
+          resolvedRole,
+          participant.permissions
+        );
+        const previousPermissions = prev[participantId] || normalizePermissions(resolvedRole, null);
+        const changed =
+          JSON.stringify(previousPermissions) !== JSON.stringify(nextPermissions);
+        if (!changed) continue;
+        nextMap[participantId] = nextPermissions;
+        updates.push({
+          participantId,
+          nextPermissions,
+        });
+      }
+      return nextMap;
+    });
+
+    void (async () => {
+      // Same flow as regie: persist on salon_member then let postgres_changes propagate.
+      let saveFailures = 0;
+      for (const update of updates) {
+        try {
+          await setParticipantPermissionsApi(
+            backendSalonId || roomId,
+            update.participantId,
+            update.nextPermissions
+          );
+        } catch (error: any) {
+          saveFailures += 1;
+          const msg = String(error?.message || "");
+          if (msg.toLowerCase().includes("permission denied") || msg.toLowerCase().includes("row-level security")) {
+            toast.error("Supabase RLS bloque la mise à jour des permissions.");
+          } else {
+            toast.error(getErrorMessage(error, "Impossible de sauvegarder les permissions"));
+          }
+        }
+      }
+      await loadParticipantsSnapshot();
+      if (updates.length > 0 && saveFailures === 0) {
+        toast.success("Permissions mises à jour");
+      }
+    })();
   };
 
   const handleVoteVideo = (videoId: string) => {
@@ -1417,8 +1580,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const handleAddVideosBatch = async (items: Array<{ url: string; title: string }>) => {
-    if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la regie video peuvent modifier la playlist");
+    if (!canManagePlaylist) {
+      toast.error("Vous n'avez pas la permission de modifier la playlist");
       return;
     }
     try {
@@ -1581,6 +1744,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const handleAssignRegie = async (participantId: string, enabled: boolean) => {
     try {
       await setParticipantRole(backendSalonId || roomId, participantId, enabled ? "regie" : "member");
+      const regiePermissions = normalizePermissions(enabled ? "regie" : "member", null);
+      await setParticipantPermissionsApi(backendSalonId || roomId, participantId, regiePermissions);
       // Optimistic update in local state
       setParticipants((prev) =>
         prev.map((participant) =>
@@ -1589,6 +1754,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             : participant
         )
       );
+      setParticipantPermissionsMap((prev) => ({
+        ...prev,
+        [participantId]: regiePermissions,
+      }));
       // Immediately reload from DB so the promoted user's client also gets their new role
       await loadParticipantsSnapshot();
       toast.success(enabled ? "🎬 Rôle Régie vidéo attribué" : "Rôle Régie vidéo retiré");
@@ -1624,7 +1793,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </div>
 
         <div className="flex items-center gap-2">
-          {canControlVideo && (
+          {canManagePlaylist && (
             <Button
               type="button"
               onClick={(e) => {
@@ -1836,7 +2005,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <Users className="w-4 h-4" />
               Participants ({participantCount})
             </button><button
-              onClick={() => setActiveTab("polls")}
+              onClick={() => {
+                if (!canUsePolls) {
+                  toast.error("Les sondages sont désactivés pour vous");
+                  return;
+                }
+                setActiveTab("polls");
+              }}
               className={`flex-1 px-4 py-3 text-sm transition-colors flex items-center justify-center gap-2 ${activeTab === "polls"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
@@ -1906,6 +2081,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     <button
                       key={index}
                       onClick={() => handleReactionClick(reaction)}
+                      disabled={!canUseChat}
                       className="text-lg hover:scale-125 transition-transform"
                     >
                       {reaction}
@@ -1921,11 +2097,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                     autoComplete="off"
-                    placeholder="Message..."
+                    placeholder={canUseChat ? "Message..." : "Chat désactivé"}
+                    disabled={!canUseChat}
                     className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} flex-1 text-sm h-9`}
                   />
                   <Button
                     onClick={handleSendMessage}
+                    disabled={!canUseChat}
                     className="bg-red-600 hover:bg-red-700 text-white h-9 px-3"
                   >
                     <Send className="w-4 h-4" />
@@ -2001,13 +2179,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               </div>
             </div>
           )}
-          {activeTab === "polls" && backendSalonId && (
+          {activeTab === "polls" && backendSalonId && canUsePolls && (
             <div className="flex-1 overflow-hidden h-full">
               <PollSection
                 salonId={backendSalonId}
                 isAdmin={isAdmin}
                 currentUser={currentUser.name}
               />
+            </div>
+          )}
+          {activeTab === "polls" && !canUsePolls && (
+            <div className={`flex-1 p-4 ${theme === "dark" ? "text-gray-400" : "text-gray-700"}`}>
+              Les sondages sont désactivés pour votre compte.
             </div>
           )}
         </div>
@@ -2114,7 +2297,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               </>
             )}
 
-            {!isAdmin && canControlVideo && (
+            {!isAdmin && canManagePlaylist && (
               <>
                 <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
                 <Button
@@ -2200,9 +2383,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               name: currentUser.name,
               role: isAdmin ? "admin" : "member",
               status: "online",
-              avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%23DC2626'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E"
+              avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Ccircle cx='100' cy='100' r='100' fill='%23DC2626'/%3E%3Ccircle cx='100' cy='80' r='35' fill='white' opacity='0.9'/%3E%3Cellipse cx='100' cy='160' rx='55' ry='40' fill='white' opacity='0.9'/%3E%3C/svg%3E",
+              permissions: normalizePermissions(effectiveRole, selfParticipant?.id ? participantPermissions[selfParticipant.id] : undefined),
             },
-            ...otherParticipants
+            ...otherParticipants.map((participant) => ({
+              ...participant,
+              permissions: participantPermissions[participant.id] || normalizePermissions(participant.role, null),
+            }))
           ]}
           onClose={() => setShowPermissions(false)}
           onUpdatePermissions={handleUpdatePermissions}
@@ -2212,7 +2399,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         />
       )}
 
-      {showVideoManagement && canControlVideo && (
+      {showVideoManagement && canManagePlaylist && (
         <VideoManagementPanel
           videos={playlist}
           onClose={() => setShowVideoManagement(false)}

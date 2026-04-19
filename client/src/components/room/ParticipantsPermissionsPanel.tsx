@@ -12,7 +12,7 @@
  *   - Rôle Régie vidéo
  *   - Kick (expulser du salon)
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../ui/Button";
 import {
   X,
@@ -145,6 +145,18 @@ export function ParticipantsPermissionsPanel({
     }))
   );
 
+  useEffect(() => {
+    setParticipants(
+      initialParticipants.map((p) => ({
+        ...p,
+        permissions: {
+          ...defaultPermissions(p.role),
+          ...p.permissions,
+        },
+      }))
+    );
+  }, [initialParticipants]);
+
   // Toggle any single permission
   const togglePermission = (id: string, key: keyof MemberPermissions) => {
     setParticipants((prev) => {
@@ -172,19 +184,21 @@ export function ParticipantsPermissionsPanel({
     if (!onAssignRegie) return;
     try {
       await onAssignRegie(id, makeRegie);
-      setParticipants((prev) =>
-        prev.map((p) =>
+      setParticipants((prev) => {
+        const updated = prev.map((p) =>
           p.id === id
             ? {
-              ...p,
-              role: makeRegie ? "regie" : "member",
-              permissions: makeRegie
-                ? { chat: true, video: true, playlist: true, polls: true, pin: true, muted: false }
-                : { chat: true, video: false, playlist: false, polls: false, pin: false, muted: false },
-            }
+                ...p,
+                role: makeRegie ? "regie" : "member",
+                permissions: makeRegie
+                  ? { chat: true, video: true, playlist: true, polls: true, pin: true, muted: false }
+                  : { chat: true, video: false, playlist: false, polls: false, pin: false, muted: false },
+              }
             : p
-        )
-      );
+        );
+        onUpdatePermissions?.(updated.filter((p) => !p.id.startsWith("current-user-")));
+        return updated;
+      });
     } catch (error) {
       console.error("Impossible de mettre à jour le rôle régie", error);
     }
