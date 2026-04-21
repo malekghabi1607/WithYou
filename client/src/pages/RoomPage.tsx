@@ -25,11 +25,14 @@ import { Input } from "../components/ui/Input";
 import { Logo } from "../components/ui/Logo";
 import { PollSection } from "../components/room/PollSection";
 import {
+  BookmarkPlus,
   Play,
   Pause,
   RotateCcw,
   LogOut,
   Heart,
+  Clock3,
+  Lock,
   MessageCircle,
   Users,
   Plus,
@@ -44,7 +47,9 @@ import {
   Shield,
   History,
   Share2,
-  Clapperboard
+  Clapperboard,
+  Megaphone,
+  EyeOff
 } from "lucide-react";
 import { LeaveRoomDialog } from "./LeaveRoomDialog";
 import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
@@ -53,7 +58,11 @@ import { VideoVotePanel } from "../components/room/VideoVotePanel";
 import { ParticipantsPermissionsPanel } from "../components/room/ParticipantsPermissionsPanel";
 import { VideoManagementPanel } from "../components/room/VideoManagementPanel";
 import { VideoHistoryPanel } from "../components/room/VideoHistoryPanel";
+import { RegieActionHistoryPanel, type RegieActionEntry } from "../components/room/RegieActionHistoryPanel";
 import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
+import { RegieAnnouncementDialog } from "../components/room/RegieAnnouncementDialog";
+import { SessionLockPanel, type SessionLockState } from "../components/room/SessionLockPanel";
+import { VideoBookmarkDialog } from "../components/room/VideoBookmarkDialog";
 import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
@@ -155,6 +164,16 @@ interface VideoHistoryEntry {
   playedBy: string;
 }
 
+interface VideoBookmarkEntry {
+  id: string;
+  videoId: string;
+  videoTitle: string;
+  time: number;
+  label: string;
+  byName: string;
+  createdAt: string;
+}
+
 interface RoomPageProps {
   roomId: string;
   roomName?: string;
@@ -167,6 +186,24 @@ interface RoomPageProps {
 
 const reactions = ["❤️", "😂", "👍", "🔥", "😮", "🎉"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEFAULT_SESSION_LOCK_STATE: SessionLockState = {
+  roomLocked: false,
+  chatDisabled: false,
+  focusMode: false,
+};
+
+const formatVideoTimeLabel = (seconds: number) => {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainingSeconds = total % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
 
 const getErrorMessage = (error: any, fallback: string) => {
   const message =
@@ -245,7 +282,15 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showPermissions, setShowPermissions] = useState(false);
   const [showVideoManagement, setShowVideoManagement] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showRegieHistory, setShowRegieHistory] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showAnnouncementDialog, setShowAnnouncementDialog] = useState(false);
+  const [showSessionLockPanel, setShowSessionLockPanel] = useState(false);
+  const [showBookmarkDialog, setShowBookmarkDialog] = useState(false);
+  const [regieActionHistory, setRegieActionHistory] = useState<RegieActionEntry[]>([]);
+  const [announcementOverlay, setAnnouncementOverlay] = useState<{ message: string; byName?: string } | null>(null);
+  const [sessionLockState, setSessionLockState] = useState<SessionLockState>(DEFAULT_SESSION_LOCK_STATE);
+  const [videoBookmarks, setVideoBookmarks] = useState<VideoBookmarkEntry[]>([]);
   const [roomCode, setRoomCode] = useState<string>("");
   const [role, setRole] = useState<SalonRole | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -277,6 +322,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     playing: false,
     videoId: null,
   });
+  const announcementTimeoutRef = useRef<number | null>(null);
 
   const isCurrentParticipant = useCallback((participant: { id?: string; email?: string | null; name?: string }) => {
     const pid = participant?.id || "";
@@ -318,6 +364,81 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const voteStorageKey = `room_${roomId}_videoVotes`;
   const reactionStorageKey = `room_${roomId}_messageReactions`;
   const permissionsStorageKey = `room_${roomId}_participantPermissions`;
+  const regieHistoryStorageKey = `room_${roomId}_regie_history`;
+  const videoBookmarksStorageKey = `room_${roomId}_video_bookmarks`;
+  const sessionLockStorageKey = `room_${roomId}_session_lock_state`;
+  const backendSessionLockStorageKey =
+    backendSalonId && UUID_REGEX.test(backendSalonId) ? `room_${backendSalonId}_session_lock_state` : null;
+  const isSessionRestricted =
+    sessionLockState.roomLocked || sessionLockState.chatDisabled || sessionLockState.focusMode;
+  const isChatBlockedForViewer = !canControlVideo && (sessionLockState.chatDisabled || sessionLockState.focusMode);
+  const canSendChat = canUseChat && !isChatBlockedForViewer;
+
+  const persistRegieHistory = useCallback((entries: RegieActionEntry[]) => {
+    try {
+      localStorage.setItem(regieHistoryStorageKey, JSON.stringify(entries));
+    } catch (error) {
+      console.error("Erreur sauvegarde historique regie:", error);
+    }
+  }, [regieHistoryStorageKey]);
+
+  const persistSessionLockState = useCallback((state: SessionLockState) => {
+    try {
+      localStorage.setItem(sessionLockStorageKey, JSON.stringify(state));
+      if (backendSessionLockStorageKey) {
+        localStorage.setItem(backendSessionLockStorageKey, JSON.stringify(state));
+      }
+    } catch (error) {
+      console.error("Erreur sauvegarde verrouillage session:", error);
+    }
+  }, [backendSessionLockStorageKey, sessionLockStorageKey]);
+
+  const persistVideoBookmarks = useCallback((entries: VideoBookmarkEntry[]) => {
+    try {
+      localStorage.setItem(videoBookmarksStorageKey, JSON.stringify(entries));
+    } catch (error) {
+      console.error("Erreur sauvegarde marque-pages:", error);
+    }
+  }, [videoBookmarksStorageKey]);
+
+  const describeSessionLockState = useCallback((state: SessionLockState) => {
+    const active: string[] = [];
+    if (state.roomLocked) active.push("salle verrouillee");
+    if (state.chatDisabled) active.push("chat desactive");
+    if (state.focusMode) active.push("mode focus");
+    return active.length > 0 ? active.join(", ") : "aucune restriction active";
+  }, []);
+
+  const appendRegieAction = useCallback((entry: RegieActionEntry) => {
+    setRegieActionHistory((prev) => {
+      if (prev.some((item) => item.id === entry.id)) return prev;
+      const next = [entry, ...prev].slice(0, 100);
+      persistRegieHistory(next);
+      return next;
+    });
+  }, [persistRegieHistory]);
+
+  const appendVideoBookmark = useCallback((entry: VideoBookmarkEntry) => {
+    setVideoBookmarks((prev) => {
+      if (prev.some((item) => item.id === entry.id)) return prev;
+      const next = [entry, ...prev].slice(0, 300);
+      persistVideoBookmarks(next);
+      return next;
+    });
+  }, [persistVideoBookmarks]);
+
+  const showAnnouncementOverlay = useCallback((message: string, byName?: string) => {
+    setAnnouncementOverlay({ message, byName });
+
+    if (announcementTimeoutRef.current) {
+      window.clearTimeout(announcementTimeoutRef.current);
+    }
+
+    announcementTimeoutRef.current = window.setTimeout(() => {
+      setAnnouncementOverlay(null);
+      announcementTimeoutRef.current = null;
+    }, 5000);
+  }, []);
 
   const withFallback = async <T,>(
     primaryId: string | null,
@@ -360,6 +481,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const participantCount = otherParticipants.filter(p => p.status === "online").length + 1; // +1 pour l'utilisateur courant
   const currentVideo = playlist.find(v => v.isCurrent);
+  const currentVideoBookmarks = currentVideo
+    ? videoBookmarks
+      .filter((bookmark) => bookmark.videoId === currentVideo.id)
+      .sort((a, b) => a.time - b.time)
+    : [];
   useEffect(() => {
     messageSalonColumnRef.current = messageSalonColumn;
   }, [messageSalonColumn]);
@@ -832,6 +958,68 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           }
         }
       )
+      .on(
+        'broadcast',
+        { event: 'room_regie_notification' },
+        async (payload) => {
+          const data = payload?.payload || {};
+          if (!data?.message || data?.by === currentUser.id) return;
+
+          showAnnouncementOverlay(String(data.message), data?.byName);
+          toast.info(String(data.message), {
+            description: data?.byName ? `Annonce de ${data.byName}` : "Annonce de la regie",
+            duration: 5000,
+          });
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_regie_action' },
+        async (payload) => {
+          const entry = payload?.payload?.entry as RegieActionEntry | undefined;
+          if (!entry?.id) return;
+          appendRegieAction(entry);
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_video_bookmark_added' },
+        async (payload) => {
+          const data = payload?.payload || {};
+          const entry = data?.entry as VideoBookmarkEntry | undefined;
+          if (!entry?.id || data?.by === currentUser.id) return;
+
+          appendVideoBookmark(entry);
+          toast.info("Nouveau marque-page ajoute", {
+            description: `${entry.label} • ${formatVideoTimeLabel(entry.time)}`,
+            duration: 3500,
+          });
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_session_lock_state' },
+        async (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id || !data?.state) return;
+
+          const nextState: SessionLockState = {
+            roomLocked: Boolean(data.state.roomLocked),
+            chatDisabled: Boolean(data.state.chatDisabled),
+            focusMode: Boolean(data.state.focusMode),
+            updatedBy: data?.byName,
+            updatedAt: typeof data?.at === "number" ? data.at : Date.now(),
+          };
+
+          setSessionLockState(nextState);
+          persistSessionLockState(nextState);
+
+          toast.info("Verrouillage de session mis a jour", {
+            description: describeSessionLockState(nextState),
+            duration: 4000,
+          });
+        }
+      )
       .subscribe();
 
     roomChannelRef.current = channel;
@@ -840,7 +1028,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, showAnnouncementOverlay, describeSessionLockState, persistSessionLockState]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -857,6 +1045,78 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const interval = window.setInterval(refreshMessages, 3000);
     return () => window.clearInterval(interval);
   }, [backendSalonId, loadMessagesSnapshot]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(regieHistoryStorageKey);
+      if (!raw) {
+        setRegieActionHistory([]);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      setRegieActionHistory(Array.isArray(parsed) ? parsed : []);
+    } catch (error) {
+      console.error("Erreur chargement historique regie:", error);
+      setRegieActionHistory([]);
+    }
+  }, [regieHistoryStorageKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(videoBookmarksStorageKey);
+      if (!raw) {
+        setVideoBookmarks([]);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      setVideoBookmarks(Array.isArray(parsed) ? parsed : []);
+    } catch (error) {
+      console.error("Erreur chargement marque-pages:", error);
+      setVideoBookmarks([]);
+    }
+  }, [videoBookmarksStorageKey]);
+
+  useEffect(() => {
+    try {
+      const raw =
+        (backendSessionLockStorageKey ? localStorage.getItem(backendSessionLockStorageKey) : null) ||
+        localStorage.getItem(sessionLockStorageKey);
+
+      if (!raw) {
+        setSessionLockState(DEFAULT_SESSION_LOCK_STATE);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      setSessionLockState({
+        roomLocked: Boolean(parsed?.roomLocked),
+        chatDisabled: Boolean(parsed?.chatDisabled),
+        focusMode: Boolean(parsed?.focusMode),
+        updatedBy: parsed?.updatedBy,
+        updatedAt: parsed?.updatedAt,
+      });
+    } catch (error) {
+      console.error("Erreur chargement verrouillage session:", error);
+      setSessionLockState(DEFAULT_SESSION_LOCK_STATE);
+    }
+  }, [backendSessionLockStorageKey, sessionLockStorageKey]);
+
+  useEffect(() => {
+    if (!sessionLockState.focusMode) return;
+    if (canControlVideo) return;
+    if (activeTab !== "chat") return;
+    setActiveTab("participants");
+  }, [activeTab, canControlVideo, sessionLockState.focusMode]);
+
+  useEffect(() => {
+    return () => {
+      if (announcementTimeoutRef.current) {
+        window.clearTimeout(announcementTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -1077,7 +1337,15 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !backendSalonId) return;
     if (!canUseChat) {
-      toast.error("Le chat est désactivé pour vous");
+      toast.error("Le chat est desactive pour vous");
+      return;
+    }
+    if (isChatBlockedForViewer) {
+      toast.error(
+        sessionLockState.focusMode
+          ? "Le chat est masque pendant le mode focus"
+          : "Le chat est temporairement desactive par la regie"
+      );
       return;
     }
     if (!UUID_REGEX.test(backendSalonId)) {
@@ -1141,7 +1409,15 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleReactionClick = async (emoji: string) => {
     if (!canUseChat) {
-      toast.error("Le chat est désactivé pour vous");
+      toast.error("Le chat est desactive pour vous");
+      return;
+    }
+    if (isChatBlockedForViewer) {
+      toast.error(
+        sessionLockState.focusMode
+          ? "Les reactions sont bloquees pendant le mode focus"
+          : "Le chat est temporairement desactive par la regie"
+      );
       return;
     }
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
@@ -1193,7 +1469,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleMessageReaction = (messageId: string, emoji: string) => {
     if (!canUseChat) return;
-    const userId = currentUser.id || currentUser.email || "current";
+    if (isChatBlockedForViewer) {
+      toast.error(
+        sessionLockState.focusMode
+          ? "Les reactions sont bloquees pendant le mode focus"
+          : "Le chat est temporairement desactive par la regie"
+      );
+      return;
+    }    const userId = currentUser.id || currentUser.email || "current";
     setStoredReactionsByMessage((prev) => {
       const currentEntries = prev[messageId] || [];
       const reactionIndex = currentEntries.findIndex((entry) => entry.emoji === emoji);
@@ -1291,6 +1574,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         : `${currentUser.name} a mis en pause`,
       { icon: newPlayingState ? '▶️' : '⏸️' }
     );
+    void broadcastRegieAction(
+      newPlayingState ? "play" : "pause",
+      newPlayingState ? "Lecture relancee" : "Video mise en pause"
+    );
   };
 
   const handleToggleFavorite = async (videoId: string) => {
@@ -1351,6 +1638,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       return;
     }
 
+    let syncSucceeded = true;
     try {
       const { error: syncError } = await updateSalonState({
         video_time: currentTimeRef.current,
@@ -1379,9 +1667,225 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
       toast.success("📡 Synchronisation envoyée à tous les invités");
     } catch (error: any) {
+      syncSucceeded = false;
       toast.error(error?.message || "Erreur synchronisation");
       console.error("Erreur sync salon", error);
     }
+    if (syncSucceeded) {
+      void broadcastRegieAction("sync", "Synchronisation envoyee", "La regie a resynchronise tous les participants");
+    }
+  };
+
+  const broadcastRegieAction = async (
+    type: RegieActionEntry["type"],
+    label: string,
+    details?: string
+  ) => {
+    const entry: RegieActionEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      label,
+      details,
+      byName: currentUser.name,
+      createdAt: new Date().toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    appendRegieAction(entry);
+
+    if (!roomChannelRef.current) return;
+
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_regie_action',
+        payload: { entry }
+      });
+    } catch (error) {
+      console.error("Erreur broadcast historique regie", error);
+    }
+  };
+
+  const handleSendAnnouncement = async (message: string) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent envoyer une annonce");
+      return;
+    }
+    if (!backendSalonId || !roomChannelRef.current) {
+      toast.error("Salon introuvable pour l'envoi de l'annonce");
+      return;
+    }
+
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_regie_notification',
+        payload: {
+          by: currentUser.id,
+          byName: currentUser.name,
+          at: Date.now(),
+          message,
+        }
+      });
+
+      showAnnouncementOverlay(message, currentUser.name);
+      toast.success("Annonce envoyee a tous les participants");
+      void broadcastRegieAction("announcement", "Annonce envoyee", message);
+    } catch (error: any) {
+      console.error("Erreur annonce regie", error);
+      toast.error(error?.message || "Impossible d'envoyer l'annonce");
+      throw error;
+    }
+  };
+
+  const handleApplySessionLock = async (nextState: SessionLockState) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent modifier la session");
+      return;
+    }
+
+    const normalizedState: SessionLockState = {
+      roomLocked: Boolean(nextState.roomLocked),
+      chatDisabled: Boolean(nextState.chatDisabled),
+      focusMode: Boolean(nextState.focusMode),
+      updatedBy: currentUser.name,
+      updatedAt: Date.now(),
+    };
+
+    setSessionLockState(normalizedState);
+    persistSessionLockState(normalizedState);
+
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_session_lock_state",
+          payload: {
+            by: currentUser.id,
+            byName: currentUser.name,
+            at: normalizedState.updatedAt,
+            state: normalizedState,
+          },
+        });
+      } catch (error) {
+        console.error("Erreur broadcast verrouillage session", error);
+      }
+    }
+
+    toast.success("Verrouillage de session mis a jour");
+    void broadcastRegieAction(
+      "session_lock",
+      "Verrouillage de session mis a jour",
+      describeSessionLockState(normalizedState)
+    );
+  };
+
+  const handleAddBookmark = async (label: string) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent ajouter un marque-page");
+      return;
+    }
+    if (!currentVideo?.id) {
+      toast.error("Aucune video en cours pour ajouter un marque-page");
+      return;
+    }
+
+    const entry: VideoBookmarkEntry = {
+      id: `${currentVideo.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      videoId: currentVideo.id,
+      videoTitle: currentVideo.title,
+      time: currentTimeRef.current,
+      label,
+      byName: currentUser.name,
+      createdAt: new Date().toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    appendVideoBookmark(entry);
+
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_video_bookmark_added",
+          payload: {
+            by: currentUser.id,
+            byName: currentUser.name,
+            at: Date.now(),
+            entry,
+          },
+        });
+      } catch (error) {
+        console.error("Erreur broadcast marque-page", error);
+      }
+    }
+
+    toast.success(`Marque-page ajoute a ${formatVideoTimeLabel(entry.time)}`);
+    void broadcastRegieAction(
+      "video_bookmark",
+      "Marque-page ajoute",
+      `${entry.label} • ${formatVideoTimeLabel(entry.time)}`
+    );
+  };
+
+  const handleSeekToBookmark = async (bookmark: VideoBookmarkEntry) => {
+    if (!canControlVideo) {
+      toast.info("Seule la regie peut naviguer vers un marque-page");
+      return;
+    }
+    if (!currentVideo?.id || bookmark.videoId !== currentVideo.id) {
+      toast.error("Ce marque-page ne correspond pas a la video en cours");
+      return;
+    }
+
+    const nextTime = Math.max(0, Math.floor(bookmark.time));
+    setCurrentTime(nextTime);
+    currentTimeRef.current = nextTime;
+    setSyncNonce(Date.now());
+
+    if (backendSalonId) {
+      try {
+        const { error } = await updateSalonState({
+          video_time: nextTime,
+          video_status: isPlayingRef.current ? "playing" : "paused",
+          current_video_id: currentVideo.id,
+        });
+        if (error) throw error;
+
+        if (roomChannelRef.current) {
+          await roomChannelRef.current.send({
+            type: "broadcast",
+            event: "room_force_sync",
+            payload: {
+              by: currentUser.id,
+              at: Date.now(),
+              time: nextTime,
+              isPlaying: isPlayingRef.current,
+              videoId: currentVideo.id,
+              seek: true,
+              forceSeek: true,
+              forceReload: false,
+              explicit: true,
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Erreur navigation marque-page", error);
+        toast.error("Impossible de naviguer vers ce marque-page");
+        return;
+      }
+    }
+
+    toast.success(`Retour a ${formatVideoTimeLabel(nextTime)}`);
+    void broadcastRegieAction(
+      "video_bookmark",
+      "Navigation vers un marque-page",
+      `${bookmark.label} • ${formatVideoTimeLabel(nextTime)}`
+    );
   };
 
   const handleAddVideo = async (url: string, title: string) => {
@@ -1411,6 +1915,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         };
       });
       setPlaylist(mapped);
+      void broadcastRegieAction("video_add", "Video ajoutee", title);
       toast.success(`✅ Vidéo "${title}" ajoutée à la playlist !`);
     } catch (error) {
       toast.error(getErrorMessage(error, "Erreur ajout vidéo"));
@@ -1429,6 +1934,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       await removeVideoFromPlaylist(targetId, videoId);
       setPlaylist(prev => prev.filter(v => v.id !== videoId));
       if (videoToRemove) {
+        void broadcastRegieAction("video_remove", "Video supprimee", videoToRemove.title);
         toast.success(`🗑️ Vidéo "${videoToRemove.title}" supprimée`);
       }
     } catch (error) {
@@ -1573,6 +2079,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       }
 
+      void broadcastRegieAction("video_play", "Changement de video", video.title);
     } catch (error) {
       console.error("Erreur changement vidéo", error);
       toast.error("Impossible de changer la vidéo");
@@ -1612,6 +2119,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       } else {
         toast.success(`${result.addedCount} video(s) ajoutee(s) a la playlist`);
       }
+      void broadcastRegieAction("video_batch_add", "Ajout multiple de videos", `${result.addedCount} video(s) ajoutee(s)`);
     } catch (error: any) {
       toast.error(getErrorMessage(error, "Erreur ajout multiple de videos"));
       console.error(error);
@@ -1760,6 +2268,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }));
       // Immediately reload from DB so the promoted user's client also gets their new role
       await loadParticipantsSnapshot();
+      const participant = participants.find((item) => item.id === participantId);
+      void broadcastRegieAction(
+        "assign_regie",
+        enabled ? "Role regie attribue" : "Role regie retire",
+        participant?.name || participantId
+      );
       toast.success(enabled ? "🎬 Rôle Régie vidéo attribué" : "Rôle Régie vidéo retiré");
     } catch (error: any) {
       toast.error(getErrorMessage(error, "Impossible de mettre a jour le role"));
@@ -1883,6 +2397,43 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </div>
       </header>
 
+      {isSessionRestricted && (
+        <div className="px-4 pt-4">
+          <div
+            className={`rounded-xl border px-4 py-3 ${
+              theme === "dark" ? "border-zinc-800 bg-zinc-900" : "border-gray-200 bg-white"
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge className="bg-red-600 text-white hover:bg-red-600">Session controlee</Badge>
+              {sessionLockState.roomLocked && (
+                <span className={`inline-flex items-center gap-1 text-sm ${theme === "dark" ? "text-amber-300" : "text-amber-700"}`}>
+                  <Lock className="w-4 h-4" />
+                  Salle verrouillee
+                </span>
+              )}
+              {sessionLockState.chatDisabled && (
+                <span className={`inline-flex items-center gap-1 text-sm ${theme === "dark" ? "text-red-300" : "text-red-700"}`}>
+                  <MessageCircle className="w-4 h-4" />
+                  Chat desactive
+                </span>
+              )}
+              {sessionLockState.focusMode && (
+                <span className={`inline-flex items-center gap-1 text-sm ${theme === "dark" ? "text-blue-300" : "text-blue-700"}`}>
+                  <EyeOff className="w-4 h-4" />
+                  Mode focus actif
+                </span>
+              )}
+              {sessionLockState.updatedBy && (
+                <span className={`text-xs ${theme === "dark" ? "text-gray-500" : "text-gray-500"}`}>
+                  Maj par {sessionLockState.updatedBy}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content - SCROLL GLOBAL sur toute la page */}
       <div className="flex gap-4 p-4">
         {/* LEFT: Video + Playlist - 2/3 de l'écran */}
@@ -1898,6 +2449,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               syncNonce={syncNonce}
               onTimeUpdate={handlePlayerTimeUpdate}
               onPlaybackStateChange={handleAdminPlaybackStateChange}
+              announcementOverlay={announcementOverlay}
               theme={theme}
             />
           ) : (
@@ -1905,6 +2457,25 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1">
                 En direct
               </Badge>
+
+              {announcementOverlay && (
+                <div className="absolute inset-x-6 top-6 z-20 flex justify-center pointer-events-none">
+                  <div className="max-w-2xl rounded-2xl border border-white/10 bg-black/75 px-5 py-4 shadow-2xl backdrop-blur-md">
+                    <div className="flex items-center justify-center gap-2 text-[11px] uppercase tracking-[0.24em] text-amber-300">
+                      <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                      <span>Annonce Regie</span>
+                    </div>
+                    <p className="mt-2 text-center text-base font-medium text-white sm:text-lg">
+                      {announcementOverlay.message}
+                    </p>
+                    {announcementOverlay.byName && (
+                      <p className="mt-2 text-center text-xs text-gray-300">
+                        Envoyee par {announcementOverlay.byName}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <button
                 onClick={handlePlayPause}
@@ -1917,6 +2488,75 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   <Play className="w-10 h-10 text-white/80 ml-1" />
                 )}
               </button>
+            </div>
+          )}
+
+          {currentVideo && (
+            <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-semibold flex items-center gap-2`}>
+                    <BookmarkPlus className="w-4 h-4 text-red-500" />
+                    Marque-pages
+                  </h2>
+                  <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} mt-1 text-xs`}>
+                    Reperez les moments importants de la video en cours
+                  </p>
+                </div>
+
+                {canControlVideo && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowBookmarkDialog(true)}
+                    className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs"
+                  >
+                    <BookmarkPlus className="w-3 h-3 mr-1.5" />
+                    Ajouter
+                  </Button>
+                )}
+              </div>
+
+              {currentVideoBookmarks.length === 0 ? (
+                <div className={`mt-4 rounded-xl border px-4 py-5 text-sm ${
+                  theme === "dark" ? "border-zinc-800 bg-zinc-950/60 text-gray-400" : "border-gray-200 bg-white text-gray-600"
+                }`}>
+                  Aucun marque-page sur cette video pour l'instant.
+                </div>
+              ) : (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {currentVideoBookmarks.map((bookmark) => (
+                    <button
+                      key={bookmark.id}
+                      type="button"
+                      onClick={() => handleSeekToBookmark(bookmark)}
+                      disabled={!canControlVideo}
+                      className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                        theme === "dark"
+                          ? "border-zinc-800 bg-zinc-950/70 hover:bg-zinc-800 text-white"
+                          : "border-gray-200 bg-white hover:bg-gray-50 text-black"
+                      } disabled:cursor-default disabled:hover:bg-inherit disabled:opacity-90`}
+                    >
+                      <div className="flex items-center gap-2 text-xs">
+                        <Clock3 className="w-3.5 h-3.5 text-amber-400" />
+                        <span className={theme === "dark" ? "text-amber-300" : "text-amber-700"}>
+                          {formatVideoTimeLabel(bookmark.time)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-medium">{bookmark.label}</p>
+                      <p className={`${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'} mt-1 text-[11px]`}>
+                        {bookmark.byName} • {bookmark.createdAt}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!canControlVideo && currentVideoBookmarks.length > 0 && (
+                <p className={`${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'} mt-3 text-xs`}>
+                  Seule la regie peut relancer la lecture depuis un marque-page.
+                </p>
+              )}
             </div>
           )}
 
@@ -2025,6 +2665,28 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           {activeTab === "chat" && (
             <>
               <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(100vh - 20rem)' }}>
+                {sessionLockState.focusMode && !canControlVideo && (
+                  <div className={`rounded-xl border px-4 py-4 ${
+                    theme === "dark" ? "border-blue-900/40 bg-blue-950/20" : "border-blue-200 bg-blue-50"
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full ${
+                        theme === "dark" ? "bg-blue-500/15 text-blue-300" : "bg-blue-100 text-blue-700"
+                      }`}>
+                        <EyeOff className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-black"}`}>
+                          Mode focus active
+                        </p>
+                        <p className={`mt-1 text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
+                          La regie masque temporairement le chat pour recentrer la session sur la video.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {messages.length === 0 ? (
                   <EmptyState type="messages" theme={theme} />
                 ) : (
@@ -2044,6 +2706,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                               <button
                                 key={idx}
                                 onClick={() => handleMessageReaction(message.id, reaction.emoji)}
+                                disabled={isChatBlockedForViewer}
                                 className="text-xs bg-black/20 px-1.5 py-0.5 rounded-full flex items-center gap-1"
                               >
                                 <span>{reaction.emoji}</span>
@@ -2058,7 +2721,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                             <button
                               key={idx}
                               onClick={() => handleMessageReaction(message.id, emoji)}
-                              className="hover:scale-125 transition-transform text-sm"
+                              disabled={isChatBlockedForViewer}
+                              className="hover:scale-125 transition-transform text-sm disabled:opacity-40 disabled:hover:scale-100"
                             >
                               {emoji}
                             </button>
@@ -2081,8 +2745,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     <button
                       key={index}
                       onClick={() => handleReactionClick(reaction)}
-                      disabled={!canUseChat}
-                      className="text-lg hover:scale-125 transition-transform"
+                      disabled={!canSendChat}
+                      className="text-lg hover:scale-125 transition-transform disabled:opacity-40 disabled:hover:scale-100"
                     >
                       {reaction}
                     </button>
@@ -2091,19 +2755,36 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               </div>
 
               <div className={`p-4 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
+                {isChatBlockedForViewer && (
+                  <div className={`mb-3 rounded-lg border px-3 py-2 text-sm ${
+                    theme === "dark" ? "border-zinc-800 bg-zinc-800/70 text-gray-300" : "border-gray-200 bg-gray-50 text-gray-700"
+                  }`}>
+                    {sessionLockState.focusMode
+                      ? "Le chat est masque pendant le mode focus."
+                      : "Le chat est temporairement desactive par la regie."}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Input
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                     autoComplete="off"
-                    placeholder={canUseChat ? "Message..." : "Chat désactivé"}
-                    disabled={!canUseChat}
+                    placeholder={
+                      !canUseChat
+                        ? "Chat desactive"
+                        : sessionLockState.focusMode && !canControlVideo
+                          ? "Chat masque pendant le mode focus"
+                          : sessionLockState.chatDisabled && !canControlVideo
+                            ? "Chat desactive par la regie"
+                            : "Message..."
+                    }
+                    disabled={!canSendChat}
                     className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} flex-1 text-sm h-9`}
                   />
                   <Button
                     onClick={handleSendMessage}
-                    disabled={!canUseChat}
+                    disabled={!canSendChat}
                     className="bg-red-600 hover:bg-red-700 text-white h-9 px-3"
                   >
                     <Send className="w-4 h-4" />
@@ -2285,6 +2966,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
                 <Button
                   onClick={() => {
+                    setShowRegieHistory(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  Historique regie
+                </Button>
+
+                <Button
+                  onClick={() => {
                     setShowVideoManagement(true);
                     setShowMenu(false);
                   }}
@@ -2310,6 +3003,46 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Gérer les vidéos
+                </Button>
+              </>
+            )}
+
+            {canControlVideo && (
+              <>
+                <Button
+                  onClick={() => {
+                    setShowBookmarkDialog(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <BookmarkPlus className="w-4 h-4 mr-2" />
+                  Ajouter un marque-page
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setShowSessionLockPanel(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Lock className="w-4 h-4 mr-2" />
+                  Verrouillage session
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setShowAnnouncementDialog(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Megaphone className="w-4 h-4 mr-2" />
+                  Envoyer une annonce
                 </Button>
               </>
             )}
@@ -2428,6 +3161,46 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           theme={theme}
         />
       )}
+
+      {showRegieHistory && isAdmin && (
+        <RegieActionHistoryPanel
+          history={regieActionHistory}
+          onClose={() => setShowRegieHistory(false)}
+          theme={theme}
+        />
+      )}
+
+      {showAnnouncementDialog && (
+        <RegieAnnouncementDialog
+          isOpen={showAnnouncementDialog}
+          onClose={() => setShowAnnouncementDialog(false)}
+          onSubmit={handleSendAnnouncement}
+          theme={theme}
+        />
+      )}
+
+      {showBookmarkDialog && canControlVideo && (
+        <VideoBookmarkDialog
+          isOpen={showBookmarkDialog}
+          currentTime={currentTimeRef.current}
+          currentVideoTitle={currentVideo?.title}
+          onClose={() => setShowBookmarkDialog(false)}
+          onSubmit={handleAddBookmark}
+          theme={theme}
+        />
+      )}
+
+      {showSessionLockPanel && canControlVideo && (
+        <SessionLockPanel
+          isOpen={showSessionLockPanel}
+          value={sessionLockState}
+          onClose={() => setShowSessionLockPanel(false)}
+          onApply={handleApplySessionLock}
+          theme={theme}
+        />
+      )}
     </div>
   );
 }
+
+

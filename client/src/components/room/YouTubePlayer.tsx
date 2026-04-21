@@ -21,6 +21,7 @@ interface YouTubePlayerProps {
   syncNonce?: number;
   onTimeUpdate?: (seconds: number) => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
+  announcementOverlay?: { message: string; byName?: string } | null;
   theme?: "light" | "dark";
 }
 
@@ -33,6 +34,7 @@ export function YouTubePlayer({
   syncNonce,
   onTimeUpdate,
   onPlaybackStateChange,
+  announcementOverlay,
   theme = "dark"
 }: YouTubePlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
@@ -168,6 +170,25 @@ export function YouTubePlayer({
       <div className="relative w-full aspect-video">
         <div ref={containerRef} className="w-full h-full" />
         {!canControl && <div className="absolute inset-0 z-10" />}
+
+        {announcementOverlay && (
+          <div className="absolute inset-x-6 top-6 z-20 flex justify-center pointer-events-none">
+            <div className="max-w-2xl rounded-2xl border border-white/10 bg-black/75 px-5 py-4 shadow-2xl backdrop-blur-md">
+              <div className="flex items-center justify-center gap-2 text-[11px] uppercase tracking-[0.24em] text-amber-300">
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                <span>Annonce Regie</span>
+              </div>
+              <p className="mt-2 text-center text-base font-medium text-white sm:text-lg">
+                {announcementOverlay.message}
+              </p>
+              {announcementOverlay.byName && (
+                <p className="mt-2 text-center text-xs text-gray-300">
+                  Envoyee par {announcementOverlay.byName}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Contrôle overlay (optionnel) */}
