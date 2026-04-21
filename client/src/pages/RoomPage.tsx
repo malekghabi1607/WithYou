@@ -67,6 +67,7 @@ import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
 import { createRegieHistoryEntry, fetchRegieHistory } from "../api/regieHistory";
+import { createVideoBookmark, fetchVideoBookmarks } from "../api/videoBookmarks";
 import { addVideoToPlaylist, addVideosToPlaylistBatch, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
 import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantPermissions as setParticipantPermissionsApi, setParticipantRole, type MemberPermissions, type SalonRole } from "../api/participants";
@@ -231,6 +232,21 @@ const mergeRegieHistoryEntries = (...lists: RegieActionEntry[][]) => {
   }
 
   return merged.slice(0, 100);
+};
+
+const mergeVideoBookmarkEntries = (...lists: VideoBookmarkEntry[][]) => {
+  const seen = new Set<string>();
+  const merged: VideoBookmarkEntry[] = [];
+
+  for (const list of lists) {
+    for (const entry of list) {
+      if (!entry?.id || seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      merged.push(entry);
+    }
+  }
+
+  return merged.slice(0, 300);
 };
 
 const getErrorMessage = (error: any, fallback: string) => {
@@ -1104,20 +1120,49 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [backendSalonId, persistRegieHistory, regieHistoryStorageKey]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(videoBookmarksStorageKey);
-      if (!raw) {
-        setVideoBookmarks([]);
+    let isMounted = true;
+
+    const readLocalBookmarks = () => {
+      try {
+        const raw = localStorage.getItem(videoBookmarksStorageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.error("Erreur chargement marque-pages local:", error);
+        return [];
+      }
+    };
+
+    const loadBookmarks = async () => {
+      const localEntries = readLocalBookmarks();
+
+      if (isMounted) {
+        setVideoBookmarks(localEntries);
+      }
+
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
         return;
       }
 
-      const parsed = JSON.parse(raw);
-      setVideoBookmarks(Array.isArray(parsed) ? parsed : []);
-    } catch (error) {
-      console.error("Erreur chargement marque-pages:", error);
-      setVideoBookmarks([]);
-    }
-  }, [videoBookmarksStorageKey]);
+      try {
+        const remoteEntries = await fetchVideoBookmarks(backendSalonId);
+        if (!isMounted) return;
+
+        const merged = mergeVideoBookmarkEntries(remoteEntries, localEntries);
+        setVideoBookmarks(merged);
+        persistVideoBookmarks(merged);
+      } catch (error) {
+        console.error("Erreur chargement marque-pages base:", error);
+      }
+    };
+
+    void loadBookmarks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [backendSalonId, persistVideoBookmarks, videoBookmarksStorageKey]);
 
   useEffect(() => {
     try {
@@ -1835,9 +1880,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       toast.error("Aucune video en cours pour ajouter un marque-page");
       return;
     }
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+      toast.error("Salon introuvable pour enregistrer le marque-page");
+      return;
+    }
 
-    const entry: VideoBookmarkEntry = {
-      id: `${currentVideo.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    const draftEntry: VideoBookmarkEntry = {
+      id: createClientUuid(),
       videoId: currentVideo.id,
       videoTitle: currentVideo.title,
       time: currentTimeRef.current,
@@ -1848,6 +1897,28 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         minute: "2-digit",
       }),
     };
+
+    let entry = draftEntry;
+
+    try {
+      entry = await createVideoBookmark({
+        id: draftEntry.id,
+        salonId: backendSalonId,
+        videoId: draftEntry.videoId,
+        videoTitle: draftEntry.videoTitle,
+        time: draftEntry.time,
+        label: draftEntry.label,
+        byName: draftEntry.byName,
+        createdAt: draftEntry.createdAt,
+      });
+    } catch (error: any) {
+      console.error("Erreur sauvegarde marque-page en base", error);
+      toast.error("Marque-page non enregistre dans Supabase", {
+        description: error?.message || "Verifie la table video_bookmarks et ses policies.",
+        duration: 5000,
+      });
+      throw error;
+    }
 
     appendVideoBookmark(entry);
 
