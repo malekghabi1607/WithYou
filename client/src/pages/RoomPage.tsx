@@ -66,6 +66,7 @@ import { VideoBookmarkDialog } from "../components/room/VideoBookmarkDialog";
 import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
+import { createRegieHistoryEntry, fetchRegieHistory } from "../api/regieHistory";
 import { addVideoToPlaylist, addVideosToPlaylistBatch, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
 import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantPermissions as setParticipantPermissionsApi, setParticipantRole, type MemberPermissions, type SalonRole } from "../api/participants";
@@ -203,6 +204,33 @@ const formatVideoTimeLabel = (seconds: number) => {
   }
 
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
+
+const createClientUuid = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+};
+
+const mergeRegieHistoryEntries = (...lists: RegieActionEntry[][]) => {
+  const seen = new Set<string>();
+  const merged: RegieActionEntry[] = [];
+
+  for (const list of lists) {
+    for (const entry of list) {
+      if (!entry?.id || seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      merged.push(entry);
+    }
+  }
+
+  return merged.slice(0, 100);
 };
 
 const getErrorMessage = (error: any, fallback: string) => {
@@ -1031,20 +1059,49 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [backendSalonId, loadMessagesSnapshot]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(regieHistoryStorageKey);
-      if (!raw) {
-        setRegieActionHistory([]);
+    let isMounted = true;
+
+    const readLocalHistory = () => {
+      try {
+        const raw = localStorage.getItem(regieHistoryStorageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.error("Erreur chargement historique regie local:", error);
+        return [];
+      }
+    };
+
+    const loadRegieHistory = async () => {
+      const localEntries = readLocalHistory();
+
+      if (isMounted) {
+        setRegieActionHistory(localEntries);
+      }
+
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
         return;
       }
 
-      const parsed = JSON.parse(raw);
-      setRegieActionHistory(Array.isArray(parsed) ? parsed : []);
-    } catch (error) {
-      console.error("Erreur chargement historique regie:", error);
-      setRegieActionHistory([]);
-    }
-  }, [regieHistoryStorageKey]);
+      try {
+        const remoteEntries = await fetchRegieHistory(backendSalonId);
+        if (!isMounted) return;
+
+        const merged = mergeRegieHistoryEntries(remoteEntries, localEntries);
+        setRegieActionHistory(merged);
+        persistRegieHistory(merged);
+      } catch (error) {
+        console.error("Erreur chargement historique regie base:", error);
+      }
+    };
+
+    void loadRegieHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [backendSalonId, persistRegieHistory, regieHistoryStorageKey]);
 
   useEffect(() => {
     try {
@@ -1658,7 +1715,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     details?: string
   ) => {
     const entry: RegieActionEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: createClientUuid(),
       type,
       label,
       details,
@@ -1670,6 +1727,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     };
 
     appendRegieAction(entry);
+
+    if (backendSalonId && UUID_REGEX.test(backendSalonId)) {
+      try {
+        await createRegieHistoryEntry(backendSalonId, entry);
+      } catch (error: any) {
+        console.error("Erreur sauvegarde historique regie en base", error);
+        toast.error("Historique regie non enregistre dans Supabase", {
+          description: error?.message || "Verifie la table regie_action_history et ses policies.",
+          duration: 5000,
+        });
+      }
+    }
 
     if (!roomChannelRef.current) return;
 
