@@ -288,7 +288,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showSessionLockPanel, setShowSessionLockPanel] = useState(false);
   const [showBookmarkDialog, setShowBookmarkDialog] = useState(false);
   const [regieActionHistory, setRegieActionHistory] = useState<RegieActionEntry[]>([]);
-  const [announcementOverlay, setAnnouncementOverlay] = useState<{ message: string; byName?: string } | null>(null);
   const [sessionLockState, setSessionLockState] = useState<SessionLockState>(DEFAULT_SESSION_LOCK_STATE);
   const [videoBookmarks, setVideoBookmarks] = useState<VideoBookmarkEntry[]>([]);
   const [roomCode, setRoomCode] = useState<string>("");
@@ -322,7 +321,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     playing: false,
     videoId: null,
   });
-  const announcementTimeoutRef = useRef<number | null>(null);
 
   const isCurrentParticipant = useCallback((participant: { id?: string; email?: string | null; name?: string }) => {
     const pid = participant?.id || "";
@@ -426,19 +424,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       return next;
     });
   }, [persistVideoBookmarks]);
-
-  const showAnnouncementOverlay = useCallback((message: string, byName?: string) => {
-    setAnnouncementOverlay({ message, byName });
-
-    if (announcementTimeoutRef.current) {
-      window.clearTimeout(announcementTimeoutRef.current);
-    }
-
-    announcementTimeoutRef.current = window.setTimeout(() => {
-      setAnnouncementOverlay(null);
-      announcementTimeoutRef.current = null;
-    }, 5000);
-  }, []);
 
   const withFallback = async <T,>(
     primaryId: string | null,
@@ -965,7 +950,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           const data = payload?.payload || {};
           if (!data?.message || data?.by === currentUser.id) return;
 
-          showAnnouncementOverlay(String(data.message), data?.byName);
           toast.info(String(data.message), {
             description: data?.byName ? `Annonce de ${data.byName}` : "Annonce de la regie",
             duration: 5000,
@@ -1028,7 +1012,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, showAnnouncementOverlay, describeSessionLockState, persistSessionLockState]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, describeSessionLockState, persistSessionLockState]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -1109,14 +1093,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     if (activeTab !== "chat") return;
     setActiveTab("participants");
   }, [activeTab, canControlVideo, sessionLockState.focusMode]);
-
-  useEffect(() => {
-    return () => {
-      if (announcementTimeoutRef.current) {
-        window.clearTimeout(announcementTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -1730,7 +1706,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       });
 
-      showAnnouncementOverlay(message, currentUser.name);
       toast.success("Annonce envoyee a tous les participants");
       void broadcastRegieAction("announcement", "Annonce envoyee", message);
     } catch (error: any) {
@@ -2449,7 +2424,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               syncNonce={syncNonce}
               onTimeUpdate={handlePlayerTimeUpdate}
               onPlaybackStateChange={handleAdminPlaybackStateChange}
-              announcementOverlay={announcementOverlay}
               theme={theme}
             />
           ) : (
@@ -2457,25 +2431,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1">
                 En direct
               </Badge>
-
-              {announcementOverlay && (
-                <div className="absolute inset-x-6 top-6 z-20 flex justify-center pointer-events-none">
-                  <div className="max-w-2xl rounded-2xl border border-white/10 bg-black/75 px-5 py-4 shadow-2xl backdrop-blur-md">
-                    <div className="flex items-center justify-center gap-2 text-[11px] uppercase tracking-[0.24em] text-amber-300">
-                      <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
-                      <span>Annonce Regie</span>
-                    </div>
-                    <p className="mt-2 text-center text-base font-medium text-white sm:text-lg">
-                      {announcementOverlay.message}
-                    </p>
-                    {announcementOverlay.byName && (
-                      <p className="mt-2 text-center text-xs text-gray-300">
-                        Envoyee par {announcementOverlay.byName}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
 
               <button
                 onClick={handlePlayPause}
