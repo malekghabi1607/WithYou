@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->timestamp('password_changed_at')->nullable();
-        });
+        if (Schema::hasTable('users') && !Schema::hasColumn('users', 'password_changed_at')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->timestamp('password_changed_at')->nullable();
+            });
+        }
     }
 
     /**
@@ -21,8 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('password_changed_at');
-        });
+        if (Schema::hasTable('users') && Schema::hasColumn('users', 'password_changed_at')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('password_changed_at');
+            });
+        }
     }
 };

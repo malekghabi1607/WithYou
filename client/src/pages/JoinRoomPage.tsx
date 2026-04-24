@@ -50,6 +50,17 @@ import {
 import { toast } from "sonner";
 import { fetchSalonByCode, joinSalon } from "../api/rooms";
 
+function readSessionLock(roomId: string) {
+  if (!roomId) return null;
+  try {
+    const raw = localStorage.getItem(`room_${roomId}_session_lock_state`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.error("Impossible de lire le verrouillage de session", error);
+    return null;
+  }
+}
+
 interface JoinRoomPageProps {
   onNavigate: (page: string, data?: any) => void;
   currentUser: { email: string; name: string } | null;
@@ -84,6 +95,7 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
     setIsSearching(true);
     try {
       const room = await fetchSalonByCode(roomCode.trim());
+      const sessionLock = readSessionLock(room.id_salon);
       const roomData = {
         id: room.id_salon,
         name: room.name,
@@ -96,10 +108,13 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
         thumbnail: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400",
         rating: 0,
         password: undefined,
+        isLocked: Boolean(sessionLock?.roomLocked),
       };
       setFoundRoom(roomData);
       setIsSearching(false);
-      if (roomData.hasPassword) {
+      if (roomData.isLocked) {
+        toast.error("Cette session est actuellement verrouillee par la regie");
+      } else if (roomData.hasPassword) {
         setShowPasswordField(true);
         toast.info("🔒 Ce salon est protégé par un mot de passe");
       } else {
@@ -126,6 +141,11 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
 
     if (foundRoom.hasPassword && !roomPassword.trim()) {
       toast.error("Veuillez entrer le mot de passe du salon");
+      return;
+    }
+
+    if (foundRoom.isLocked) {
+      toast.error("La salle est temporairement verrouillee par la regie");
       return;
     }
 
@@ -266,10 +286,11 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                 {foundRoom && (
                   <Button
                     onClick={handleJoinRoom}
+                    disabled={foundRoom.isLocked}
                     className="w-full h-12 bg-green-600 hover:bg-green-700 text-white"
                   >
                     <LogIn className="w-5 h-5 mr-2" />
-                    Rejoindre le salon
+                    {foundRoom.isLocked ? "Salle verrouillee" : "Rejoindre le salon"}
                   </Button>
                 )}
 
@@ -355,6 +376,15 @@ export function JoinRoomPage({ onNavigate, currentUser, theme = "dark" }: JoinRo
                         <p className={`text-sm flex items-center gap-2 ${theme === "dark" ? "text-yellow-300" : "text-yellow-800"}`}>
                           <Lock className="w-4 h-4" />
                           Salon protégé par mot de passe
+                        </p>
+                      </div>
+                    )}
+
+                    {foundRoom.isLocked && (
+                      <div className={`p-3 rounded-lg ${theme === "dark" ? "bg-red-950/20 border border-red-900/30" : "bg-red-50 border border-red-200"}`}>
+                        <p className={`text-sm flex items-center gap-2 ${theme === "dark" ? "text-red-300" : "text-red-800"}`}>
+                          <Lock className="w-4 h-4" />
+                          Session verrouillee par la regie
                         </p>
                       </div>
                     )}

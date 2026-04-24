@@ -1,162 +1,185 @@
-
-/**
- * Projet : WithYou
- * Fichier : components/settings/RoomPollsSettings.tsx
- *
- * Description :
- * Composant permettant de créer et gérer des sondages dans un salon.
- * Il permet d’ajouter des questions, de proposer des options
- * et de visualiser les résultats des votes des membres.
- */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Label } from "../ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { Plus, Trash2, BarChart3, Eye, X } from "lucide-react";
+import { Plus, Power, BarChart3, X, Loader2 } from "lucide-react";
 import { Progress } from "../ui/progress";
 import { toast } from "sonner";
-
-interface Poll {
-  id: string;
-  question: string;
-  options: { id: string; text: string; votes: number }[];
-  totalVotes: number;
-  isActive: boolean;
-  createdAt: string;
-}
-
-const mockPolls: Poll[] = [
-  {
-    id: "1",
-    question: "Quel film regarder ensuite ?",
-    options: [
-      { id: "1a", text: "Le Parrain 2", votes: 5 },
-      { id: "1b", text: "Pulp Fiction", votes: 8 },
-      { id: "1c", text: "Forrest Gump", votes: 3 }
-    ],
-    totalVotes: 16,
-    isActive: true,
-    createdAt: "Il y a 10 min"
-  },
-  {
-    id: "2",
-    question: "À quelle heure faire la pause ?",
-    options: [
-      { id: "2a", text: "Maintenant", votes: 2 },
-      { id: "2b", text: "Dans 30 min", votes: 6 },
-      { id: "2c", text: "Pas de pause", votes: 4 }
-    ],
-    totalVotes: 12,
-    isActive: false,
-    createdAt: "Il y a 1 heure"
-  }
-];
+import { closePoll, createPoll, fetchPolls, type Poll } from "../../api/polls";
+import { supabase } from "../../api/supabase";
 
 interface RoomPollsSettingsProps {
   roomId: string;
 }
 
 export function RoomPollsSettings({ roomId }: RoomPollsSettingsProps) {
-  const [polls, setPolls] = useState<Poll[]>(mockPolls);
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [closingPollId, setClosingPollId] = useState<string | null>(null);
   const [newPoll, setNewPoll] = useState({
     question: "",
-    options: ["", ""]
+    options: ["", ""],
   });
+
+  const activePollCount = useMemo(
+    () => polls.filter((poll) => poll.is_active).length,
+    [polls]
+  );
+
+  const loadPolls = async (keepSpinner = false) => {
+    if (!keepSpinner) {
+      setLoading(true);
+    }
+
+    try {
+      const data = await fetchPolls(roomId);
+      setPolls(data);
+    } catch (error: any) {
+      console.error("Erreur chargement sondages settings:", error);
+      toast.error(error?.message || "Impossible de charger les sondages");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPolls();
+
+    const channel = supabase
+      .channel(`settings-polls-${roomId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sondages",
+          filter: `id_salon=eq.${roomId}`,
+        },
+        () => {
+          loadPolls(true);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sondage_votes",
+        },
+        () => {
+          loadPolls(true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId]);
 
   const handleAddOption = () => {
     if (newPoll.options.length < 5) {
-      setNewPoll({
-        ...newPoll,
-        options: [...newPoll.options, ""]
-      });
+      setNewPoll((current) => ({
+        ...current,
+        options: [...current.options, ""],
+      }));
     }
   };
 
   const handleRemoveOption = (index: number) => {
     if (newPoll.options.length > 2) {
-      setNewPoll({
-        ...newPoll,
-        options: newPoll.options.filter((_, i) => i !== index)
-      });
+      setNewPoll((current) => ({
+        ...current,
+        options: current.options.filter((_, i) => i !== index),
+      }));
     }
   };
 
   const handleUpdateOption = (index: number, value: string) => {
-    const updatedOptions = [...newPoll.options];
-    updatedOptions[index] = value;
-    setNewPoll({ ...newPoll, options: updatedOptions });
+    setNewPoll((current) => ({
+      ...current,
+      options: current.options.map((option, i) =>
+        i === index ? value : option
+      ),
+    }));
   };
 
-  const handleCreatePoll = () => {
+  const resetCreateForm = () => {
+    setNewPoll({ question: "", options: ["", ""] });
+    setShowCreateForm(false);
+  };
+
+  const handleCreatePoll = async () => {
     if (!newPoll.question.trim()) {
       toast.error("Veuillez entrer une question");
       return;
     }
 
-    const validOptions = newPoll.options.filter(opt => opt.trim());
+    const validOptions = newPoll.options
+      .map((option) => option.trim())
+      .filter(Boolean);
+
     if (validOptions.length < 2) {
       toast.error("Veuillez ajouter au moins 2 options");
       return;
     }
 
-    const poll: Poll = {
-      id: Date.now().toString(),
-      question: newPoll.question,
-      options: validOptions.map((text, i) => ({
-        id: `${Date.now()}-${i}`,
-        text,
-        votes: 0
-      })),
-      totalVotes: 0,
-      isActive: true,
-      createdAt: "À l&apos;instant"
-    };
-
-    setPolls([poll, ...polls]);
-    setNewPoll({ question: "", options: ["", ""] });
-    setShowCreateForm(false);
-    toast.success("Sondage créé et envoyé aux membres !");
+    setIsCreating(true);
+    try {
+      await createPoll(roomId, newPoll.question.trim(), validOptions);
+      toast.success("Sondage cree avec succes");
+      resetCreateForm();
+      await loadPolls(true);
+    } catch (error: any) {
+      console.error("Erreur creation sondage:", error);
+      toast.error(error?.message || "Impossible de creer le sondage");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleDeletePoll = (pollId: string) => {
-    setPolls(polls.filter(p => p.id !== pollId));
-    toast.success("Sondage supprimé");
+  const handleClosePoll = async (pollId: string) => {
+    setClosingPollId(pollId);
+    try {
+      await closePoll(pollId);
+      toast.success("Sondage cloture");
+      await loadPolls(true);
+    } catch (error: any) {
+      console.error("Erreur cloture sondage:", error);
+      toast.error(error?.message || "Impossible de cloturer le sondage");
+    } finally {
+      setClosingPollId(null);
+    }
   };
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <CardTitle>Gestion des sondages</CardTitle>
             <CardDescription>
-              Créez des sondages pour interagir avec les membres
+              Creez et suivez les sondages du salon ({polls.length} total,{" "}
+              {activePollCount} actif{activePollCount > 1 ? "s" : ""})
             </CardDescription>
           </div>
-          <Button onClick={() => setShowCreateForm(!showCreateForm)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nouveau sondage
+          <Button onClick={() => setShowCreateForm((current) => !current)}>
+            {showCreateForm ? (
+              <X className="w-4 h-4 mr-2" />
+            ) : (
+              <Plus className="w-4 h-4 mr-2" />
+            )}
+            {showCreateForm ? "Annuler" : "Nouveau sondage"}
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        {/* Create Form */}
         {showCreateForm && (
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg border-2 border-purple-200">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-purple-900">Créer un sondage</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowCreateForm(false)}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
             <div className="space-y-4">
               <div>
                 <Label htmlFor="question">Question</Label>
@@ -164,20 +187,27 @@ export function RoomPollsSettings({ roomId }: RoomPollsSettingsProps) {
                   id="question"
                   placeholder="Posez votre question..."
                   value={newPoll.question}
-                  onChange={(e) => setNewPoll({ ...newPoll, question: e.target.value })}
+                  onChange={(e) =>
+                    setNewPoll((current) => ({
+                      ...current,
+                      question: e.target.value,
+                    }))
+                  }
                   className="mt-1"
                 />
               </div>
 
               <div>
-                <Label>Options de réponse</Label>
+                <Label>Options de reponse</Label>
                 <div className="space-y-2 mt-2">
                   {newPoll.options.map((option, index) => (
-                    <div key={index} className="flex gap-2">
+                    <div key={`${index}-${option}`} className="flex gap-2">
                       <Input
                         placeholder={`Option ${index + 1}`}
                         value={option}
-                        onChange={(e) => handleUpdateOption(index, e.target.value)}
+                        onChange={(e) =>
+                          handleUpdateOption(index, e.target.value)
+                        }
                       />
                       {newPoll.options.length > 2 && (
                         <Button
@@ -191,6 +221,7 @@ export function RoomPollsSettings({ roomId }: RoomPollsSettingsProps) {
                     </div>
                   ))}
                 </div>
+
                 {newPoll.options.length < 5 && (
                   <Button
                     variant="outline"
@@ -204,73 +235,106 @@ export function RoomPollsSettings({ roomId }: RoomPollsSettingsProps) {
                 )}
               </div>
 
-              <Button onClick={handleCreatePoll} className="w-full">
-                Créer le sondage
+              <Button
+                onClick={handleCreatePoll}
+                className="w-full"
+                disabled={isCreating}
+              >
+                {isCreating ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                Creer le sondage
               </Button>
             </div>
           </div>
         )}
 
-        {/* Polls List */}
-        <div className="space-y-4">
-          {polls.map((poll) => (
-            <div
-              key={poll.id}
-              className="p-4 bg-white border border-gray-200 rounded-lg"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-sm">{poll.question}</h4>
-                    {poll.isActive ? (
-                      <Badge className="bg-green-500">Actif</Badge>
-                    ) : (
-                      <Badge variant="secondary">Terminé</Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    {poll.totalVotes} votes • {poll.createdAt}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeletePoll(poll.id)}
-                  className="text-red-600"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-
-              {/* Results */}
-              <div className="space-y-2">
-                {poll.options.map((option) => {
-                  const percentage = poll.totalVotes > 0 
-                    ? (option.votes / poll.totalVotes) * 100 
-                    : 0;
-                  
-                  return (
-                    <div key={option.id}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>{option.text}</span>
-                        <span className="text-gray-500">
-                          {option.votes} votes ({Math.round(percentage)}%)
-                        </span>
-                      </div>
-                      <Progress value={percentage} className="h-2" />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {polls.length === 0 && (
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          </div>
+        ) : polls.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-            <p>Aucun sondage créé</p>
-            <p className="text-sm mt-2">Créez votre premier sondage ci-dessus</p>
+            <p>Aucun sondage cree</p>
+            <p className="text-sm mt-2">
+              Cree ton premier sondage pour lancer l'interaction
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {polls.map((poll) => {
+              const totalVotes = poll.options.reduce(
+                (sum, option) => sum + option.vote_count,
+                0
+              );
+
+              return (
+                <div
+                  key={poll.id}
+                  className="p-4 bg-white border border-gray-200 rounded-lg"
+                >
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h4 className="text-sm font-medium">{poll.question}</h4>
+                        {poll.is_active ? (
+                          <Badge className="bg-green-500">Actif</Badge>
+                        ) : (
+                          <Badge variant="secondary">Cloture</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {totalVotes} vote{totalVotes > 1 ? "s" : ""} • Par{" "}
+                        {poll.creator?.username || "Utilisateur"}
+                      </p>
+                    </div>
+
+                    {poll.is_active && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleClosePoll(poll.id)}
+                        disabled={closingPollId === poll.id}
+                        className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                      >
+                        {closingPollId === poll.id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Power className="w-4 h-4 mr-2" />
+                        )}
+                        Cloturer
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {poll.options.map((option) => {
+                      const percentage =
+                        totalVotes > 0
+                          ? (option.vote_count / totalVotes) * 100
+                          : 0;
+
+                      return (
+                        <div key={option.id}>
+                          <div className="flex justify-between text-sm mb-1 gap-3">
+                            <span>{option.text}</span>
+                            <span className="text-gray-500 whitespace-nowrap">
+                              {option.vote_count} vote
+                              {option.vote_count > 1 ? "s" : ""} (
+                              {Math.round(percentage)}%)
+                            </span>
+                          </div>
+                          <Progress value={percentage} className="h-2" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>
