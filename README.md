@@ -23,6 +23,30 @@ Ce projet est développé dans le cadre du module Ingénierie Logicielle (IL –
 - 📄 Sondages et interactions simples
 - 🧭 Liste des salons publics
 
+## 🎛️ Fonctionnalités Régie (Exemple de présentation)
+
+### 1. Annonce régie
+Cette fonctionnalité permet à l’admin / régie d’envoyer un message important en direct à tous les participants.  
+Exemple : prévenir que la séance commence, qu’il y a une pause, ou qu’une nouvelle vidéo arrive.
+
+### 2. Verrouillage de session
+Cette fonctionnalité permet à la régie de contrôler la salle avec plusieurs options :
+
+- verrouiller la salle
+- désactiver le chat
+- activer le mode focus
+
+Elle sert à mieux gérer l’ambiance et le contrôle du salon pendant une séance.
+
+### 3. Historique régie
+Ajout d’un panneau qui affiche les actions importantes de la régie.  
+Exemple : annonce envoyée, pause, lecture, changement important, etc.
+
+### 4. Marque-pages vidéo
+La régie peut ajouter des repères à des moments précis de la vidéo.  
+Exemple : introduction, passage important, conclusion.  
+Cela permet de retrouver rapidement un moment clé.
+
 ## 🛠️ Technologies utilisées
 
 ### Front-end

@@ -17,10 +17,22 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";   // PAS ./routes/AppRouter.tsx
+import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import "./styles/globals.css";
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  const name = String(reason?.name || "");
+  const message = String(reason?.message || "").toLowerCase();
+  if (name === "AbortError" || message.includes("aborted")) {
+    event.preventDefault();
+  }
+});
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

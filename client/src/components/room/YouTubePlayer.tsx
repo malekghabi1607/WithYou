@@ -66,8 +66,10 @@ export function YouTubePlayer({
           playerVars: {
             autoplay: 0,
             controls: 1,
+            fs: 0,
             rel: 0,
             modestbranding: 1,
+            playsinline: 1,
           },
           events: {
             onReady: (event: any) => {
