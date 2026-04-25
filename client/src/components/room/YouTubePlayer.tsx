@@ -21,7 +21,12 @@ interface YouTubePlayerProps {
   syncNonce?: number;
   onTimeUpdate?: (seconds: number) => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
+  onEnded?: () => void;
   theme?: "light" | "dark";
+  muted?: boolean;
+  label?: string;
+  showPlayButton?: boolean;
+  showBadge?: boolean;
 }
 
 export function YouTubePlayer({
@@ -33,12 +38,32 @@ export function YouTubePlayer({
   syncNonce,
   onTimeUpdate,
   onPlaybackStateChange,
-  theme = "dark"
+  onEnded,
+  theme = "dark",
+  muted = false,
+  label = "En direct",
+  showPlayButton = true,
+  showBadge = true
 }: YouTubePlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const tickIntervalRef = useRef<number | null>(null);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
+  const onEndedRef = useRef(onEnded);
+
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+  }, [onTimeUpdate]);
+
+  useEffect(() => {
+    onPlaybackStateChangeRef.current = onPlaybackStateChange;
+  }, [onPlaybackStateChange]);
+
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
 
   useEffect(() => {
     // Vérifier si l'API YouTube est déjà chargée
@@ -64,8 +89,10 @@ export function YouTubePlayer({
         playerRef.current = new (window as any).YT.Player(containerRef.current, {
           videoId: videoId,
           playerVars: {
-            autoplay: 0,
-            controls: 1,
+            autoplay: isPlaying ? 1 : 0,
+            controls: showPlayButton ? 1 : 0,
+            mute: muted ? 1 : 0,
+            playsinline: 1,
             rel: 0,
             modestbranding: 1,
           },
@@ -76,6 +103,9 @@ export function YouTubePlayer({
                 playerRef.current = event.target;
               }
               setPlayerReady(true);
+              if (muted && typeof event?.target?.mute === "function") {
+                event.target.mute();
+              }
               if (
                 typeof syncTime === "number" &&
                 syncTime > 0 &&
@@ -89,29 +119,37 @@ export function YouTubePlayer({
               if (!yt) return;
 
               if (event.data === yt.PlayerState.PLAYING) {
-                onPlaybackStateChange?.(true);
+                onPlaybackStateChangeRef.current?.(true);
                 if (tickIntervalRef.current) {
                   window.clearInterval(tickIntervalRef.current);
                 }
                 tickIntervalRef.current = window.setInterval(() => {
                   if (!playerRef.current?.getCurrentTime) return;
                   const t = Number(playerRef.current.getCurrentTime().toFixed(2));
-                  onTimeUpdate?.(t);
+                  onTimeUpdateRef.current?.(t);
                 }, 1000);
               } else if (event.data === yt.PlayerState.BUFFERING) {
                 // Seek from scrub often goes through BUFFERING first.
                 if (playerRef.current?.getCurrentTime) {
                   const t = Number(playerRef.current.getCurrentTime().toFixed(2));
-                  onTimeUpdate?.(t);
+                  onTimeUpdateRef.current?.(t);
                 }
-              } else if (
-                event.data === yt.PlayerState.PAUSED ||
-                event.data === yt.PlayerState.ENDED
-              ) {
-                onPlaybackStateChange?.(false);
+              } else if (event.data === yt.PlayerState.ENDED) {
+                onPlaybackStateChangeRef.current?.(false);
+                onEndedRef.current?.();
                 if (playerRef.current?.getCurrentTime) {
                   const t = Number(playerRef.current.getCurrentTime().toFixed(2));
-                  onTimeUpdate?.(t);
+                  onTimeUpdateRef.current?.(t);
+                }
+                if (tickIntervalRef.current) {
+                  window.clearInterval(tickIntervalRef.current);
+                  tickIntervalRef.current = null;
+                }
+              } else if (event.data === yt.PlayerState.PAUSED) {
+                onPlaybackStateChangeRef.current?.(false);
+                if (playerRef.current?.getCurrentTime) {
+                  const t = Number(playerRef.current.getCurrentTime().toFixed(2));
+                  onTimeUpdateRef.current?.(t);
                 }
                 if (tickIntervalRef.current) {
                   window.clearInterval(tickIntervalRef.current);
@@ -138,16 +176,29 @@ export function YouTubePlayer({
   }, [videoId]);
 
   useEffect(() => {
+    if (!playerReady || !playerRef.current) return;
+
+    if (muted && typeof playerRef.current.mute === "function") {
+      playerRef.current.mute();
+    } else if (!muted && typeof playerRef.current.unMute === "function") {
+      playerRef.current.unMute();
+    }
+  }, [muted, playerReady]);
+
+  useEffect(() => {
     if (playerReady && playerRef.current) {
       const canPlay = typeof playerRef.current.playVideo === "function";
       const canPause = typeof playerRef.current.pauseVideo === "function";
       if (isPlaying && canPlay) {
+        if (muted && typeof playerRef.current.mute === "function") {
+          playerRef.current.mute();
+        }
         playerRef.current.playVideo();
       } else if (!isPlaying && canPause) {
         playerRef.current.pauseVideo();
       }
     }
-  }, [isPlaying, playerReady]);
+  }, [isPlaying, muted, playerReady]);
 
   useEffect(() => {
     if (
@@ -161,9 +212,11 @@ export function YouTubePlayer({
 
   return (
     <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden`}>
-      <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 z-10">
-        En direct
-      </Badge>
+      {showBadge && (
+        <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 z-10">
+          {label}
+        </Badge>
+      )}
       
       <div className="relative w-full aspect-video">
         <div ref={containerRef} className="w-full h-full" />
@@ -171,7 +224,8 @@ export function YouTubePlayer({
       </div>
       
       {/* Contrôle overlay (optionnel) */}
-      <div className="absolute bottom-4 right-4 z-10">
+      {showPlayButton && (
+        <div className="absolute bottom-4 right-4 z-10">
         <button 
           onClick={onPlayPause}
           disabled={!canControl}
@@ -183,7 +237,8 @@ export function YouTubePlayer({
             <Play className="w-6 h-6 text-white ml-0.5" />
           )}
         </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

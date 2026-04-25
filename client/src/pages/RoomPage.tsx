@@ -31,6 +31,7 @@ import {
   LogOut,
   Heart,
   MessageCircle,
+  Megaphone,
   Users,
   Plus,
   Send,
@@ -155,6 +156,13 @@ interface VideoHistoryEntry {
   playedBy: string;
 }
 
+interface RegieActionEntry{
+  id: string;
+  action: string;
+  details: string;
+  user: string;
+  time: string;
+}
 interface RoomPageProps {
   roomId: string;
   roomName?: string;
@@ -167,6 +175,7 @@ interface RoomPageProps {
 
 const reactions = ["❤️", "😂", "👍", "🔥", "😮", "🎉"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ANNOUNCEMENT_DURATION_MS = 20000;
 
 const getErrorMessage = (error: any, fallback: string) => {
   const message =
@@ -236,24 +245,36 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [participantPermissions, setParticipantPermissionsMap] = useState<PermissionsByParticipant>({});
   const [playlist, setPlaylist] = useState<VideoInPlaylist[]>([]);
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const [playlistId, setPlaylistId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [videoHistory, setVideoHistory] = useState<VideoHistoryEntry[]>([]);
+  const [regieActions, setRegieActions] = useState<RegieActionEntry[]>([]);
   const [showRoomInfo, setShowRoomInfo] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [showVideoVote, setShowVideoVote] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [showVideoManagement, setShowVideoManagement] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showRegieHistory, setShowRegieHistory] = useState(false);
+  const [showAnnouncementPanel, setShowAnnouncementPanel] = useState(false);
+  const [showPostVideoQuestionPanel, setShowPostVideoQuestionPanel] = useState(false);
+  const [showPostVideoQuestion, setShowPostVideoQuestion] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [roomCode, setRoomCode] = useState<string>("");
   const [role, setRole] = useState<SalonRole | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [videoVoteCounts, setVideoVoteCounts] = useState<Record<string, number>>({});
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const [announcementDraft, setAnnouncementDraft] = useState("");
+  const [postVideoQuestion, setPostVideoQuestion] = useState("");
+  const [postVideoQuestionDraft, setPostVideoQuestionDraft] = useState("");
+  const [postVideoQuestionVideoId, setPostVideoQuestionVideoId] = useState<string | null>(null);
   const [messageSalonColumn, setMessageSalonColumn] = useState<MessageRoomColumn>("salon_id");
   const [messageUserColumn, setMessageUserColumn] = useState<MessageAuthorColumn>("user_id");
   const [salonIdColumn, setSalonIdColumn] = useState<SalonIdColumn>("id_salon");
   const [storedReactionsByMessage, setStoredReactionsByMessage] = useState<MessageReactionsById>({});
+
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const roomChannelRef = useRef<any>(null);
@@ -271,6 +292,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const lastViewerCorrectionAtRef = useRef<number>(0);
   const canControlVideoRef = useRef<boolean>(false);
   const lastCurrentVideoIdRef = useRef<string | null>(null);
+  const announcementTimeoutRef = useRef<number | null>(null);
   const syncAnchorRef = useRef<{ time: number; at: number; playing: boolean; videoId?: string | null }>({
     time: 0,
     at: Date.now(),
@@ -360,6 +382,34 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const participantCount = otherParticipants.filter(p => p.status === "online").length + 1; // +1 pour l'utilisateur courant
   const currentVideo = playlist.find(v => v.isCurrent);
+  const previewVideo = previewVideoId
+    ? playlist.find((video) => video.id === previewVideoId) || null
+    : null;
+
+  const clearAnnouncementTimeout = useCallback(() => {
+    if (announcementTimeoutRef.current) {
+      window.clearTimeout(announcementTimeoutRef.current);
+      announcementTimeoutRef.current = null;
+    }
+  }, []);
+
+  const showAnnouncementForDuration = useCallback(
+    (message: string, durationMs = ANNOUNCEMENT_DURATION_MS) => {
+      clearAnnouncementTimeout();
+      setLiveAnnouncement(message);
+
+      if (!message) return;
+
+      announcementTimeoutRef.current = window.setTimeout(() => {
+        setLiveAnnouncement("");
+        announcementTimeoutRef.current = null;
+      }, durationMs);
+    },
+    [clearAnnouncementTimeout]
+  );
+
+  useEffect(() => () => clearAnnouncementTimeout(), [clearAnnouncementTimeout]);
+
   useEffect(() => {
     messageSalonColumnRef.current = messageSalonColumn;
   }, [messageSalonColumn]);
@@ -832,6 +882,41 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           }
         }
       )
+      .on(
+        'broadcast',
+        { event: 'room_announcement' },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+
+          const message = typeof data.message === "string" ? data.message : "";
+          const durationMs = Number(data.durationMs) || ANNOUNCEMENT_DURATION_MS;
+          showAnnouncementForDuration(message, durationMs);
+
+          if (message) {
+            toast.info("Annonce de la régie");
+          } else {
+            toast.info("Annonce régie retirée");
+          }
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_post_video_question' },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+
+          const question = typeof data.question === "string" ? data.question : "";
+          const videoId = data.videoId ? String(data.videoId) : null;
+          setPostVideoQuestion(question);
+          setPostVideoQuestionDraft(question);
+          setPostVideoQuestionVideoId(videoId);
+          setShowPostVideoQuestion(false);
+
+          toast.info(question ? "Question de fin de vidéo préparée" : "Question de fin de vidéo retirée");
+        }
+      )
       .subscribe();
 
     roomChannelRef.current = channel;
@@ -840,7 +925,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       roomChannelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions]);
+  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, showAnnouncementForDuration]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -1245,6 +1330,153 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     });
   };
 
+  const addRegieAction = (action: string, details: string) => {
+    const newAction: RegieActionEntry = {
+      id: Date.now().toString(),
+      action,
+      details,
+      user: currentUser.name,
+      time: new Date().toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    setRegieActions((prev) => [newAction, ...prev].slice(0, 100));
+  };
+
+  const broadcastAnnouncement = async (message: string) => {
+    showAnnouncementForDuration(message);
+
+    if (roomChannelRef.current) {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_announcement',
+        payload: {
+          by: currentUser.id,
+          at: Date.now(),
+          message,
+          durationMs: ANNOUNCEMENT_DURATION_MS,
+        },
+      });
+    }
+  };
+
+  const handlePublishAnnouncement = async () => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la régie vidéo peuvent envoyer une annonce");
+      return;
+    }
+
+    const message = announcementDraft.trim();
+    if (!message) {
+      toast.error("Écris une annonce avant de l'envoyer");
+      return;
+    }
+
+    try {
+      await broadcastAnnouncement(message);
+      addRegieAction("Annonce régie", `Annonce affichée : ${message}`);
+      setShowAnnouncementPanel(false);
+      toast.success("Annonce affichée pour tous les participants");
+    } catch (error) {
+      console.error("Erreur annonce régie", error);
+      toast.error("Impossible d'envoyer l'annonce");
+    }
+  };
+
+  const handleClearAnnouncement = async () => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la régie vidéo peuvent retirer une annonce");
+      return;
+    }
+
+    try {
+      await broadcastAnnouncement("");
+      setAnnouncementDraft("");
+      addRegieAction("Annonce régie", "Annonce retirée");
+      toast.success("Annonce retirée");
+    } catch (error) {
+      console.error("Erreur retrait annonce régie", error);
+      toast.error("Impossible de retirer l'annonce");
+    }
+  };
+
+  const broadcastPostVideoQuestion = async (question: string, videoId: string | null) => {
+    setPostVideoQuestion(question);
+    setPostVideoQuestionDraft(question);
+    setPostVideoQuestionVideoId(videoId);
+    setShowPostVideoQuestion(false);
+
+    if (roomChannelRef.current) {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_post_video_question',
+        payload: {
+          by: currentUser.id,
+          at: Date.now(),
+          question,
+          videoId,
+        },
+      });
+    }
+  };
+
+  const handleSavePostVideoQuestion = async () => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la régie vidéo peuvent préparer une question");
+      return;
+    }
+
+    if (!currentVideo?.id) {
+      toast.error("Aucune vidéo en cours pour associer la question");
+      return;
+    }
+
+    const question = postVideoQuestionDraft.trim();
+    if (!question) {
+      toast.error("Écris une question avant de l'enregistrer");
+      return;
+    }
+
+    try {
+      await broadcastPostVideoQuestion(question, currentVideo.id);
+      addRegieAction("Question après vidéo", `Question préparée : ${question}`);
+      setShowPostVideoQuestionPanel(false);
+      toast.success("Question préparée pour la fin de vidéo");
+    } catch (error) {
+      console.error("Erreur question fin de vidéo", error);
+      toast.error("Impossible d'envoyer la question");
+    }
+  };
+
+  const handleClearPostVideoQuestion = async () => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la régie vidéo peuvent retirer une question");
+      return;
+    }
+
+    try {
+      await broadcastPostVideoQuestion("", null);
+      addRegieAction("Question après vidéo", "Question retirée");
+      toast.success("Question retirée");
+    } catch (error) {
+      console.error("Erreur retrait question fin de vidéo", error);
+      toast.error("Impossible de retirer la question");
+    }
+  };
+
+  const handleMainVideoEnded = useCallback(() => {
+    if (showPostVideoQuestion) return;
+    const question = postVideoQuestion.trim();
+    if (!question) return;
+    if (postVideoQuestionVideoId && currentVideo?.id && postVideoQuestionVideoId !== currentVideo.id) return;
+
+    setShowPostVideoQuestion(true);
+    toast.info("Question de fin de vidéo affichée");
+  }, [currentVideo?.id, postVideoQuestion, postVideoQuestionVideoId, showPostVideoQuestion]);
+
+
   const handlePlayPause = async () => {
     if (!canControlVideo) {
       toast.error("Seuls l'admin ou la regie video peuvent controler la lecture");
@@ -1284,6 +1516,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         console.error('Erreur sync video:', err);
       }
     }
+
+    addRegieAction(
+      newPlayingState ? "Lecture" : "Pause",
+      newPlayingState ? "La vidéo a été lancée" : "La vidéo a été mise en pause"
+    );
 
     toast.success(
       newPlayingState
@@ -1378,6 +1615,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         });
       }
       toast.success("📡 Synchronisation envoyée à tous les invités");
+      addRegieAction("Synchronisation", "La vidéo a été synchronisée pour tous les participants");
     } catch (error: any) {
       toast.error(error?.message || "Erreur synchronisation");
       console.error("Erreur sync salon", error);
@@ -1412,6 +1650,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       });
       setPlaylist(mapped);
       toast.success(`✅ Vidéo "${title}" ajoutée à la playlist !`);
+      addRegieAction("Ajout vidéo", `Vidéo ajoutée : ${title}`);
     } catch (error) {
       toast.error(getErrorMessage(error, "Erreur ajout vidéo"));
       console.error(error);
@@ -1430,6 +1669,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setPlaylist(prev => prev.filter(v => v.id !== videoId));
       if (videoToRemove) {
         toast.success(`🗑️ Vidéo "${videoToRemove.title}" supprimée`);
+        addRegieAction("Suppression vidéo", `Vidéo supprimée : ${videoToRemove.title}`);
       }
     } catch (error) {
       toast.error(getErrorMessage(error, "Erreur suppression vidéo"));
@@ -1515,6 +1755,35 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
+  const handlePrepareVideo = (video: VideoInPlaylist) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la régie vidéo peuvent préparer une vidéo");
+      return;
+    }
+
+    if (video.isCurrent) {
+      toast.info("Cette vidéo est déjà en direct");
+      return;
+    }
+
+    setPreviewVideoId(video.id);
+    addRegieAction("Prévisualisation", `Vidéo préparée : ${video.title}`);
+    toast.info(`Vidéo préparée : ${video.title}`);
+  };
+
+  const handleTakePreview = async () => {
+    if (!previewVideo) {
+      toast.error("Aucune vidéo en aperçu");
+      return;
+    }
+
+    await handlePlayVideo(previewVideo);
+    addRegieAction("Passage antenne", `Vidéo diffusée : ${previewVideo.title}`);
+    setPreviewVideoId(null);
+  };
+
+
+
   const handlePlayVideo = async (video: VideoInPlaylist) => {
     try {
       if (!video?.id) return;
@@ -1528,11 +1797,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         icon: '🎬',
         description: `Lancée par ${currentUser.name}`,
       });
+      addRegieAction("Changement vidéo", `Nouvelle vidéo lancée : ${video.title}`);
 
       // Basculer immédiatement côté UI
       setPlaylist(prev => prev.map(v =>
         v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
       ));
+      setShowPostVideoQuestion(false);
       setCurrentTime(0);
       setIsPlaying(true);
       setSyncNonce(Date.now());
@@ -1888,37 +2159,135 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         {/* LEFT: Video + Playlist - 2/3 de l'écran */}
         <div className="flex-1 space-y-6">
           {/* Video Player */}
-          {currentVideo && currentVideo.youtubeId ? (
-            <YouTubePlayer
-              videoId={currentVideo.youtubeId}
-              isPlaying={isPlaying}
-              onPlayPause={handlePlayPause}
-              canControl={canControlVideo}
-              syncTime={currentTime}
-              syncNonce={syncNonce}
-              onTimeUpdate={handlePlayerTimeUpdate}
-              onPlaybackStateChange={handleAdminPlaybackStateChange}
-              theme={theme}
-            />
-          ) : (
-            <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden aspect-video flex items-center justify-center`}>
-              <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1">
-                En direct
-              </Badge>
+          <div className="relative">
+            {currentVideo && currentVideo.youtubeId ? (
+              <YouTubePlayer
+                videoId={currentVideo.youtubeId}
+                isPlaying={isPlaying}
+                onPlayPause={handlePlayPause}
+                canControl={canControlVideo}
+                syncTime={currentTime}
+                syncNonce={syncNonce}
+                onTimeUpdate={handlePlayerTimeUpdate}
+                onPlaybackStateChange={handleAdminPlaybackStateChange}
+                onEnded={handleMainVideoEnded}
+                theme={theme}
+              />
+            ) : (
+              <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden aspect-video flex items-center justify-center`}>
+                <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1">
+                  En direct
+                </Badge>
 
-              <button
-                onClick={handlePlayPause}
-                disabled={!canControlVideo}
-                className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all"
-              >
-                {isPlaying ? (
-                  <Pause className="w-10 h-10 text-white/80" />
-                ) : (
-                  <Play className="w-10 h-10 text-white/80 ml-1" />
-                )}
-              </button>
+                <button
+                  onClick={handlePlayPause}
+                  disabled={!canControlVideo}
+                  className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-10 h-10 text-white/80" />
+                  ) : (
+                    <Play className="w-10 h-10 text-white/80 ml-1" />
+                  )}
+                </button>
+              </div>
+            )}
+
+            {liveAnnouncement && (
+              <div className="pointer-events-none absolute left-4 right-4 top-4 z-20 flex justify-center">
+                <div className="max-w-3xl rounded-md border border-red-400/40 bg-red-600/95 px-4 py-2 shadow-xl backdrop-blur">
+                  <p className="truncate text-center text-sm font-semibold text-white">
+                    <span className="mr-2 text-white/80">ANNONCE RÉGIE</span>
+                    {liveAnnouncement}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {showPostVideoQuestion && postVideoQuestion && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-6">
+                <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-gray-200'} w-full max-w-xl rounded-xl border p-5 shadow-2xl`}>
+                  <p className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} text-xs font-semibold`}>
+                    QUESTION APRÈS VIDÉO
+                  </p>
+                  <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} mt-2 text-lg font-semibold`}>
+                    {postVideoQuestion}
+                  </p>
+                  <div className="mt-4 flex justify-end gap-2">
+                    {canControlVideo && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={handleClearPostVideoQuestion}
+                        className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                      >
+                        Retirer
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      onClick={() => setShowPostVideoQuestion(false)}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Fermer
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {canControlVideo && previewVideo?.youtubeId && (
+            <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-gray-100 border-gray-200'} border rounded-xl p-3`}>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-36 shrink-0 overflow-hidden rounded bg-black">
+                    <YouTubePlayer
+                      videoId={previewVideo.youtubeId}
+                      isPlaying={true}
+                      onPlayPause={() => {}}
+                      canControl={false}
+                      theme={theme}
+                      muted={true}
+                      label="Apercu regie"
+                      showPlayButton={false}
+                      showBadge={false}
+                    />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} text-xs font-semibold`}>
+                      APERÇU RÉGIE
+                    </p>
+                    <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium truncate`}>
+                      {previewVideo.title}
+                    </p>
+                    <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
+                      Prête à être diffusée
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleTakePreview}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Passer à l'antenne
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    onClick={() => setPreviewVideoId(null)}
+                    className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
+
 
           {/* Playlist Section - PAS DE SCROLL INTERNE, grille compacte 4 colonnes */}
           <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
@@ -1938,9 +2307,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     key={video.id}
                     onClick={() => {
                       if (canControlVideo) {
-                        handlePlayVideo(video);
+                        handlePrepareVideo(video);
                       }
                     }}
+
+
                     className={`relative group rounded-lg overflow-hidden ${video.isCurrent ? "ring-2 ring-red-600" : ""
                       } cursor-pointer hover:ring-2 hover:ring-red-400 transition-all`}
                   >
@@ -2266,6 +2637,50 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <History className="w-4 h-4 mr-2" />
               Historique des vidéos
             </Button>
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setAnnouncementDraft(liveAnnouncement);
+                  setShowAnnouncementPanel(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <Megaphone className="w-4 h-4 mr-2" />
+                Annonce régie
+              </Button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setPostVideoQuestionDraft(postVideoQuestion);
+                  setShowPostVideoQuestionPanel(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <MessageCircle className="w-4 h-4 mr-2" />
+                Question après vidéo
+              </Button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setShowRegieHistory(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <History className="w-4 h-4 mr-2" />
+                Historique régie
+              </Button>
+            )}
+
 
             {isAdmin && (
               <>
@@ -2417,6 +2832,187 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           theme={theme}
         />
       )}
+
+      {showAnnouncementPanel && canControlVideo && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md overflow-hidden shadow-2xl`}>
+            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className="flex items-center gap-2">
+                <Megaphone className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} w-5 h-5`} />
+                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
+                  Annonce régie
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowAnnouncementPanel(false)}
+                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} text-sm`}
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <textarea
+                value={announcementDraft}
+                onChange={(e) => setAnnouncementDraft(e.target.value.slice(0, 140))}
+                placeholder="Ex : Pause dans 5 minutes"
+                rows={4}
+                className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500`}
+              />
+
+              {liveAnnouncement && (
+                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
+                  <p className="text-xs uppercase text-red-500">Annonce active</p>
+                  <p className="mt-1">{liveAnnouncement}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                {liveAnnouncement && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleClearAnnouncement}
+                    className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                  >
+                    Retirer
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowAnnouncementPanel(false)}
+                  className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                >
+                  Annuler
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handlePublishAnnouncement}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Afficher
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPostVideoQuestionPanel && canControlVideo && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md overflow-hidden shadow-2xl`}>
+            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className="flex items-center gap-2">
+                <MessageCircle className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} w-5 h-5`} />
+                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
+                  Question après vidéo
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowPostVideoQuestionPanel(false)}
+                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} text-sm`}
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
+                La question sera affichée automatiquement aux participants quand la vidéo en cours se termine.
+              </p>
+
+              {currentVideo && (
+                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
+                  <p className="text-xs uppercase text-red-500">Vidéo associée</p>
+                  <p className="mt-1 truncate">{currentVideo.title}</p>
+                </div>
+              )}
+
+              <textarea
+                value={postVideoQuestionDraft}
+                onChange={(e) => setPostVideoQuestionDraft(e.target.value.slice(0, 220))}
+                placeholder="Ex : Qu'avez-vous compris de ce passage ?"
+                rows={4}
+                className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500`}
+              />
+
+              {postVideoQuestion && (
+                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
+                  <p className="text-xs uppercase text-red-500">Question préparée</p>
+                  <p className="mt-1">{postVideoQuestion}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                {postVideoQuestion && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleClearPostVideoQuestion}
+                    className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                  >
+                    Retirer
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowPostVideoQuestionPanel(false)}
+                  className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                >
+                  Annuler
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleSavePostVideoQuestion}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRegieHistory && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-md max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <h2 className="text-white text-lg">Historique régie</h2>
+              <button
+                onClick={() => setShowRegieHistory(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto max-h-[60vh]">
+              {regieActions.length === 0 ? (
+                <p className="text-gray-400 text-sm">Aucune action régie enregistrée.</p>
+              ) : (
+                regieActions.map((entry) => (
+                  <div key={entry.id} className="bg-zinc-800 rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-white text-sm font-medium">{entry.action}</p>
+                      <span className="text-gray-500 text-xs">{entry.time}</span>
+                    </div>
+                    <p className="text-gray-300 text-sm mt-1">{entry.details}</p>
+                    <p className="text-gray-500 text-xs mt-1">Par {entry.user}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ShareRoomDialog temporairement désactivé pour debug */}
       {showShareDialog && roomCode && (
