@@ -28,6 +28,18 @@ import { connectToSalon } from "./participants";
 const getSupabaseErrorMessage = (error: any, fallback: string) =>
   error?.message || error?.details || error?.hint || fallback;
 
+function createClientUuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 function getJoinedRoomsStorageKey(userId: string) {
   return `withyou_joined_salons_${userId}`;
 }
@@ -249,7 +261,7 @@ export async function createSalon(payload: {
   }
 
   // 4. Create initial Playlist (schema uses nom_salon)
-  const playlistId = crypto.randomUUID();
+  const playlistId = createClientUuid();
   const { data: playlistData, error: playlistError } = await supabase.from('playlist').insert({
     id_playlist: playlistId,
     nom_salon: salonData.name || "File d'attente",
@@ -276,7 +288,7 @@ export async function createSalon(payload: {
   if (initialVideoId && playlistData) {
     try {
       await supabase.from('playlist_video').insert({
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         id_playlist: playlistData.id_playlist,
         id_video: initialVideoId,
         position: 1,
@@ -660,7 +672,7 @@ export async function addVideoToPlaylist(
     const { error: playlistInsertError } = await supabase
       .from('playlist_video')
       .insert({
-        id: crypto.randomUUID(),
+        id: createClientUuid(),
         id_playlist: playlist.id_playlist,
         id_video: videoData.id_video,
         position: (count || 0) + 1
@@ -739,7 +751,7 @@ export async function addVideosToPlaylistBatch(
       const { error: playlistInsertError } = await supabase
         .from('playlist_video')
         .insert({
-          id: crypto.randomUUID(),
+          id: createClientUuid(),
           id_playlist: playlist.id_playlist,
           id_video: videoData.id_video,
           position

@@ -36,9 +36,12 @@ import { useLiveTranscription } from "../hooks/useLiveTranscription";
 import { useYouTubeCaptions } from "../hooks/useYouTubeCaptions";
 import { computeContentScore, generateDiscussionQuestions } from "../utils/videoContentScore";
 import {
+  BookmarkPlus,
   Play,
   Pause,
   RotateCcw,
+  AlertTriangle,
+  Lock,
   LogOut,
   Heart,
   MessageCircle,
@@ -51,6 +54,7 @@ import {
   Sun,
   Moon,
   Info,
+  Gauge,
   ThumbsUp,
   BarChart3,
   Shield,
@@ -60,7 +64,9 @@ import {
   LayoutList,
   Volume2,
   Mic,
-  MicOff
+  MicOff,
+  EyeOff,
+  Sparkles
 } from "lucide-react";
 import { LeaveRoomDialog } from "./LeaveRoomDialog";
 import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
@@ -70,10 +76,25 @@ import { ParticipantsPermissionsPanel } from "../components/room/ParticipantsPer
 import { SpeakingRequestsPanel, type SpeakingRequestEntry } from "../components/room/SpeakingRequestsPanel";
 import { VideoManagementPanel } from "../components/room/VideoManagementPanel";
 import { VideoHistoryPanel } from "../components/room/VideoHistoryPanel";
+import { ComprehensionBarometerPanel } from "../components/room/ComprehensionBarometerPanel";
+import { RegieActionHistoryPanel, type RegieActionEntry } from "../components/room/RegieActionHistoryPanel";
 import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
+import { RegieAnnouncementDialog } from "../components/room/RegieAnnouncementDialog";
+import { SessionLockPanel, type SessionLockState } from "../components/room/SessionLockPanel";
+import { SessionInterludePanel, type SessionInterludeDraft } from "../components/room/SessionInterludePanel";
+import { VideoBookmarkDialog } from "../components/room/VideoBookmarkDialog";
 import { YouTubePlayer } from "../components/room/YouTubePlayer";
 import { EmptyState } from "../components/room/EmptyStates";
 import { toast } from "sonner";
+import {
+  fetchComprehensionSignals,
+  upsertComprehensionSignal,
+  type ComprehensionSignalEntry,
+  type ComprehensionSignalStatus,
+} from "../api/comprehensionSignals";
+import { createRegieHistoryEntry, fetchRegieHistory } from "../api/regieHistory";
+import { fetchSessionInterlude, upsertSessionInterlude, type SessionInterludeState as PersistedSessionInterludeState } from "../api/sessionInterlude";
+import { createVideoBookmark, fetchVideoBookmarks } from "../api/videoBookmarks";
 import { addVideoToPlaylist, addVideosToPlaylistBatch, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
 import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantPermissions as setParticipantPermissionsApi, setParticipantRole, type MemberPermissions, type SalonRole } from "../api/participants";
@@ -172,7 +193,7 @@ interface VideoHistoryEntry {
   playedBy: string;
 }
 
-interface RegieActionEntry {
+interface LegacyRegieActionEntry {
   id: string;
   action: string;
   details: string;
@@ -235,6 +256,118 @@ interface RoomPageProps {
 const reactions = ["â¤ï¸", "ðŸ˜‚", "ðŸ‘", "ðŸ”¥", "ðŸ˜®", "ðŸŽ‰"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ANNOUNCEMENT_DURATION_MS = 20000;
+const DEFAULT_SESSION_LOCK_STATE: SessionLockState = {
+  roomLocked: false,
+  chatDisabled: false,
+  focusMode: false,
+};
+
+const DEFAULT_SESSION_INTERLUDE_STATE: PersistedSessionInterludeState = {
+  enabled: false,
+  message: "",
+  endsAt: null,
+};
+
+const formatVideoTimeLabel = (seconds: number) => {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainingSeconds = total % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
+
+const createClientUuid = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+};
+
+const getInterludeDraftFromState = (
+  state: PersistedSessionInterludeState
+): SessionInterludeDraft => {
+  let durationMinutes = 0;
+
+  if (state.endsAt) {
+    const endAt = new Date(state.endsAt).getTime();
+    const updatedAt = state.updatedAt ? new Date(state.updatedAt).getTime() : Date.now();
+    if (Number.isFinite(endAt) && Number.isFinite(updatedAt) && endAt > updatedAt) {
+      durationMinutes = Math.max(0, Math.round((endAt - updatedAt) / 60000));
+    }
+  }
+
+  return {
+    enabled: state.enabled,
+    message: state.message || "",
+    durationMinutes,
+  };
+};
+
+const mergeRegieHistoryEntries = (...lists: RegieActionEntry[][]) => {
+  const seen = new Set<string>();
+  const merged: RegieActionEntry[] = [];
+
+  for (const list of lists) {
+    for (const entry of list) {
+      if (!entry?.id || seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      merged.push(entry);
+    }
+  }
+
+  return merged.slice(0, 100);
+};
+
+const mergeVideoBookmarkEntries = (...lists: VideoBookmarkEntry[][]) => {
+  const seen = new Set<string>();
+  const merged: VideoBookmarkEntry[] = [];
+
+  for (const list of lists) {
+    for (const entry of list) {
+      if (!entry?.id || seen.has(entry.id)) continue;
+      seen.add(entry.id);
+      merged.push(entry);
+    }
+  }
+
+  return merged.slice(0, 300);
+};
+
+const mergeComprehensionSignals = (...lists: ComprehensionSignalEntry[][]) => {
+  const byUser = new Map<string, ComprehensionSignalEntry>();
+
+  for (const list of lists) {
+    for (const entry of list) {
+      if (!entry?.id || !entry?.userId) continue;
+      const existing = byUser.get(entry.userId);
+      if (!existing) {
+        byUser.set(entry.userId, entry);
+        continue;
+      }
+
+      const existingTime = new Date(existing.updatedAt).getTime();
+      const nextTime = new Date(entry.updatedAt).getTime();
+      byUser.set(
+        entry.userId,
+        nextTime >= existingTime ? entry : existing
+      );
+    }
+  }
+
+  return Array.from(byUser.values()).sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+};
 
 const getErrorMessage = (error: any, fallback: string) => {
   const message =
@@ -320,7 +453,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [currentScene, setCurrentScene] = useState<SceneMode>("split");
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"chat" | "participants" | "polls">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "participants" | "polls" | "barometer">("chat");
   const [backendSalonId, setBackendSalonId] = useState<string>("");
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -331,7 +464,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [playlistId, setPlaylistId] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [videoHistory, setVideoHistory] = useState<VideoHistoryEntry[]>([]);
-  const [regieActions, setRegieActions] = useState<RegieActionEntry[]>([]);
+  const [regieActions, setRegieActions] = useState<LegacyRegieActionEntry[]>([]);
   const [showRoomInfo, setShowRoomInfo] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [showVideoVote, setShowVideoVote] = useState(false);
@@ -344,6 +477,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showPostVideoQuestionPanel, setShowPostVideoQuestionPanel] = useState(false);
   const [showPostVideoQuestion, setShowPostVideoQuestion] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showAnnouncementDialog, setShowAnnouncementDialog] = useState(false);
+  const [showSessionLockPanel, setShowSessionLockPanel] = useState(false);
+  const [showInterludePanel, setShowInterludePanel] = useState(false);
+  const [showBookmarkDialog, setShowBookmarkDialog] = useState(false);
+  const [regieActionHistory, setRegieActionHistory] = useState<RegieActionEntry[]>([]);
+  const [sessionLockState, setSessionLockState] = useState<SessionLockState>(DEFAULT_SESSION_LOCK_STATE);
+  const [sessionInterlude, setSessionInterlude] = useState<PersistedSessionInterludeState>(DEFAULT_SESSION_INTERLUDE_STATE);
+  const [videoBookmarks, setVideoBookmarks] = useState<VideoBookmarkEntry[]>([]);
+  const [comprehensionSignals, setComprehensionSignals] = useState<ComprehensionSignalEntry[]>([]);
+  const [savingComprehensionSignal, setSavingComprehensionSignal] = useState(false);
+  const [interludeClockNow, setInterludeClockNow] = useState<number>(Date.now());
   const [roomCode, setRoomCode] = useState<string>("");
   const [role, setRole] = useState<SalonRole | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -506,6 +650,87 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const voteStorageKey = `room_${roomId}_videoVotes`;
   const reactionStorageKey = `room_${roomId}_messageReactions`;
   const permissionsStorageKey = `room_${roomId}_participantPermissions`;
+  const regieHistoryStorageKey = `room_${roomId}_regie_history`;
+  const videoBookmarksStorageKey = `room_${roomId}_video_bookmarks`;
+  const sessionLockStorageKey = `room_${roomId}_session_lock_state`;
+  const backendSessionLockStorageKey =
+    backendSalonId && UUID_REGEX.test(backendSalonId) ? `room_${backendSalonId}_session_lock_state` : null;
+  const isSessionRestricted =
+    sessionLockState.roomLocked || sessionLockState.chatDisabled || sessionLockState.focusMode;
+  const isChatBlockedForViewer = !canControlVideo && (sessionLockState.chatDisabled || sessionLockState.focusMode);
+  const canSendChat = canUseChat && !isChatBlockedForViewer;
+
+  const persistRegieHistory = useCallback((entries: RegieActionEntry[]) => {
+    try {
+      localStorage.setItem(regieHistoryStorageKey, JSON.stringify(entries));
+    } catch (error) {
+      console.error("Erreur sauvegarde historique regie:", error);
+    }
+  }, [regieHistoryStorageKey]);
+
+  const persistSessionLockState = useCallback((state: SessionLockState) => {
+    try {
+      localStorage.setItem(sessionLockStorageKey, JSON.stringify(state));
+      if (backendSessionLockStorageKey) {
+        localStorage.setItem(backendSessionLockStorageKey, JSON.stringify(state));
+      }
+    } catch (error) {
+      console.error("Erreur sauvegarde verrouillage session:", error);
+    }
+  }, [backendSessionLockStorageKey, sessionLockStorageKey]);
+
+  const persistVideoBookmarks = useCallback((entries: VideoBookmarkEntry[]) => {
+    try {
+      localStorage.setItem(videoBookmarksStorageKey, JSON.stringify(entries));
+    } catch (error) {
+      console.error("Erreur sauvegarde marque-pages:", error);
+    }
+  }, [videoBookmarksStorageKey]);
+
+  const appendComprehensionSignal = useCallback((entry: ComprehensionSignalEntry) => {
+    setComprehensionSignals((prev) => mergeComprehensionSignals([entry], prev));
+  }, []);
+
+  const loadComprehensionSignals = useCallback(async () => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+      setComprehensionSignals([]);
+      return;
+    }
+
+    try {
+      const remoteSignals = await fetchComprehensionSignals(backendSalonId);
+      setComprehensionSignals(remoteSignals);
+    } catch (error) {
+      console.error("Erreur chargement barometre comprehension:", error);
+      setComprehensionSignals([]);
+    }
+  }, [backendSalonId]);
+
+  const describeSessionLockState = useCallback((state: SessionLockState) => {
+    const active: string[] = [];
+    if (state.roomLocked) active.push("salle verrouillee");
+    if (state.chatDisabled) active.push("chat desactive");
+    if (state.focusMode) active.push("mode focus");
+    return active.length > 0 ? active.join(", ") : "aucune restriction active";
+  }, []);
+
+  const appendRegieAction = useCallback((entry: RegieActionEntry) => {
+    setRegieActionHistory((prev) => {
+      if (prev.some((item) => item.id === entry.id)) return prev;
+      const next = [entry, ...prev].slice(0, 100);
+      persistRegieHistory(next);
+      return next;
+    });
+  }, [persistRegieHistory]);
+
+  const appendVideoBookmark = useCallback((entry: VideoBookmarkEntry) => {
+    setVideoBookmarks((prev) => {
+      if (prev.some((item) => item.id === entry.id)) return prev;
+      const next = [entry, ...prev].slice(0, 300);
+      persistVideoBookmarks(next);
+      return next;
+    });
+  }, [persistVideoBookmarks]);
 
   const withFallback = async <T,>(
     primaryId: string | null,
@@ -874,7 +1099,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         await connectVoiceToPeer(peerId);
       }
 
-      toast.success("ðŸŽ™ï¸ Mode commentaire vocal activÃ©");
+      toast.success("Mode commentaire vocal active");
+      toast.success("🎙️ Mode commentaire vocal activé");
+      void broadcastRegieAction("sync", "Synchronisation envoyee", "La regie a resynchronise tous les participants");
     } catch (error: any) {
       console.error("Erreur activation voix live", error);
       toast.error(error?.message || "Impossible d'accÃ©der au micro");
@@ -962,6 +1189,30 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     sendVoiceSignal,
     stopRemoteVoiceStream,
   ]);
+  const learnerParticipants = participants.filter((participant) => participant.role === "member");
+  const onlineLearnerParticipants = learnerParticipants.filter((participant) => participant.status === "online");
+  const learnerParticipantsById = new Map(learnerParticipants.map((participant) => [participant.id, participant]));
+  const activeComprehensionSignals = comprehensionSignals.filter((signal) => {
+    const participant = learnerParticipantsById.get(signal.userId);
+    if (!participant) return true;
+    return participant.status === "online";
+  });
+  const currentUserSignal =
+    comprehensionSignals.find((signal) => currentPermissionKeyCandidates.includes(signal.userId)) || null;
+  const lostComprehensionCount = activeComprehensionSignals.filter((signal) => signal.status === "lost").length;
+  const currentVideoBookmarks = currentVideo
+    ? videoBookmarks
+      .filter((bookmark) => bookmark.videoId === currentVideo.id)
+      .sort((a, b) => a.time - b.time)
+    : [];
+  const interludeEndAtMs = sessionInterlude.endsAt ? new Date(sessionInterlude.endsAt).getTime() : null;
+  const isInterludeVisible =
+    sessionInterlude.enabled &&
+    (!interludeEndAtMs || !Number.isFinite(interludeEndAtMs) || interludeEndAtMs > interludeClockNow);
+  const interludeRemainingSeconds =
+    interludeEndAtMs && Number.isFinite(interludeEndAtMs)
+      ? Math.max(0, Math.ceil((interludeEndAtMs - interludeClockNow) / 1000))
+      : null;
   useEffect(() => {
     messageSalonColumnRef.current = messageSalonColumn;
   }, [messageSalonColumn]);
@@ -1393,6 +1644,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       )
       .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'session_comprehension_signals', filter: `salon_id=eq.${backendSalonId}` },
+        async () => {
+          await loadComprehensionSignals();
+        }
+      )
+      .on(
         'broadcast',
         { event: 'room_force_sync' },
         async (payload) => {
@@ -1485,6 +1743,24 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       )
       .on(
         'broadcast',
+        { event: 'room_comprehension_signal' },
+        async (payload) => {
+          const entry = payload?.payload?.entry as ComprehensionSignalEntry | undefined;
+          if (!entry?.id || !entry?.userId) return;
+          appendComprehensionSignal(entry);
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_regie_action' },
+        async (payload) => {
+          const entry = payload?.payload?.entry as RegieActionEntry | undefined;
+          if (!entry?.id) return;
+          appendRegieAction(entry);
+        }
+      )
+      .on(
+        'broadcast',
         { event: 'room_post_video_question' },
         (payload) => {
           const data = payload?.payload || {};
@@ -1524,6 +1800,56 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       )
       // â”€â”€ Feature 68 : Compte Ã  rebours partagÃ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      .on(
+        'broadcast',
+        { event: 'room_session_interlude' },
+        async (payload) => {
+          const data = payload?.payload || {};
+          if (!data?.state || data?.by === currentUser.id) return;
+
+          const nextState: PersistedSessionInterludeState = {
+            enabled: Boolean(data.state.enabled),
+            message: String(data.state.message || ""),
+            endsAt: data.state.endsAt ? String(data.state.endsAt) : null,
+            updatedBy: data?.byName || data.state.updatedBy,
+            updatedAt: data.state.updatedAt ? String(data.state.updatedAt) : new Date().toISOString(),
+          };
+
+          setSessionInterlude(nextState);
+          setInterludeClockNow(Date.now());
+
+          toast.info(nextState.enabled ? "Mode interlude active" : "Mode interlude desactive", {
+            description: nextState.enabled
+              ? nextState.message || "Pause en cours pour tous les participants"
+              : "Le player revient au mode normal",
+            duration: 4500,
+          });
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_session_lock_state' },
+        async (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id || !data?.state) return;
+
+          const nextState: SessionLockState = {
+            roomLocked: Boolean(data.state.roomLocked),
+            chatDisabled: Boolean(data.state.chatDisabled),
+            focusMode: Boolean(data.state.focusMode),
+            updatedBy: data?.byName,
+            updatedAt: typeof data?.at === "number" ? data.at : Date.now(),
+          };
+
+          setSessionLockState(nextState);
+          persistSessionLockState(nextState);
+
+          toast.info("Verrouillage de session mis a jour", {
+            description: describeSessionLockState(nextState),
+            duration: 4000,
+          });
+        }
+      )
       .on(
         'broadcast',
         { event: 'room_countdown' },
@@ -1676,6 +2002,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, canManageSpeakingRequests, speakingRequestParticipantId]);
 
+  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, describeSessionLockState, persistSessionLockState, loadComprehensionSignals]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -1700,7 +2027,176 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const interval = window.setInterval(refreshMessages, 3000);
     return () => window.clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backendSalonId, isMessagePollingEnabled, reportError]);
+  }, [backendSalonId, isMessagePollingEnabled, reportError, loadMessagesSnapshot]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const readLocalHistory = () => {
+      try {
+        const raw = localStorage.getItem(regieHistoryStorageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.error("Erreur chargement historique regie local:", error);
+        return [];
+      }
+    };
+
+    const loadRegieHistory = async () => {
+      const localEntries = readLocalHistory();
+
+      if (isMounted) {
+        setRegieActionHistory(localEntries);
+      }
+
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+        return;
+      }
+
+      try {
+        const remoteEntries = await fetchRegieHistory(backendSalonId);
+        if (!isMounted) return;
+
+        const merged = mergeRegieHistoryEntries(remoteEntries, localEntries);
+        setRegieActionHistory(merged);
+        persistRegieHistory(merged);
+      } catch (error) {
+        console.error("Erreur chargement historique regie base:", error);
+      }
+    };
+
+    void loadRegieHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [backendSalonId, persistRegieHistory, regieHistoryStorageKey]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadInterludeState = async () => {
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+        if (isMounted) {
+          setSessionInterlude(DEFAULT_SESSION_INTERLUDE_STATE);
+        }
+        return;
+      }
+
+      try {
+        const remoteState = await fetchSessionInterlude(backendSalonId);
+        if (!isMounted) return;
+        setSessionInterlude(remoteState);
+        setInterludeClockNow(Date.now());
+      } catch (error) {
+        console.error("Erreur chargement interlude base:", error);
+        if (isMounted) {
+          setSessionInterlude(DEFAULT_SESSION_INTERLUDE_STATE);
+        }
+      }
+    };
+
+    void loadInterludeState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [backendSalonId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const readLocalBookmarks = () => {
+      try {
+        const raw = localStorage.getItem(videoBookmarksStorageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.error("Erreur chargement marque-pages local:", error);
+        return [];
+      }
+    };
+
+    const loadBookmarks = async () => {
+      const localEntries = readLocalBookmarks();
+
+      if (isMounted) {
+        setVideoBookmarks(localEntries);
+      }
+
+      if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+        return;
+      }
+
+      try {
+        const remoteEntries = await fetchVideoBookmarks(backendSalonId);
+        if (!isMounted) return;
+
+        const merged = mergeVideoBookmarkEntries(remoteEntries, localEntries);
+        setVideoBookmarks(merged);
+        persistVideoBookmarks(merged);
+      } catch (error) {
+        console.error("Erreur chargement marque-pages base:", error);
+      }
+    };
+
+    void loadBookmarks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [backendSalonId, persistVideoBookmarks, videoBookmarksStorageKey]);
+
+  useEffect(() => {
+    void loadComprehensionSignals();
+  }, [loadComprehensionSignals]);
+
+  useEffect(() => {
+    setInterludeClockNow(Date.now());
+
+    if (!sessionInterlude.enabled || !sessionInterlude.endsAt) return;
+
+    const interval = window.setInterval(() => {
+      setInterludeClockNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [sessionInterlude.enabled, sessionInterlude.endsAt]);
+
+  useEffect(() => {
+    try {
+      const raw =
+        (backendSessionLockStorageKey ? localStorage.getItem(backendSessionLockStorageKey) : null) ||
+        localStorage.getItem(sessionLockStorageKey);
+
+      if (!raw) {
+        setSessionLockState(DEFAULT_SESSION_LOCK_STATE);
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      setSessionLockState({
+        roomLocked: Boolean(parsed?.roomLocked),
+        chatDisabled: Boolean(parsed?.chatDisabled),
+        focusMode: Boolean(parsed?.focusMode),
+        updatedBy: parsed?.updatedBy,
+        updatedAt: parsed?.updatedAt,
+      });
+    } catch (error) {
+      console.error("Erreur chargement verrouillage session:", error);
+      setSessionLockState(DEFAULT_SESSION_LOCK_STATE);
+    }
+  }, [backendSessionLockStorageKey, sessionLockStorageKey]);
+
+  useEffect(() => {
+    if (!sessionLockState.focusMode) return;
+    if (canControlVideo) return;
+    if (activeTab !== "chat") return;
+    setActiveTab("participants");
+  }, [activeTab, canControlVideo, sessionLockState.focusMode]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -2445,6 +2941,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     newPlayingState ? "La video a ete lancee" : "La video a ete mise en pause"
   );
 };
+    toast.success(
+      newPlayingState
+        ? `${currentUser.name} a lancé la vidéo`
+        : `${currentUser.name} a mis en pause`,
+      { icon: newPlayingState ? '▶️' : '⏸️' }
+    );
+    void broadcastRegieAction(
+      newPlayingState ? "play" : "pause",
+      newPlayingState ? "Lecture relancee" : "Video mise en pause"
+    );
+  };
 
 const handleToggleFavorite = async (videoId: string) => {
     const target = playlist.find((video) => video.id === videoId);
@@ -2535,6 +3042,413 @@ const handleToggleFavorite = async (videoId: string) => {
       toast.error(error?.message || "Erreur synchronisation");
       console.error("Erreur sync salon", error);
     }
+  };
+
+  const broadcastRegieAction = async (
+    type: RegieActionEntry["type"],
+    label: string,
+    details?: string
+  ) => {
+    const entry: RegieActionEntry = {
+      id: createClientUuid(),
+      type,
+      label,
+      details,
+      byName: currentUser.name,
+      createdAt: new Date().toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    appendRegieAction(entry);
+
+    if (backendSalonId && UUID_REGEX.test(backendSalonId)) {
+      try {
+        await createRegieHistoryEntry(backendSalonId, entry);
+      } catch (error: any) {
+        console.error("Erreur sauvegarde historique regie en base", error);
+        toast.error("Historique regie non enregistre dans Supabase", {
+          description: error?.message || "Verifie la table regie_action_history et ses policies.",
+          duration: 5000,
+        });
+      }
+    }
+
+    if (!roomChannelRef.current) return;
+
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_regie_action',
+        payload: { entry }
+      });
+    } catch (error) {
+      console.error("Erreur broadcast historique regie", error);
+    }
+  };
+
+  const handleSendAnnouncement = async (message: string) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent envoyer une annonce");
+      return;
+    }
+    if (!backendSalonId || !roomChannelRef.current) {
+      toast.error("Salon introuvable pour l'envoi de l'annonce");
+      return;
+    }
+
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_regie_notification',
+        payload: {
+          by: currentUser.id,
+          byName: currentUser.name,
+          at: Date.now(),
+          message,
+        }
+      });
+
+      toast.success("Annonce envoyee a tous les participants");
+      void broadcastRegieAction("announcement", "Annonce envoyee", message);
+    } catch (error: any) {
+      console.error("Erreur annonce regie", error);
+      toast.error(error?.message || "Impossible d'envoyer l'annonce");
+      throw error;
+    }
+  };
+
+  const handleApplyInterlude = async (draft: SessionInterludeDraft) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent controler l'interlude");
+      return;
+    }
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+      toast.error("Salon introuvable pour activer l'interlude");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const trimmedMessage = draft.message.trim();
+    const nextState: PersistedSessionInterludeState = {
+      enabled: Boolean(draft.enabled),
+      message: draft.enabled ? (trimmedMessage || "Pause en cours - reprise tres bientot") : "",
+      endsAt:
+        draft.enabled && draft.durationMinutes > 0
+          ? new Date(Date.now() + draft.durationMinutes * 60_000).toISOString()
+          : null,
+      updatedBy: currentUser.name,
+      updatedAt: nowIso,
+    };
+
+    let persistedState = nextState;
+
+    try {
+      persistedState = await upsertSessionInterlude(backendSalonId, nextState);
+    } catch (error: any) {
+      console.error("Erreur sauvegarde interlude en base", error);
+      toast.error("Mode interlude non enregistre dans Supabase", {
+        description: error?.message || "Verifie la table session_interludes et ses policies.",
+        duration: 5000,
+      });
+      throw error;
+    }
+
+    setSessionInterlude(persistedState);
+    setInterludeClockNow(Date.now());
+
+    if (persistedState.enabled) {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setSyncNonce(Date.now());
+
+      try {
+        const { error: pauseError } = await updateSalonState({
+          video_status: "paused",
+          video_time: currentTimeRef.current,
+          current_video_id: currentVideo?.id || null,
+        });
+        if (pauseError) throw pauseError;
+      } catch (error) {
+        console.error("Erreur pause video pendant interlude", error);
+      }
+    }
+
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_session_interlude",
+          payload: {
+            by: currentUser.id,
+            byName: currentUser.name,
+            at: Date.now(),
+            state: persistedState,
+          },
+        });
+
+        if (persistedState.enabled) {
+          await roomChannelRef.current.send({
+            type: "broadcast",
+            event: "room_force_sync",
+            payload: {
+              by: currentUser.id,
+              at: Date.now(),
+              isPlaying: false,
+              time: currentTimeRef.current,
+              videoId: currentVideo?.id || null,
+              forceSeek: true,
+              forceReload: false,
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Erreur broadcast interlude", error);
+      }
+    }
+
+    toast.success(persistedState.enabled ? "Mode interlude active" : "Mode interlude desactive");
+    void broadcastRegieAction(
+      "interlude",
+      persistedState.enabled ? "Mode interlude active" : "Mode interlude desactive",
+      persistedState.enabled
+        ? persistedState.message
+        : "Le salon revient a l'affichage video classique"
+    );
+  };
+
+  const handleSubmitComprehensionSignal = async (status: ComprehensionSignalStatus) => {
+    if (canControlVideo) {
+      toast.info("Le barometre live est reserve aux etudiants");
+      return;
+    }
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+      toast.error("Salon introuvable pour enregistrer le signal");
+      return;
+    }
+
+    const signalUserId = authUserId || currentUser.id;
+    if (!signalUserId) {
+      toast.error("Utilisateur introuvable pour le barometre");
+      return;
+    }
+
+    setSavingComprehensionSignal(true);
+
+    try {
+      const entry = await upsertComprehensionSignal(backendSalonId, {
+        userId: signalUserId,
+        userName: currentUser.name,
+        status,
+        videoId: currentVideo?.id || null,
+        videoTime: currentTimeRef.current,
+      });
+
+      appendComprehensionSignal(entry);
+
+      if (roomChannelRef.current) {
+        try {
+          await roomChannelRef.current.send({
+            type: 'broadcast',
+            event: 'room_comprehension_signal',
+            payload: { entry }
+          });
+        } catch (broadcastError) {
+          console.error("Erreur broadcast barometre comprehension", broadcastError);
+        }
+      }
+
+      toast.success(
+        status === "understood"
+          ? "Signal comprehension envoye"
+          : status === "slow_down"
+            ? "Signal ralentir envoye"
+            : "Signal je suis perdu envoye"
+      );
+    } catch (error: any) {
+      console.error("Erreur sauvegarde barometre comprehension", error);
+      toast.error("Barometre non enregistre dans Supabase", {
+        description: error?.message || "Verifie la table session_comprehension_signals et ses policies.",
+        duration: 5000,
+      });
+    } finally {
+      setSavingComprehensionSignal(false);
+    }
+  };
+
+  const handleApplySessionLock = async (nextState: SessionLockState) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent modifier la session");
+      return;
+    }
+
+    const normalizedState: SessionLockState = {
+      roomLocked: Boolean(nextState.roomLocked),
+      chatDisabled: Boolean(nextState.chatDisabled),
+      focusMode: Boolean(nextState.focusMode),
+      updatedBy: currentUser.name,
+      updatedAt: Date.now(),
+    };
+
+    setSessionLockState(normalizedState);
+    persistSessionLockState(normalizedState);
+
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_session_lock_state",
+          payload: {
+            by: currentUser.id,
+            byName: currentUser.name,
+            at: normalizedState.updatedAt,
+            state: normalizedState,
+          },
+        });
+      } catch (error) {
+        console.error("Erreur broadcast verrouillage session", error);
+      }
+    }
+
+    toast.success("Verrouillage de session mis a jour");
+    void broadcastRegieAction(
+      "session_lock",
+      "Verrouillage de session mis a jour",
+      describeSessionLockState(normalizedState)
+    );
+  };
+
+  const handleAddBookmark = async (label: string) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent ajouter un marque-page");
+      return;
+    }
+    if (!currentVideo?.id) {
+      toast.error("Aucune video en cours pour ajouter un marque-page");
+      return;
+    }
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
+      toast.error("Salon introuvable pour enregistrer le marque-page");
+      return;
+    }
+
+    const draftEntry: VideoBookmarkEntry = {
+      id: createClientUuid(),
+      videoId: currentVideo.id,
+      videoTitle: currentVideo.title,
+      time: currentTimeRef.current,
+      label,
+      byName: currentUser.name,
+      createdAt: new Date().toLocaleTimeString("fr-FR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+
+    let entry = draftEntry;
+
+    try {
+      entry = await createVideoBookmark({
+        id: draftEntry.id,
+        salonId: backendSalonId,
+        videoId: draftEntry.videoId,
+        videoTitle: draftEntry.videoTitle,
+        time: draftEntry.time,
+        label: draftEntry.label,
+        byName: draftEntry.byName,
+        createdAt: draftEntry.createdAt,
+      });
+    } catch (error: any) {
+      console.error("Erreur sauvegarde marque-page en base", error);
+      toast.error("Marque-page non enregistre dans Supabase", {
+        description: error?.message || "Verifie la table video_bookmarks et ses policies.",
+        duration: 5000,
+      });
+      throw error;
+    }
+
+    appendVideoBookmark(entry);
+
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_video_bookmark_added",
+          payload: {
+            by: currentUser.id,
+            byName: currentUser.name,
+            at: Date.now(),
+            entry,
+          },
+        });
+      } catch (error) {
+        console.error("Erreur broadcast marque-page", error);
+      }
+    }
+
+    toast.success(`Marque-page ajoute a ${formatVideoTimeLabel(entry.time)}`);
+    void broadcastRegieAction(
+      "video_bookmark",
+      "Marque-page ajoute",
+      `${entry.label} • ${formatVideoTimeLabel(entry.time)}`
+    );
+  };
+
+  const handleSeekToBookmark = async (bookmark: VideoBookmarkEntry) => {
+    if (!canControlVideo) {
+      toast.info("Seule la regie peut naviguer vers un marque-page");
+      return;
+    }
+    if (!currentVideo?.id || bookmark.videoId !== currentVideo.id) {
+      toast.error("Ce marque-page ne correspond pas a la video en cours");
+      return;
+    }
+
+    const nextTime = Math.max(0, Math.floor(bookmark.time));
+    setCurrentTime(nextTime);
+    currentTimeRef.current = nextTime;
+    setSyncNonce(Date.now());
+
+    if (backendSalonId) {
+      try {
+        const { error } = await updateSalonState({
+          video_time: nextTime,
+          video_status: isPlayingRef.current ? "playing" : "paused",
+          current_video_id: currentVideo.id,
+        });
+        if (error) throw error;
+
+        if (roomChannelRef.current) {
+          await roomChannelRef.current.send({
+            type: "broadcast",
+            event: "room_force_sync",
+            payload: {
+              by: currentUser.id,
+              at: Date.now(),
+              time: nextTime,
+              isPlaying: isPlayingRef.current,
+              videoId: currentVideo.id,
+              seek: true,
+              forceSeek: true,
+              forceReload: false,
+              explicit: true,
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Erreur navigation marque-page", error);
+        toast.error("Impossible de naviguer vers ce marque-page");
+        return;
+      }
+    }
+
+    toast.success(`Retour a ${formatVideoTimeLabel(nextTime)}`);
+    void broadcastRegieAction(
+      "video_bookmark",
+      "Navigation vers un marque-page",
+      `${bookmark.label} • ${formatVideoTimeLabel(nextTime)}`
+    );
   };
 
   const handleAddVideo = async (url: string, title: string) => {
@@ -3660,6 +4574,19 @@ const handleToggleFavorite = async (videoId: string) => {
             <LayoutList className="w-4 h-4 mr-1.5" />
             <span className="hidden sm:inline">Contenu</span>
           </Button>
+          {isInterludeVisible && (
+            <Badge className="bg-amber-400 text-black hover:bg-amber-400">
+              <Sparkles className="mr-1 h-3 w-3" />
+              Interlude actif
+            </Badge>
+          )}
+
+          {canControlVideo && lostComprehensionCount > 0 && (
+            <Badge className="bg-red-600 text-white hover:bg-red-600">
+              <AlertTriangle className="mr-1 h-3 w-3" />
+              {lostComprehensionCount} perdu{lostComprehensionCount > 1 ? "s" : ""}
+            </Badge>
+          )}
 
           {onThemeToggle && (
             <Button
@@ -3778,6 +4705,68 @@ const handleToggleFavorite = async (videoId: string) => {
                   </div>
                 </div>
               )}
+              {isInterludeVisible && (
+              <div className="absolute inset-0 z-30 overflow-hidden rounded-xl">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(239,68,68,0.24),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(251,191,36,0.18),transparent_28%)]" />
+                <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-zinc-950/95 to-red-950/75 backdrop-blur-sm" />
+                <div className="absolute -left-12 top-10 h-36 w-36 rounded-full bg-red-500/15 blur-3xl" />
+                <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-amber-300/10 blur-3xl" />
+
+                <div className="relative flex h-full flex-col justify-between p-6 sm:p-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <Badge className="bg-red-600 text-white hover:bg-red-600">
+                        <Sparkles className="mr-1 h-3 w-3" />
+                        Interlude en cours
+                      </Badge>
+                      <p className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-white sm:text-5xl">
+                        {sessionInterlude.message || "Pause en cours - reprise tres bientot"}
+                      </p>
+                      <p className="mt-3 max-w-xl text-sm text-gray-300 sm:text-base">
+                        La regie a mis la projection en pause. Profitez de ce temps pour respirer, puis reprenez la seance au prochain signal.
+                      </p>
+                    </div>
+
+                    {canControlVideo && (
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          void handleApplyInterlude({
+                            enabled: false,
+                            message: sessionInterlude.message || "",
+                            durationMinutes: 0,
+                          })
+                        }
+                        className="bg-white/10 text-white backdrop-blur-sm hover:bg-white/20"
+                      >
+                        <Play className="mr-2 h-4 w-4" />
+                        Reprendre
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-end justify-between gap-4">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 px-5 py-4 backdrop-blur-md">
+                      <p className="text-xs uppercase tracking-[0.24em] text-gray-400">Compte a rebours</p>
+                      <p className="mt-2 text-4xl font-semibold text-white sm:text-6xl">
+                        {interludeRemainingSeconds !== null
+                          ? formatVideoTimeLabel(interludeRemainingSeconds)
+                          : "--:--"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/10 bg-black/25 px-5 py-4 text-sm text-gray-300 backdrop-blur-md">
+                      <p>{sessionInterlude.updatedBy ? `Mis a jour par ${sessionInterlude.updatedBy}` : "Annonce de la regie"}</p>
+                      <p className="mt-1 text-gray-400">
+                        {interludeRemainingSeconds !== null
+                          ? "La reprise se fera a la fin du timer ou manuellement par la regie."
+                          : "L'interlude restera visible jusqu'a ce que la regie le coupe."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             </div>
           ) : (
             <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden aspect-video flex items-center justify-center`}>
@@ -3850,6 +4839,10 @@ const handleToggleFavorite = async (videoId: string) => {
           )}
 
           {/* Playlist Section â€” cachÃ©e en mode cinÃ©ma */}
+        {/* LEFT: Video + Playlist - 2/3 de l'écran */}
+          {/* Video Player */}
+
+          {/* Playlist Section — cachée en mode cinéma */}
           {currentScene !== "cinema" && (
             <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
               <div className="flex items-center justify-between mb-4">
@@ -4029,24 +5022,38 @@ const handleToggleFavorite = async (videoId: string) => {
           <div className={`flex border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
             <button
               onClick={() => setActiveTab("chat")}
-              className={`flex-1 px-4 py-3 text-sm transition-colors flex items-center justify-center gap-2 ${activeTab === "chat"
+              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "chat"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
               <MessageCircle className="w-4 h-4" />
-              Chat
+              <span className="truncate">Chat</span>
             </button>
             <button
               onClick={() => setActiveTab("participants")}
-              className={`flex-1 px-4 py-3 text-sm transition-colors flex items-center justify-center gap-2 ${activeTab === "participants"
+              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "participants"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
               <Users className="w-4 h-4" />
-              Participants ({participantCount})
-            </button><button
+              <span className="truncate">Participants ({participantCount})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("barometer")}
+              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "barometer"
+                ? "bg-red-600 text-white"
+                : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
+                }`}
+            >
+              <Gauge className="w-4 h-4" />
+              <span className="truncate">
+                Baro
+                {canControlVideo && lostComprehensionCount > 0 ? ` (${lostComprehensionCount})` : ""}
+              </span>
+            </button>
+            <button
               onClick={() => {
                 if (!canUsePolls) {
                   toast.error("Les sondages sont dÃ©sactivÃ©s pour vous");
@@ -4054,13 +5061,13 @@ const handleToggleFavorite = async (videoId: string) => {
                 }
                 setActiveTab("polls");
               }}
-              className={`flex-1 px-4 py-3 text-sm transition-colors flex items-center justify-center gap-2 ${activeTab === "polls"
+              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "polls"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
               <BarChart3 className="w-4 h-4" />
-              Sondages
+              <span className="truncate">Sondages</span>
             </button>
           </div>
 
@@ -4316,6 +5323,21 @@ const handleToggleFavorite = async (videoId: string) => {
               </div>
             </div>
           )}
+          {activeTab === "barometer" && (
+            <div className="flex-1 overflow-hidden h-full">
+              <ComprehensionBarometerPanel
+                signals={activeComprehensionSignals}
+                currentSignal={currentUserSignal}
+                onSignal={handleSubmitComprehensionSignal}
+                saving={savingComprehensionSignal}
+                isTeacherView={canControlVideo}
+                onlineLearnerCount={onlineLearnerParticipants.length}
+                currentVideoTitle={currentVideo?.title}
+                theme={theme}
+                formatTimeLabel={formatVideoTimeLabel}
+              />
+            </div>
+          )}
           {activeTab === "polls" && backendSalonId && canUsePolls && (
             <div className="flex-1 overflow-hidden h-full flex flex-col">
               <div className={`px-3 py-2 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'} flex items-center justify-between`}>
@@ -4542,6 +5564,57 @@ const handleToggleFavorite = async (videoId: string) => {
               </>
             )}
 
+            {canControlVideo && (
+              <>
+                <Button
+                  onClick={() => {
+                    setShowInterludePanel(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Mode interlude
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setShowBookmarkDialog(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <BookmarkPlus className="w-4 h-4 mr-2" />
+                  Ajouter un marque-page
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setShowSessionLockPanel(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Lock className="w-4 h-4 mr-2" />
+                  Verrouillage session
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setShowAnnouncementDialog(true);
+                    setShowMenu(false);
+                  }}
+                  variant="ghost"
+                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+                >
+                  <Megaphone className="w-4 h-4 mr-2" />
+                  Envoyer une annonce
+                </Button>
+              </>
+            )}
             <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
 
             <Button
@@ -4960,6 +6033,46 @@ const handleToggleFavorite = async (videoId: string) => {
           onAnnounce={handleTTSAnnounce}
           theme={theme}
           onClose={() => setShowTTSPanel(false)}
+        />
+      )}
+
+      {showAnnouncementDialog && (
+        <RegieAnnouncementDialog
+          isOpen={showAnnouncementDialog}
+          onClose={() => setShowAnnouncementDialog(false)}
+          onSubmit={handleSendAnnouncement}
+          theme={theme}
+        />
+      )}
+
+      {showInterludePanel && canControlVideo && (
+        <SessionInterludePanel
+          isOpen={showInterludePanel}
+          value={getInterludeDraftFromState(sessionInterlude)}
+          onClose={() => setShowInterludePanel(false)}
+          onApply={handleApplyInterlude}
+          theme={theme}
+        />
+      )}
+
+      {showBookmarkDialog && canControlVideo && (
+        <VideoBookmarkDialog
+          isOpen={showBookmarkDialog}
+          currentTime={currentTimeRef.current}
+          currentVideoTitle={currentVideo?.title}
+          onClose={() => setShowBookmarkDialog(false)}
+          onSubmit={handleAddBookmark}
+          theme={theme}
+        />
+      )}
+
+      {showSessionLockPanel && canControlVideo && (
+        <SessionLockPanel
+          isOpen={showSessionLockPanel}
+          value={sessionLockState}
+          onClose={() => setShowSessionLockPanel(false)}
+          onApply={handleApplySessionLock}
+          theme={theme}
         />
       )}
     </div>
