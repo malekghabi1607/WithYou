@@ -36,12 +36,10 @@ import { useLiveTranscription } from "../hooks/useLiveTranscription";
 import { useYouTubeCaptions } from "../hooks/useYouTubeCaptions";
 import { computeContentScore, generateDiscussionQuestions } from "../utils/videoContentScore";
 import {
-  BookmarkPlus,
   Play,
   Pause,
   RotateCcw,
   AlertTriangle,
-  Lock,
   LogOut,
   Heart,
   MessageCircle,
@@ -2000,9 +1998,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       });
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, canManageSpeakingRequests, speakingRequestParticipantId]);
-
-  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, describeSessionLockState, persistSessionLockState, loadComprehensionSignals]);
+  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, describeSessionLockState, persistSessionLockState, loadComprehensionSignals, canManageSpeakingRequests, speakingRequestParticipantId]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -2936,11 +2932,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       : `${currentUser.name} a mis en pause`,
     { icon: newPlayingState ? ">" : "||" }
   );
-  addRegieAction(
-    newPlayingState ? "Lecture" : "Pause",
-    newPlayingState ? "La video a ete lancee" : "La video a ete mise en pause"
-  );
-};
     toast.success(
       newPlayingState
         ? `${currentUser.name} a lancé la vidéo`
@@ -5566,42 +5557,6 @@ const handleToggleFavorite = async (videoId: string) => {
 
             {canControlVideo && (
               <>
-                <Button
-                  onClick={() => {
-                    setShowInterludePanel(true);
-                    setShowMenu(false);
-                  }}
-                  variant="ghost"
-                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
-                >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Mode interlude
-                </Button>
-
-                <Button
-                  onClick={() => {
-                    setShowBookmarkDialog(true);
-                    setShowMenu(false);
-                  }}
-                  variant="ghost"
-                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
-                >
-                  <BookmarkPlus className="w-4 h-4 mr-2" />
-                  Ajouter un marque-page
-                </Button>
-
-                <Button
-                  onClick={() => {
-                    setShowSessionLockPanel(true);
-                    setShowMenu(false);
-                  }}
-                  variant="ghost"
-                  className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Verrouillage session
-                </Button>
-
                 <Button
                   onClick={() => {
                     setShowAnnouncementDialog(true);
