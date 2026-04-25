@@ -4,18 +4,18 @@
  *
  * Description :
  * Page principale du salon de visionnage collaboratif.
- * Interface complète pour regarder des vidéos ensemble en temps réel.
- * Gère :
- *  - Le lecteur vidéo YouTube avec synchronisation
- *  - Le chat en direct avec réactions et émojis
+ * Interface complÃ¨te pour regarder des vidÃ©os ensemble en temps rÃ©el.
+ * GÃ¨re :
+ *  - Le lecteur vidÃ©o YouTube avec synchronisation
+ *  - Le chat en direct avec rÃ©actions et Ã©mojis
  *  - La liste des participants avec statuts en ligne/hors-ligne
- *  - La playlist vidéo avec votes et favoris
- *  - Les contrôles admin (ajouter/supprimer vidéos, gérer permissions)
+ *  - La playlist vidÃ©o avec votes et favoris
+ *  - Les contrÃ´les admin (ajouter/supprimer vidÃ©os, gÃ©rer permissions)
  *  - Les panneaux d'informations et de notation
- *  - La persistance des données (messages, playlist) via backend
+ *  - La persistance des donnÃ©es (messages, playlist) via backend
  *  - Les modes clair et sombre
  *
- * Utilisé dans routes/AppRouter.tsx via RoomPageWrapper.
+ * UtilisÃ© dans routes/AppRouter.tsx via RoomPageWrapper.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -67,6 +67,7 @@ import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
 import { RoomRatingPanel } from "../components/room/RoomRatingPanel";
 import { VideoVotePanel } from "../components/room/VideoVotePanel";
 import { ParticipantsPermissionsPanel } from "../components/room/ParticipantsPermissionsPanel";
+import { SpeakingRequestsPanel, type SpeakingRequestEntry } from "../components/room/SpeakingRequestsPanel";
 import { VideoManagementPanel } from "../components/room/VideoManagementPanel";
 import { VideoHistoryPanel } from "../components/room/VideoHistoryPanel";
 import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
@@ -193,11 +194,33 @@ interface LiveVideoVotePoll {
 type VideoTransitionType = "cut" | "fade_black" | "slide_lateral" | "flash_white";
 
 const VIDEO_TRANSITIONS: Array<{ value: VideoTransitionType; label: string }> = [
-  { value: "cut", label: "⬛ Cut brutal" },
-  { value: "fade_black", label: "🌫️ Fondu au noir" },
-  { value: "slide_lateral", label: "↔️ Glissement latéral" },
-  { value: "flash_white", label: "⚪ Flash blanc" },
+  { value: "cut", label: "â¬› Cut brutal" },
+  { value: "fade_black", label: "ðŸŒ«ï¸ Fondu au noir" },
+  { value: "slide_lateral", label: "â†”ï¸ Glissement latÃ©ral" },
+  { value: "flash_white", label: "âšª Flash blanc" },
 ];
+
+const sortSpeakingRequests = (entries: SpeakingRequestEntry[]) =>
+  [...entries].sort((a, b) => a.requestedAt - b.requestedAt);
+
+const mapSpeakingRequestsById = (entries: SpeakingRequestEntry[]) =>
+  sortSpeakingRequests(entries).reduce<Record<string, SpeakingRequestEntry>>((acc, entry) => {
+    acc[entry.participantId] = entry;
+    return acc;
+  }, {});
+
+const normalizeSpeakingRequestEntry = (raw: any): SpeakingRequestEntry | null => {
+  const participantId = String(raw?.participantId || "").trim();
+  const participantName = String(raw?.participantName || "Participant").trim();
+  if (!participantId) return null;
+
+  return {
+    participantId,
+    participantName: participantName || "Participant",
+    participantAvatar: String(raw?.participantAvatar || createAvatarDataUrl(participantName || "Participant")),
+    requestedAt: Number(raw?.requestedAt) || Date.now(),
+  };
+};
 
 interface RoomPageProps {
   roomId: string;
@@ -209,7 +232,7 @@ interface RoomPageProps {
   onThemeToggle?: () => void;
 }
 
-const reactions = ["❤️", "😂", "👍", "🔥", "😮", "🎉"];
+const reactions = ["â¤ï¸", "ðŸ˜‚", "ðŸ‘", "ðŸ”¥", "ðŸ˜®", "ðŸŽ‰"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ANNOUNCEMENT_DURATION_MS = 20000;
 
@@ -314,6 +337,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showVideoVote, setShowVideoVote] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [showVideoManagement, setShowVideoManagement] = useState(false);
+  const [showSpeakingRequests, setShowSpeakingRequests] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showRegieHistory, setShowRegieHistory] = useState(false);
   const [showAnnouncementPanel, setShowAnnouncementPanel] = useState(false);
@@ -336,23 +360,25 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [isMessagePollingEnabled, setIsMessagePollingEnabled] = useState(true);
   const [hoverPreviewVideoId, setHoverPreviewVideoId] = useState<string | null>(null);
   const [liveVideoVotePoll, setLiveVideoVotePoll] = useState<LiveVideoVotePoll | null>(null);
+  const [speakingRequests, setSpeakingRequests] = useState<Record<string, SpeakingRequestEntry>>({});
+  const [activeSpeakerRequest, setActiveSpeakerRequest] = useState<SpeakingRequestEntry | null>(null);
   const [videoVoteNow, setVideoVoteNow] = useState<number>(Date.now());
   const [selectedVideoTransition, setSelectedVideoTransition] = useState<VideoTransitionType>("cut");
   const [activeVideoTransition, setActiveVideoTransition] = useState<{ type: VideoTransitionType; key: number } | null>(null);
 
-  // ── Régie : Compte à rebours partagé (feature 68) ──────────────────────
+  // â”€â”€ RÃ©gie : Compte Ã  rebours partagÃ© (feature 68) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [activeCountdown, setActiveCountdown] = useState<{ seconds: number; key: number; reason?: "manual" | "startup" } | null>(null);
 
-  // ── Régie : Annonce vocale TTS (feature 70) ─────────────────────────────
+  // â”€â”€ RÃ©gie : Annonce vocale TTS (feature 70) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [showTTSPanel, setShowTTSPanel] = useState(false);
   const [voiceCommentaryEnabled, setVoiceCommentaryEnabled] = useState(false);
   const [voiceCommentaryBusy, setVoiceCommentaryBusy] = useState(false);
 
-  // ── IA de Contenu — États ───────────────────────────────────────────────
-  // D/G : Panneau de preview IA (avant lancement vidéo)
+  // â”€â”€ IA de Contenu â€” Ã‰tats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // D/G : Panneau de preview IA (avant lancement vidÃ©o)
   const [previewVideo, setPreviewVideo] = useState<VideoInPlaylist | null>(null);
   const [showContentPanel, setShowContentPanel] = useState(false);
-  // E : Questions de discussion générées après chaque vidéo
+  // E : Questions de discussion gÃ©nÃ©rÃ©es aprÃ¨s chaque vidÃ©o
   const [discussionQuestions, setDiscussionQuestions] = useState<[string, string, string] | null>(null);
   const [discussionVideoTitle, setDiscussionVideoTitle] = useState("");
   const lastDiscussionVideoIdRef = useRef<string | null>(null);
@@ -440,6 +466,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const voteUserKey = authUserId || currentUser.id || currentUser.email || currentUser.name;
   const realtimeVoiceUserId = authUserId || currentUser.id || currentUser.email || currentUser.name;
   const canManageVoiceCommentary = effectiveRole === "admin" || effectiveRole === "regie";
+  const canManageSpeakingRequests = effectiveRole === "admin" || effectiveRole === "regie";
+  const speakingRequestParticipantId =
+    selfParticipant?.id || authUserId || currentUser.id || currentUser.email || currentUser.name;
+  const speakingQueue = sortSpeakingRequests(Object.values(speakingRequests));
+  const speakingQueueCount = speakingQueue.length;
+  const hasRaisedHand = Boolean(speakingRequests[speakingRequestParticipantId]);
+  const isCurrentParticipantActiveSpeaker =
+    activeSpeakerRequest?.participantId === speakingRequestParticipantId;
+  const currentSpeakingRequestPosition = speakingQueue.findIndex(
+    (entry) => entry.participantId === speakingRequestParticipantId
+  );
   const liveVoteRemainingMs =
     liveVideoVotePoll?.isActive && liveVideoVotePoll?.endsAt
       ? Math.max(0, liveVideoVotePoll.endsAt - videoVoteNow)
@@ -506,14 +543,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       const now = Date.now();
       if (now - lastNetworkWarningAtRef.current > 10000) {
         lastNetworkWarningAtRef.current = now;
-        console.warn(`${label}: connexion réseau momentanément indisponible.`);
+        console.warn(`${label}: connexion rÃ©seau momentanÃ©ment indisponible.`);
       }
       return;
     }
     console.error(label, error);
   }, []);
 
-  // Filtrer les participants pour éviter que l'admin soit dans la liste
+  // Filtrer les participants pour Ã©viter que l'admin soit dans la liste
   const otherParticipants = participants.filter(p =>
     p.id !== currentUser.id &&
     p.id !== authUserId &&
@@ -569,8 +606,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       videoId: payload.videoId ?? syncAnchorRef.current.videoId ?? null,
     };
   }, []);
-  // F : Sous-titres YouTube (captions réelles via Invidious, syncés avec currentTime)
-  // ⚠️ Placé ICI car currentVideo est défini à la ligne précédente
+  // F : Sous-titres YouTube (captions rÃ©elles via Invidious, syncÃ©s avec currentTime)
+  // âš ï¸ PlacÃ© ICI car currentVideo est dÃ©fini Ã  la ligne prÃ©cÃ©dente
   const ytCaptions = useYouTubeCaptions(
     currentVideo?.youtubeId,
     currentTime
@@ -699,9 +736,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     } catch (error) {
       if (!voiceAutoplayWarnedRef.current) {
         voiceAutoplayWarnedRef.current = true;
-        toast.info("Le commentaire vocal est prêt. Cliquez une fois sur la page pour activer le son.");
+        toast.info("Le commentaire vocal est prÃªt. Cliquez une fois sur la page pour activer le son.");
       }
-      console.warn("Lecture audio live bloquée par le navigateur", error);
+      console.warn("Lecture audio live bloquÃ©e par le navigateur", error);
     }
   }, []);
 
@@ -773,11 +810,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const teardownVoiceInfrastructure = useCallback(() => {
     stopLocalVoiceStream();
     closeAllVoicePeerConnections();
-    if (!canManageVoiceCommentary) {
-      stopRemoteVoiceStream();
-    }
+    stopRemoteVoiceStream();
   }, [
-    canManageVoiceCommentary,
     closeAllVoicePeerConnections,
     stopLocalVoiceStream,
     stopRemoteVoiceStream,
@@ -794,14 +828,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       });
     }
   }, [
-    canManageVoiceCommentary,
     sendVoiceSignal,
     teardownVoiceInfrastructure,
   ]);
 
   const startVoiceCommentary = useCallback(async () => {
     if (!canManageVoiceCommentary || !realtimeVoiceUserId) {
-      toast.error("Seule la régie peut activer la voix live");
+      toast.error("Seule la regie peut activer la voix live");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -841,10 +874,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         await connectVoiceToPeer(peerId);
       }
 
-      toast.success("🎙️ Mode commentaire vocal activé");
+      toast.success("ðŸŽ™ï¸ Mode commentaire vocal activÃ©");
     } catch (error: any) {
       console.error("Erreur activation voix live", error);
-      toast.error(error?.message || "Impossible d'accéder au micro");
+      toast.error(error?.message || "Impossible d'accÃ©der au micro");
       await stopVoiceCommentary(false);
     } finally {
       setVoiceCommentaryBusy(false);
@@ -918,7 +951,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (error) {
-        console.warn("ICE candidate ignoré (ordre de signalisation)", error);
+        console.warn("ICE candidate ignorÃ© (ordre de signalisation)", error);
       }
     }
   }, [
@@ -1083,7 +1116,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       if ((isFatalMessagesSchemaError || shouldDisableNow || tooManyConsecutiveErrors) && !messagePollingDisabledLoggedRef.current) {
         messagePollingDisabledLoggedRef.current = true;
         setIsMessagePollingEnabled(false);
-        console.warn("Polling messages désactivé après erreurs répétées (messages).");
+        console.warn("Polling messages dÃ©sactivÃ© aprÃ¨s erreurs rÃ©pÃ©tÃ©es (messages).");
       }
       return;
     }
@@ -1136,7 +1169,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     if (salonError || !salonData) {
       // Fallback: attempt to load playlist even if salon state read fails
-      console.warn("Erreur lecture état salon, tentative chargement playlist directement", salonError);
+      console.warn("Erreur lecture Ã©tat salon, tentative chargement playlist directement", salonError);
       try {
         const fallbackData = await fetchPlaylist(backendSalonId);
         setPlaylistId(fallbackData.playlistId);
@@ -1218,7 +1251,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     return () => {
       disconnectFromSalon(backendSalonId).catch((error) => {
-        reportError("Erreur déconnexion salon", error);
+        reportError("Erreur dÃ©connexion salon", error);
       });
     };
   }, [backendSalonId, reportError]);
@@ -1305,7 +1338,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     });
 
     // 3. Realtime Subscription (Salon + Participants + Broadcast only)
-    // NOTE: messages postgres_changes is intentionally removed — Supabase returns 400
+    // NOTE: messages postgres_changes is intentionally removed â€” Supabase returns 400
     // when Realtime is not enabled for the 'messages' table. Messages are refreshed
     // via the 30s polling interval instead (see useEffect below).
     const channel = supabase
@@ -1341,13 +1374,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               })
             );
 
-            // If video not found in playlist, reload. No toast here — the broadcast handles it.
+            // If video not found in playlist, reload. No toast here â€” the broadcast handles it.
             if (!found) {
               await loadRoomSnapshot();
             } else if (videoChanged) {
               // Only notify via this channel if no broadcast is expected
               // (broadcast from admin will show its own toast)
-              // So we skip toast here — broadcasts handle all notifications
+              // So we skip toast here â€” broadcasts handle all notifications
             }
           }
         }
@@ -1414,9 +1447,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           // Show toast only for explicit syncs triggered by admin (not automatic heartbeats/seeks)
           // data.seek is set on auto-seeks, data.explicit is set on manual sync button
           if (data.restart) {
-            toast.info("La vidéo redémarre depuis le début 🔄");
+            toast.info("La vidÃ©o redÃ©marre depuis le dÃ©but ðŸ”„");
           } else if (data.explicit) {
-            toast.info("📡 Synchronisation reçue");
+            toast.info("ðŸ“¡ Synchronisation reÃ§ue");
           }
         }
       )
@@ -1444,9 +1477,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           showAnnouncementForDuration(message, durationMs);
 
           if (message) {
-            toast.info("Annonce de la régie");
+            toast.info("Annonce de la rÃ©gie");
           } else {
-            toast.info("Annonce régie retirée");
+            toast.info("Annonce rÃ©gie retirÃ©e");
           }
         }
       )
@@ -1464,7 +1497,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           setPostVideoQuestionVideoId(videoId);
           setShowPostVideoQuestion(false);
 
-          toast.info(question ? "Question de fin de vidéo préparée" : "Question de fin de vidéo retirée");
+          toast.info(question ? "Question de fin de vidÃ©o prÃ©parÃ©e" : "Question de fin de vidÃ©o retirÃ©e");
         }
       )
       .on(
@@ -1477,20 +1510,20 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           setLiveVideoVotePoll(data.poll as LiveVideoVotePoll);
           if (data.action === "start") {
             setShowVideoVote(true);
-            toast.info("🗳️ La régie a lancé un vote (5 min)");
+            toast.info("ðŸ—³ï¸ La rÃ©gie a lancÃ© un vote (5 min)");
           }
           if (data.action === "finish") {
             const winnerId = (data.poll as LiveVideoVotePoll).winnerVideoId;
             const winner = winnerId ? playlist.find((video) => video.id === winnerId) : null;
             if (winner) {
-              toast.success(`Résultat du vote: "${winner.title}"`);
+              toast.success(`RÃ©sultat du vote: "${winner.title}"`);
             } else {
-              toast.info("Résultat du vote disponible");
+              toast.info("RÃ©sultat du vote disponible");
             }
           }
         }
       )
-      // ── Feature 68 : Compte à rebours partagé ──────────────────────────
+      // â”€â”€ Feature 68 : Compte Ã  rebours partagÃ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       .on(
         'broadcast',
         { event: 'room_countdown' },
@@ -1506,17 +1539,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           }
         }
       )
-      // ── Feature 70 : Annonce vocale TTS ────────────────────────────────
+      // â”€â”€ Feature 70 : Annonce vocale TTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       .on(
         'broadcast',
         { event: 'room_tts_announce' },
         (payload) => {
           const data = payload?.payload || {};
-          // The régie already spoke locally; others read here
+          // The rÃ©gie already spoke locally; others read here
           if (data?.by === currentUser.id) return;
           if (typeof data.text === "string" && data.text.trim()) {
             speakTTSMessage(data.text.trim());
-            toast.info(`📢 Annonce : "${data.text.trim().slice(0, 60)}${data.text.length > 60 ? '…' : ''}"`)
+            toast.info(`ðŸ“¢ Annonce : "${data.text.trim().slice(0, 60)}${data.text.length > 60 ? 'â€¦' : ''}"`)
           }
         }
       )
@@ -1554,10 +1587,65 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             if (!nextPermissions.chat || nextPermissions.muted) {
               setNewMessage("");
-              toast.error("Le chat vient d'être désactivé pour vous");
+              toast.error("Le chat vient d'Ãªtre dÃ©sactivÃ© pour vous");
             } else {
-              toast.success("Le chat est activé pour vous");
+              toast.success("Le chat est activÃ© pour vous");
             }
+          }
+        }
+      )
+      .on(
+        "broadcast",
+        { event: "room_speaking_requests" },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+
+          const queue = Array.isArray(data?.queue)
+            ? sortSpeakingRequests(
+                data.queue
+                  .map((entry: any) => normalizeSpeakingRequestEntry(entry))
+                  .filter(Boolean) as SpeakingRequestEntry[]
+              )
+            : [];
+          const target = normalizeSpeakingRequestEntry(data?.target);
+          const activeSpeaker = normalizeSpeakingRequestEntry(data?.activeSpeaker);
+
+          setSpeakingRequests(mapSpeakingRequestsById(queue));
+          setActiveSpeakerRequest(activeSpeaker);
+
+          if (data?.action === "raise" && target) {
+            if (canManageSpeakingRequests) {
+              toast.info(`${target.participantName} demande la parole`);
+            }
+            return;
+          }
+
+          if (data?.action === "cancel" && target) {
+            if (canManageSpeakingRequests) {
+              toast.info(`${target.participantName} a retire sa demande`);
+            }
+            return;
+          }
+
+          if (data?.action === "approve" && target) {
+            if (target.participantId === speakingRequestParticipantId) {
+              toast.success("La regie vous donne la parole");
+            } else {
+              toast.info(`${target.participantName} a la parole`);
+            }
+            return;
+          }
+
+          if (data?.action === "remove" && target) {
+            if (target.participantId === speakingRequestParticipantId) {
+              toast.info("Votre demande de parole a ete retiree");
+            }
+            return;
+          }
+
+          if (data?.action === "clear_active" && target && target.participantId === speakingRequestParticipantId) {
+            toast.info("Votre prise de parole est terminee");
           }
         }
       )
@@ -1571,9 +1659,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       )
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR") {
-          // 400 from Supabase — table may not have Realtime enabled.
+          // 400 from Supabase â€” table may not have Realtime enabled.
           // Do NOT retry automatically to avoid flooding the console.
-          console.warn("⚠️ Supabase Realtime: CHANNEL_ERROR (400). Vérifiez que la table 'messages' a Realtime activé dans le dashboard Supabase.");
+          console.warn("âš ï¸ Supabase Realtime: CHANNEL_ERROR (400). VÃ©rifiez que la table 'messages' a Realtime activÃ© dans le dashboard Supabase.");
         }
       });
 
@@ -1586,7 +1674,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       });
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration]);
+  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, canManageSpeakingRequests, speakingRequestParticipantId]);
 
 
   useEffect(() => {
@@ -1620,7 +1708,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     let isSyncing = false;
     const syncFromSalon = async () => {
-      if (isSyncing) return; // Éviter les appels overlapping
+      if (isSyncing) return; // Ã‰viter les appels overlapping
       isSyncing = true;
       try {
         const { data, error } = await selectSalonSingle('current_video_id, video_time, video_status');
@@ -1695,7 +1783,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [favoriteIds]);
 
 
-  // Sauvegarder l'historique des vidéos
+  // Sauvegarder l'historique des vidÃ©os
   useEffect(() => {
     historyLoadedRef.current = false;
     try {
@@ -1777,7 +1865,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         setVideoVoteCounts({});
       }
     } catch (error) {
-      console.error("Erreur chargement votes vidéo:", error);
+      console.error("Erreur chargement votes vidÃ©o:", error);
       setVideoVoteCounts({});
     }
   }, [voteStorageKey]);
@@ -1864,7 +1952,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     lastTrackedVideoIdRef.current = currentVideo.id;
 
-    // ── Feature E : générer des questions de discussion après chaque vidéo ──
+    // â”€â”€ Feature E : gÃ©nÃ©rer des questions de discussion aprÃ¨s chaque vidÃ©o â”€â”€
     if (lastDiscussionVideoIdRef.current !== currentVideo.id) {
       lastDiscussionVideoIdRef.current = currentVideo.id;
       const questions = generateDiscussionQuestions({
@@ -1880,7 +1968,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !backendSalonId) return;
     if (!canUseChat) {
-      toast.error("Le chat est désactivé pour vous");
+      toast.error("Le chat est dÃ©sactivÃ© pour vous");
       return;
     }
     if (!UUID_REGEX.test(backendSalonId)) {
@@ -1944,7 +2032,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleReactionClick = async (emoji: string) => {
     if (!canUseChat) {
-      toast.error("Le chat est désactivé pour vous");
+      toast.error("Le chat est dÃ©sactivÃ© pour vous");
       return;
     }
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) {
@@ -2063,6 +2151,119 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     setRegieActions((prev) => [newAction, ...prev].slice(0, 100));
   };
 
+  const broadcastSpeakingRequests = useCallback(
+    async (
+      action: "raise" | "cancel" | "approve" | "remove" | "clear_active",
+      nextQueue: SpeakingRequestEntry[],
+      target: SpeakingRequestEntry | null = null,
+      nextActiveSpeaker: SpeakingRequestEntry | null = null
+    ) => {
+      if (!roomChannelRef.current) return;
+
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_speaking_requests",
+          payload: {
+            by: currentUser.id,
+            action,
+            queue: nextQueue,
+            target,
+            activeSpeaker: nextActiveSpeaker,
+          },
+        });
+      } catch (error) {
+        console.error("Erreur broadcast demandes de parole", error);
+      }
+    },
+    [currentUser.id]
+  );
+
+  const handleRaiseHand = async () => {
+    if (canManageSpeakingRequests) {
+      toast.info("La regie gere deja les prises de parole");
+      return;
+    }
+
+    if (activeSpeakerRequest?.participantId === speakingRequestParticipantId) {
+      toast.info("Vous avez deja la parole");
+      return;
+    }
+
+    if (hasRaisedHand) {
+      toast.info("Votre main est deja levee");
+      return;
+    }
+
+    const request: SpeakingRequestEntry = {
+      participantId: speakingRequestParticipantId,
+      participantName: selfParticipant?.name || currentUser.name,
+      participantAvatar: selfParticipant?.avatar || createAvatarDataUrl(currentUser.name),
+      requestedAt: Date.now(),
+    };
+
+    const nextQueue = sortSpeakingRequests([...speakingQueue, request]);
+    setSpeakingRequests(mapSpeakingRequestsById(nextQueue));
+
+    await broadcastSpeakingRequests("raise", nextQueue, request, activeSpeakerRequest);
+    toast.success("Demande de parole envoyee");
+  };
+
+  const handleLowerHand = async () => {
+    const currentRequest = speakingRequests[speakingRequestParticipantId];
+    if (!currentRequest) return;
+
+    const nextQueue = speakingQueue.filter((entry) => entry.participantId !== speakingRequestParticipantId);
+    setSpeakingRequests(mapSpeakingRequestsById(nextQueue));
+
+    await broadcastSpeakingRequests("cancel", nextQueue, currentRequest, activeSpeakerRequest);
+    toast.info("Demande de parole retiree");
+  };
+
+  const handleApproveSpeakingRequest = async (participantId: string) => {
+    if (!canManageSpeakingRequests) return;
+    if (activeSpeakerRequest && activeSpeakerRequest.participantId !== participantId) {
+      toast.error("Terminez d'abord la prise de parole en cours");
+      return;
+    }
+
+    const request = speakingRequests[participantId];
+    if (!request) return;
+
+    const nextQueue = speakingQueue.filter((entry) => entry.participantId !== participantId);
+    setSpeakingRequests(mapSpeakingRequestsById(nextQueue));
+    setActiveSpeakerRequest(request);
+    addRegieAction("Parole", `Prise de parole accordee a ${request.participantName}`);
+
+    await broadcastSpeakingRequests("approve", nextQueue, request, request);
+    toast.success(`${request.participantName} a la parole`);
+  };
+
+  const handleRemoveSpeakingRequest = async (participantId: string) => {
+    if (!canManageSpeakingRequests) return;
+
+    const request = speakingRequests[participantId];
+    if (!request) return;
+
+    const nextQueue = speakingQueue.filter((entry) => entry.participantId !== participantId);
+    setSpeakingRequests(mapSpeakingRequestsById(nextQueue));
+    addRegieAction("Parole", `Demande retiree pour ${request.participantName}`);
+
+    await broadcastSpeakingRequests("remove", nextQueue, request, activeSpeakerRequest);
+    toast.info(`Demande retiree pour ${request.participantName}`);
+  };
+
+  const handleClearActiveSpeaker = async () => {
+    if (!canManageSpeakingRequests || !activeSpeakerRequest) return;
+
+    const previousSpeaker = activeSpeakerRequest;
+    setActiveSpeakerRequest(null);
+    addRegieAction("Parole", `Fin de prise de parole pour ${previousSpeaker.participantName}`);
+
+    await broadcastSpeakingRequests("clear_active", speakingQueue, previousSpeaker, null);
+    toast.info("Prise de parole terminee");
+  };
+
   const broadcastAnnouncement = async (message: string) => {
     showAnnouncementForDuration(message);
 
@@ -2082,40 +2283,40 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handlePublishAnnouncement = async () => {
     if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la régie vidéo peuvent envoyer une annonce");
+      toast.error("Seuls l'admin ou la rÃ©gie vidÃ©o peuvent envoyer une annonce");
       return;
     }
 
     const message = announcementDraft.trim();
     if (!message) {
-      toast.error("Écris une annonce avant de l'envoyer");
+      toast.error("Ã‰cris une annonce avant de l'envoyer");
       return;
     }
 
     try {
       await broadcastAnnouncement(message);
-      addRegieAction("Annonce régie", `Annonce affichée : ${message}`);
+      addRegieAction("Annonce rÃ©gie", `Annonce affichÃ©e : ${message}`);
       setShowAnnouncementPanel(false);
-      toast.success("Annonce affichée pour tous les participants");
+      toast.success("Annonce affichÃ©e pour tous les participants");
     } catch (error) {
-      console.error("Erreur annonce régie", error);
+      console.error("Erreur annonce rÃ©gie", error);
       toast.error("Impossible d'envoyer l'annonce");
     }
   };
 
   const handleClearAnnouncement = async () => {
     if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la régie vidéo peuvent retirer une annonce");
+      toast.error("Seuls l'admin ou la rÃ©gie vidÃ©o peuvent retirer une annonce");
       return;
     }
 
     try {
       await broadcastAnnouncement("");
       setAnnouncementDraft("");
-      addRegieAction("Annonce régie", "Annonce retirée");
-      toast.success("Annonce retirée");
+      addRegieAction("Annonce rÃ©gie", "Annonce retirÃ©e");
+      toast.success("Annonce retirÃ©e");
     } catch (error) {
-      console.error("Erreur retrait annonce régie", error);
+      console.error("Erreur retrait annonce rÃ©gie", error);
       toast.error("Impossible de retirer l'annonce");
     }
   };
@@ -2142,44 +2343,44 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleSavePostVideoQuestion = async () => {
     if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la régie vidéo peuvent préparer une question");
+      toast.error("Seuls l'admin ou la rÃ©gie vidÃ©o peuvent prÃ©parer une question");
       return;
     }
 
     if (!currentVideo?.id) {
-      toast.error("Aucune vidéo en cours pour associer la question");
+      toast.error("Aucune vidÃ©o en cours pour associer la question");
       return;
     }
 
     const question = postVideoQuestionDraft.trim();
     if (!question) {
-      toast.error("Écris une question avant de l'enregistrer");
+      toast.error("Ã‰cris une question avant de l'enregistrer");
       return;
     }
 
     try {
       await broadcastPostVideoQuestion(question, currentVideo.id);
-      addRegieAction("Question après vidéo", `Question préparée : ${question}`);
+      addRegieAction("Question aprÃ¨s vidÃ©o", `Question prÃ©parÃ©e : ${question}`);
       setShowPostVideoQuestionPanel(false);
-      toast.success("Question préparée pour la fin de vidéo");
+      toast.success("Question prÃ©parÃ©e pour la fin de vidÃ©o");
     } catch (error) {
-      console.error("Erreur question fin de vidéo", error);
+      console.error("Erreur question fin de vidÃ©o", error);
       toast.error("Impossible d'envoyer la question");
     }
   };
 
   const handleClearPostVideoQuestion = async () => {
     if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la régie vidéo peuvent retirer une question");
+      toast.error("Seuls l'admin ou la rÃ©gie vidÃ©o peuvent retirer une question");
       return;
     }
 
     try {
       await broadcastPostVideoQuestion("", null);
-      addRegieAction("Question après vidéo", "Question retirée");
-      toast.success("Question retirée");
+      addRegieAction("Question aprÃ¨s vidÃ©o", "Question retirÃ©e");
+      toast.success("Question retirÃ©e");
     } catch (error) {
-      console.error("Erreur retrait question fin de vidéo", error);
+      console.error("Erreur retrait question fin de vidÃ©o", error);
       toast.error("Impossible de retirer la question");
     }
   };
@@ -2191,64 +2392,61 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     if (postVideoQuestionVideoId && currentVideo?.id && postVideoQuestionVideoId !== currentVideo.id) return;
 
     setShowPostVideoQuestion(true);
-    toast.info("Question de fin de vidéo affichée");
+    toast.info("Question de fin de vidÃ©o affichÃ©e");
   }, [currentVideo?.id, postVideoQuestion, postVideoQuestionVideoId, showPostVideoQuestion]);
 
   const handlePlayPause = async () => {
-    if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la regie video peuvent controler la lecture");
-      return;
-    }
-    const newPlayingState = !isPlaying;
-    setIsPlaying(newPlayingState);
-    isPlayingRef.current = newPlayingState;
-    setSyncNonce(Date.now());
+  if (!canControlVideo) {
+    toast.error("Seuls l'admin ou la regie video peuvent controler la lecture");
+    return;
+  }
+  const newPlayingState = !isPlaying;
+  setIsPlaying(newPlayingState);
+  isPlayingRef.current = newPlayingState;
+  setSyncNonce(Date.now());
 
-    if (backendSalonId) {
-      try {
-        const { error: playPauseError } = await updateSalonState({
-          video_status: newPlayingState ? 'playing' : 'paused',
-          video_time: currentTimeRef.current,
-          current_video_id: currentVideo?.id || null,
+  if (backendSalonId) {
+    try {
+      const { error: playPauseError } = await updateSalonState({
+        video_status: newPlayingState ? "playing" : "paused",
+        video_time: currentTimeRef.current,
+        current_video_id: currentVideo?.id || null,
+      });
+      if (playPauseError) throw playPauseError;
+
+      if (roomChannelRef.current) {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_force_sync",
+          payload: {
+            by: currentUser.id,
+            at: Date.now(),
+            isPlaying: newPlayingState,
+            time: currentTimeRef.current,
+            videoId: currentVideo?.id || null,
+            forceSeek: true,
+            forceReload: true,
+          },
         });
-        if (playPauseError) throw playPauseError;
-
-        if (roomChannelRef.current) {
-          await roomChannelRef.current.send({
-            type: 'broadcast',
-            event: 'room_force_sync',
-            payload: {
-              by: currentUser.id,
-              at: Date.now(),
-              isPlaying: newPlayingState,
-              time: currentTimeRef.current,
-              videoId: currentVideo?.id || null,
-              forceSeek: true,
-              forceReload: true,
-            }
-          });
-        }
-
-      } catch (err) {
-        console.error('Erreur sync video:', err);
       }
+    } catch (err) {
+      console.error("Erreur sync video:", err);
     }
+  }
 
-    toast.success(
-      newPlayingState
-        ? `${currentUser.name} a lancé la vidéo`
-        : `${currentUser.name} a mis en pause`,
-      { icon: newPlayingState ? '▶️' : '⏸️' }
-    );
-  };
-
+  toast.success(
+    newPlayingState
+      ? `${currentUser.name} a lance la video`
+      : `${currentUser.name} a mis en pause`,
+    { icon: newPlayingState ? ">" : "||" }
+  );
   addRegieAction(
-      newPlayingState ? "Lecture" : "Pause",
-      newPlayingState ? "La vidéo a été lancée" : "La vidéo a été mise en pause"
-    );
-  };
+    newPlayingState ? "Lecture" : "Pause",
+    newPlayingState ? "La video a ete lancee" : "La video a ete mise en pause"
+  );
+};
 
-  const handleToggleFavorite = async (videoId: string) => {
+const handleToggleFavorite = async (videoId: string) => {
     const target = playlist.find((video) => video.id === videoId);
     if (!target?.youtubeId) {
       return;
@@ -2332,7 +2530,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           }
         });
       }
-      toast.success("📡 Synchronisation envoyée à tous les invités");
+      toast.success("ðŸ“¡ Synchronisation envoyÃ©e Ã  tous les invitÃ©s");
     } catch (error: any) {
       toast.error(error?.message || "Erreur synchronisation");
       console.error("Erreur sync salon", error);
@@ -2366,19 +2564,19 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         };
       });
       setPlaylist(mapped);
-      toast.success(`✅ Vidéo "${title}" ajoutée à la playlist !`);
+      toast.success(`âœ… VidÃ©o "${title}" ajoutÃ©e Ã  la playlist !`);
 
-      // ── Feature G : alerte si contenu potentiellement inapproprié ──────
+      // â”€â”€ Feature G : alerte si contenu potentiellement inappropriÃ© â”€â”€â”€â”€â”€â”€
       if (canControlVideo) {
         const score = computeContentScore({ title, duration: "0:00" });
         if (score.alert) {
-          toast.warning(`⚠️ Contenu à vérifier : ${score.alert}`, { duration: 6000 });
+          toast.warning(`âš ï¸ Contenu Ã  vÃ©rifier : ${score.alert}`, { duration: 6000 });
         } else if (score.score < 40) {
-          toast.warning(`🟠 Note faible (${score.score}/100) pour "${title}" — vérifiez le contenu.`, { duration: 5000 });
+          toast.warning(`ðŸŸ  Note faible (${score.score}/100) pour "${title}" â€” vÃ©rifiez le contenu.`, { duration: 5000 });
         }
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, "Erreur ajout vidéo"));
+      toast.error(getErrorMessage(error, "Erreur ajout vidÃ©o"));
       console.error(error);
     }
   };
@@ -2394,10 +2592,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       await removeVideoFromPlaylist(targetId, videoId);
       setPlaylist(prev => prev.filter(v => v.id !== videoId));
       if (videoToRemove) {
-        toast.success(`🗑️ Vidéo "${videoToRemove.title}" supprimée`);
+        toast.success(`ðŸ—‘ï¸ VidÃ©o "${videoToRemove.title}" supprimÃ©e`);
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, "Erreur suppression vidéo"));
+      toast.error(getErrorMessage(error, "Erreur suppression vidÃ©o"));
       console.error(error);
     }
   };
@@ -2431,7 +2629,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         effectiveUpdates.push({ participantId, nextPermissions });
         const msg = String(error?.message || "");
         if (msg.toLowerCase().includes("permission denied") || msg.toLowerCase().includes("row-level security")) {
-          toast.error("Supabase RLS bloque la mise à jour des permissions.");
+          toast.error("Supabase RLS bloque la mise Ã  jour des permissions.");
         } else {
           toast.error(getErrorMessage(error, "Impossible de sauvegarder les permissions"));
         }
@@ -2459,9 +2657,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
 
     if (effectiveUpdates.length > 0 && saveFailures === 0) {
-      toast.success("Permissions mises à jour");
+      toast.success("Permissions mises Ã  jour");
     } else if (effectiveUpdates.length > 0) {
-      toast.warning("Permissions appliquées en direct, mais non persistées côté serveur.");
+      toast.warning("Permissions appliquÃ©es en direct, mais non persistÃ©es cÃ´tÃ© serveur.");
     }
 
     permissionFlushInFlightRef.current = false;
@@ -2548,18 +2746,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       });
     } catch (error) {
-      console.error("Erreur broadcast vote vidéo", error);
+      console.error("Erreur broadcast vote vidÃ©o", error);
     }
   };
 
   const handleStartVideoVotePoll = async () => {
     if (!canManageVideoVotePoll) {
-      toast.error("Seule la régie peut lancer ce vote");
+      toast.error("Seule la rÃ©gie peut lancer ce vote");
       return;
     }
     const candidates = playlist.filter((video) => !video.isCurrent);
     if (candidates.length < 1) {
-      toast.error("Ajoutez d'autres vidéos à la playlist avant de lancer le vote");
+      toast.error("Ajoutez d'autres vidÃ©os Ã  la playlist avant de lancer le vote");
       return;
     }
 
@@ -2583,7 +2781,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     setVideoVoteNow(Date.now());
     setShowVideoVote(true);
     await broadcastVideoVotePoll("start", poll);
-    toast.success("🗳️ Vote lancé: 5 minutes pour choisir la prochaine vidéo");
+    toast.success("ðŸ—³ï¸ Vote lancÃ©: 5 minutes pour choisir la prochaine vidÃ©o");
   };
 
   const handleVoteVideo = async (videoId: string) => {
@@ -2592,11 +2790,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       return;
     }
     if (Date.now() >= liveVideoVotePoll.endsAt) {
-      toast.error("Le vote est terminé");
+      toast.error("Le vote est terminÃ©");
       return;
     }
     if (!canVoteVideoPoll) {
-      toast.error("Le vote vidéo n'est pas disponible pour vous");
+      toast.error("Le vote vidÃ©o n'est pas disponible pour vous");
       return;
     }
 
@@ -2621,22 +2819,49 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     });
 
     if (!nextPoll) {
-      toast.error("Vous avez déjà voté pour ce tour");
+      toast.error("Vous avez dÃ©jÃ  votÃ© pour ce tour");
       return;
     }
 
     await broadcastVideoVotePoll("vote", nextPoll);
-    toast.success("Vote enregistré");
+    toast.success("Vote enregistrÃ©");
   };
 
-  // ── Feature D/G : ouvre le panel de preview IA avant de lancer ──────────
+  // â”€â”€ Feature D/G : ouvre le panel de preview IA avant de lancer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handlePlayVideoRequest = (video: VideoInPlaylist) => {
     if (!canControlVideo) {
       toast.error("Seuls l'admin ou la regie video peuvent changer de video");
       return;
     }
-    // Afficher le panel de preview pour admin/régie
+    // Afficher le panel de preview pour admin/rÃ©gie
     setPreviewVideo(video);
+  };
+
+  const handlePrepareVideo = (video: VideoInPlaylist) => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent preparer une video");
+      return;
+    }
+
+    if (video.isCurrent) {
+      toast.info("Cette video est deja en direct");
+      return;
+    }
+
+    setPreviewVideoId(video.id);
+    addRegieAction("Previsualisation", `Video preparee : ${video.title}`);
+    toast.info(`Video preparee : ${video.title}`);
+  };
+
+  const handleTakePreview = async () => {
+    if (!regiePreviewVideo) {
+      toast.error("Aucune video en apercu");
+      return;
+    }
+
+    await handlePlayVideo(regiePreviewVideo);
+    addRegieAction("Passage antenne", `Video diffusee : ${regiePreviewVideo.title}`);
+    setPreviewVideoId(null);
   };
 
   const handlePlayVideo = async (video: VideoInPlaylist, transition: VideoTransitionType = selectedVideoTransition) => {
@@ -2654,18 +2879,20 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
       toast.success(`Lecture de "${video.title}"`, {
         duration: 3000,
-        icon: '🎬',
-        description: `Lancée par ${currentUser.name}`,
+        icon: 'ðŸŽ¬',
+        description: `LancÃ©e par ${currentUser.name}`,
       });
 
-      // Basculer immédiatement côté UI
+      // Basculer immÃ©diatement cÃ´tÃ© UI
       setPlaylist(prev => prev.map(v =>
         v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
       ));
+      setShowPostVideoQuestion(false);
       setCurrentTime(0);
       setIsPlaying(true);
       setSyncNonce(Date.now());
       lastAdminPlayerTimeRef.current = 0;
+      addRegieAction("Changement video", `Nouvelle video lancee : ${video.title}`);
 
       // Admin et regie peuvent persister/synchroniser l'etat global du salon
       if (canControlVideo && backendSalonId) {
@@ -2676,25 +2903,25 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         });
 
         if (updateError) {
-          // Erreur réseau ou Supabase temporairement indisponible
-          // On ne bloque pas la lecture — la vidéo joue localement
-          // La synchronisation se rétablira automatiquement à la reconnexion
+          // Erreur rÃ©seau ou Supabase temporairement indisponible
+          // On ne bloque pas la lecture â€” la vidÃ©o joue localement
+          // La synchronisation se rÃ©tablira automatiquement Ã  la reconnexion
           const isNetworkError = updateError?.message?.includes?.("Load failed") ||
             updateError?.message?.includes?.("connexion") ||
             updateError?.message?.includes?.("network") ||
             updateError?.code === "NETWORK_ERROR";
 
           if (isNetworkError) {
-            console.warn("⚠️ Sync Supabase échouée (réseau) — lecture locale maintenue", updateError);
-            toast.warning("Connexion instable — la vidéo joue en local, la sync reprendra automatiquement.", {
+            console.warn("âš ï¸ Sync Supabase Ã©chouÃ©e (rÃ©seau) â€” lecture locale maintenue", updateError);
+            toast.warning("Connexion instable â€” la vidÃ©o joue en local, la sync reprendra automatiquement.", {
               duration: 4000,
               id: "network-sync-warning",
             });
-            // Ne pas throw — laisser la vidéo continuer
+            // Ne pas throw â€” laisser la vidÃ©o continuer
           } else {
             console.error("Error updating salon video state", updateError);
-            // Erreur non-réseau : on log mais on ne bloque toujours pas la lecture
-            toast.warning("Sync partielle — la vidéo joue mais les autres participants pourraient ne pas voir le changement.", {
+            // Erreur non-rÃ©seau : on log mais on ne bloque toujours pas la lecture
+            toast.warning("Sync partielle â€” la vidÃ©o joue mais les autres participants pourraient ne pas voir le changement.", {
               duration: 3000,
               id: "sync-partial-warning",
             });
@@ -2725,8 +2952,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
 
     } catch (error) {
-      console.error("Erreur changement vidéo", error);
-      toast.error("Impossible de changer la vidéo");
+      console.error("Erreur changement vidÃ©o", error);
+      toast.error("Impossible de changer la vidÃ©o");
     }
   };
 
@@ -2761,9 +2988,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     if (winnerVideo) {
       void handlePlayVideo(winnerVideo);
-      toast.success(`🎬 Vote terminé: "${winnerVideo.title}" est sélectionnée`);
+      toast.success(`ðŸŽ¬ Vote terminÃ©: "${winnerVideo.title}" est sÃ©lectionnÃ©e`);
     } else {
-      toast.warning("Vote terminé: aucune vidéo gagnante");
+      toast.warning("Vote terminÃ©: aucune vidÃ©o gagnante");
     }
 
     videoVoteFinalizingRef.current = false;
@@ -2978,7 +3205,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   }, [backendSalonId, canControlVideo, currentUser.id, updateSalonState]);
 
-  // ── Scene switcher ─────────────────────────────────────────────────────
+  // â”€â”€ Scene switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSceneChange = async (scene: SceneMode) => {
     setCurrentScene(scene);
     if (!roomChannelRef.current) return;
@@ -2989,20 +3216,20 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         payload: { scene, by: currentUser.id },
       });
       const sceneLabels: Record<SceneMode, string> = {
-        cinema: "🎬 Mode Cinéma",
-        split: "▣ Mode Split",
-        party: "👥 Watch Party",
-        interlude: "⏸ Interlude",
+        cinema: "ðŸŽ¬ Mode CinÃ©ma",
+        split: "â–£ Mode Split",
+        party: "ðŸ‘¥ Watch Party",
+        interlude: "â¸ Interlude",
       };
-      toast.success(`Scène : ${sceneLabels[scene]}`);
+      toast.success(`ScÃ¨ne : ${sceneLabels[scene]}`);
     } catch (err) {
-      console.error("Erreur broadcast scène", err);
+      console.error("Erreur broadcast scÃ¨ne", err);
     }
   };
 
-  // ── Feature 68 : Lancer le compte à rebours ────────────────────────────
+  // â”€â”€ Feature 68 : Lancer le compte Ã  rebours â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleLaunchCountdown = async (seconds: number, reason: "manual" | "startup" = "manual") => {
-    // Show locally for the régie too
+    // Show locally for the rÃ©gie too
     if (reason === "startup") {
       startupCountdownTriggeredRef.current = true;
     }
@@ -3036,11 +3263,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const finishedReason = activeCountdown?.reason;
     setActiveCountdown(null);
     if (finishedReason === "startup" && isAdmin) {
-      toast.success("GO ! Lancez la vidéo quand vous êtes prêt.");
+      toast.success("GO ! Lancez la vidÃ©o quand vous Ãªtes prÃªt.");
     }
   };
 
-  // ── Feature 70 : Diffuser une annonce TTS ─────────────────────────────
+  // â”€â”€ Feature 70 : Diffuser une annonce TTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleTTSAnnounce = async (text: string) => {
     if (!roomChannelRef.current) return;
     try {
@@ -3086,12 +3313,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   ]);
 
   useEffect(() => {
-    if (canManageVoiceCommentary) return;
-    if (!voiceCommentaryEnabled) return;
-    void stopVoiceCommentary(false);
-  }, [canManageVoiceCommentary, stopVoiceCommentary, voiceCommentaryEnabled]);
-
-  useEffect(() => {
     return () => {
       teardownVoiceInfrastructure();
     };
@@ -3099,12 +3320,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const handleToggleVoiceCommentary = async () => {
     if (!canManageVoiceCommentary) {
-      toast.error("Seule la régie peut contrôler la voix live");
+      toast.error("Seule la rÃ©gie peut contrÃ´ler la voix live");
       return;
     }
     if (voiceCommentaryEnabled) {
       await stopVoiceCommentary(true);
-      toast.info("Micro commentaire désactivé");
+      toast.info("Micro commentaire dÃ©sactivÃ©");
       return;
     }
     await startVoiceCommentary();
@@ -3129,7 +3350,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }));
       // Immediately reload from DB so the promoted user's client also gets their new role
       await loadParticipantsSnapshot();
-      toast.success(enabled ? "🎬 Rôle Régie vidéo attribué" : "Rôle Régie vidéo retiré");
+      toast.success(enabled ? "ðŸŽ¬ RÃ´le RÃ©gie vidÃ©o attribuÃ©" : "RÃ´le RÃ©gie vidÃ©o retirÃ©");
     } catch (error: any) {
       toast.error(getErrorMessage(error, "Impossible de mettre a jour le role"));
     }
@@ -3160,7 +3381,104 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               {effectiveRole === null ? "..." : effectiveRole === "admin" ? "Admin" : effectiveRole === "regie" ? "Regie" : "Invite"}
             </Badge>
 
-            {/* Scene Switcher — visible only for admin/regie */}
+            {activeSpeakerRequest && (
+              <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 px-3 py-1 flex items-center gap-1.5">
+                <Mic className="w-3 h-3" />
+                {activeSpeakerRequest.participantId === speakingRequestParticipantId
+                  ? "Vous avez la parole"
+                  : `${activeSpeakerRequest.participantName} a la parole`}
+              </Badge>
+            )}
+
+            {canManageSpeakingRequests ? (
+              <button
+                type="button"
+                onClick={() => setShowSpeakingRequests(true)}
+                title="Demandes de parole"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.45rem",
+                  padding: "0.35rem 0.65rem",
+                  borderRadius: "0.5rem",
+                  border: theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                  background: theme === "dark" ? "rgba(39,39,42,0.8)" : "rgba(255,255,255,0.8)",
+                  color: theme === "dark" ? "#f4f4f5" : "#18181b",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
+                <Users style={{ width: 14, height: 14 }} />
+                Parole
+                {speakingQueueCount > 0 && (
+                  <span
+                    style={{
+                      minWidth: "1.25rem",
+                      height: "1.25rem",
+                      padding: "0 0.35rem",
+                      borderRadius: "999px",
+                      background: "#dc2626",
+                      color: "white",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "0.7rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {speakingQueueCount}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isCurrentParticipantActiveSpeaker) return;
+                  void (hasRaisedHand ? handleLowerHand() : handleRaiseHand());
+                }}
+                disabled={isCurrentParticipantActiveSpeaker}
+                title={isCurrentParticipantActiveSpeaker ? "Vous avez la parole" : "Demander la parole"}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.45rem",
+                  padding: "0.35rem 0.65rem",
+                  borderRadius: "0.5rem",
+                  border: isCurrentParticipantActiveSpeaker
+                    ? "1px solid #10b981"
+                    : hasRaisedHand
+                      ? "1px solid #dc2626"
+                      : theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                  background: isCurrentParticipantActiveSpeaker
+                    ? "rgba(16,185,129,0.12)"
+                    : hasRaisedHand
+                      ? "rgba(220,38,38,0.12)"
+                      : theme === "dark" ? "rgba(39,39,42,0.8)" : "rgba(255,255,255,0.8)",
+                  color: isCurrentParticipantActiveSpeaker
+                    ? "#10b981"
+                    : hasRaisedHand ? "#ef4444" : theme === "dark" ? "#f4f4f5" : "#18181b",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  cursor: isCurrentParticipantActiveSpeaker ? "default" : "pointer",
+                  opacity: isCurrentParticipantActiveSpeaker ? 0.9 : 1,
+                  backdropFilter: "blur(4px)",
+                }}
+              >
+                <Users style={{ width: 14, height: 14 }} />
+                {isCurrentParticipantActiveSpeaker
+                  ? "Vous avez la parole"
+                  : hasRaisedHand
+                    ? currentSpeakingRequestPosition >= 0
+                      ? `Main levee #${currentSpeakingRequestPosition + 1}`
+                      : "Main levee"
+                    : "Lever la main"}
+              </button>
+            )}
+
+            {/* Scene Switcher â€” visible only for admin/regie */}
             <SceneSwitcher
               currentScene={currentScene}
               onSceneChange={handleSceneChange}
@@ -3172,7 +3490,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <select
                 value={selectedVideoTransition}
                 onChange={(e) => setSelectedVideoTransition(e.target.value as VideoTransitionType)}
-                title="Transition entre vidéos"
+                title="Transition entre vidÃ©os"
                 className={`h-8 rounded-md border px-2 text-xs font-medium outline-none ${
                   theme === "dark"
                     ? "border-zinc-700 bg-zinc-900 text-zinc-200"
@@ -3187,7 +3505,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               </select>
             )}
 
-            {/* ── Feature 70 : Annonce TTS — admin/regie uniquement ── */}
+            {/* â”€â”€ Feature 70 : Annonce TTS â€” admin/regie uniquement â”€â”€ */}
             {(isAdmin || effectiveRole === "regie") && (
               <button
                 id="voice-commentary-btn"
@@ -3258,7 +3576,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             {!canManageVoiceCommentary && voiceCommentaryEnabled && (
               <Badge className="bg-red-600 text-white hover:bg-red-600 px-2 py-1 text-[11px]">
-                🎙️ Commentaire vocal live
+                ðŸŽ™ï¸ Commentaire vocal live
               </Badge>
             )}
           </div>
@@ -3322,7 +3640,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             Sync
           </Button>
 
-          {/* Bouton Contenu du Salon — résumés IA de toutes les vidéos */}
+          {/* Bouton Contenu du Salon â€” rÃ©sumÃ©s IA de toutes les vidÃ©os */}
           <Button
             type="button"
             onClick={(e) => {
@@ -3337,7 +3655,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 ? "text-purple-400 bg-purple-600/15 hover:bg-purple-600/25"
                 : theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'
             }`}
-            title="Contenu du Salon — Résumés IA de toutes les vidéos"
+            title="Contenu du Salon â€” RÃ©sumÃ©s IA de toutes les vidÃ©os"
           >
             <LayoutList className="w-4 h-4 mr-1.5" />
             <span className="hidden sm:inline">Contenu</span>
@@ -3388,7 +3706,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             currentScene === "cinema" ? "w-full" : "flex-1"
           }`}
         >
-          {/* Video Player — ou InterludeScreen si scène interlude */}
+          {/* Video Player â€” ou InterludeScreen si scÃ¨ne interlude */}
           {currentScene === "interlude" ? (
             <InterludeScreen roomName={roomName} theme={theme} />
           ) : currentVideo && currentVideo.youtubeId ? (
@@ -3402,9 +3720,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 syncNonce={syncNonce}
                 onTimeUpdate={handlePlayerTimeUpdate}
                 onPlaybackStateChange={handleAdminPlaybackStateChange}
+                onEnded={handleMainVideoEnded}
                 theme={theme}
               />
-              {/* Feature F — Overlay de sous-titres (YouTube captions + micro fallback) */}
+              {/* Feature F â€” Overlay de sous-titres (YouTube captions + micro fallback) */}
               <LiveTranscriptionOverlay
                 isActive={transcription.isActive}
                 captionLine={ytCaptions.currentCaption}
@@ -3416,6 +3735,49 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 micError={transcription.error}
                 isSupported={transcription.isSupported}
               />
+
+              {liveAnnouncement && (
+                <div className="pointer-events-none absolute left-4 right-4 top-4 z-20 flex justify-center">
+                  <div className="max-w-3xl rounded-md border border-red-400/40 bg-red-600/95 px-4 py-2 shadow-xl backdrop-blur">
+                    <p className="truncate text-center text-sm font-semibold text-white">
+                      <span className="mr-2 text-white/80">ANNONCE REGIE</span>
+                      {liveAnnouncement}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {showPostVideoQuestion && postVideoQuestion && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-6">
+                  <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-gray-200'} w-full max-w-xl rounded-xl border p-5 shadow-2xl`}>
+                    <p className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} text-xs font-semibold`}>
+                      QUESTION APRES VIDEO
+                    </p>
+                    <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} mt-2 text-lg font-semibold`}>
+                      {postVideoQuestion}
+                    </p>
+                    <div className="mt-4 flex justify-end gap-2">
+                      {canControlVideo && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleClearPostVideoQuestion}
+                          className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                        >
+                          Retirer
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        onClick={() => setShowPostVideoQuestion(false)}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        Fermer
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden aspect-video flex items-center justify-center`}>
@@ -3436,7 +3798,58 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             </div>
           )}
 
-          {/* Playlist Section — cachée en mode cinéma */}
+          {canControlVideo && regiePreviewVideo?.youtubeId && (
+            <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-gray-100 border-gray-200'} border rounded-xl p-3`}>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-36 shrink-0 overflow-hidden rounded bg-black">
+                    <YouTubePlayer
+                      videoId={regiePreviewVideo.youtubeId}
+                      isPlaying={true}
+                      onPlayPause={() => {}}
+                      canControl={false}
+                      theme={theme}
+                      muted={true}
+                      label="Apercu regie"
+                      showPlayButton={false}
+                      showBadge={false}
+                    />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} text-xs font-semibold`}>
+                      APERCU REGIE
+                    </p>
+                    <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium truncate`}>
+                      {regiePreviewVideo.title}
+                    </p>
+                    <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
+                      Prete a etre diffusee
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleTakePreview}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Passer a l'antenne
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    onClick={() => setPreviewVideoId(null)}
+                    className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Playlist Section â€” cachÃ©e en mode cinÃ©ma */}
           {currentScene !== "cinema" && (
             <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
               <div className="flex items-center justify-between mb-4">
@@ -3474,7 +3887,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                       {video.youtubeId && hoverPreviewVideoId === video.id && (
                         <iframe
                           src={getHoverPreviewUrl(video.youtubeId)}
-                          title={`Aperçu ${video.title}`}
+                          title={`AperÃ§u ${video.title}`}
                           className="absolute inset-0 w-full h-full pointer-events-none"
                           allow="autoplay; encrypted-media; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
@@ -3502,6 +3915,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                         <Heart className={`w-3 h-3 ${video.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
                       </button>
 
+                      {canControlVideo && !video.isCurrent && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrepareVideo(video);
+                          }}
+                          className="absolute bottom-1.5 right-1.5 rounded bg-red-600/90 px-2 py-1 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-700"
+                        >
+                          Preparer
+                        </button>
+                      )}
+
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
                         <p className="text-white text-[11px] truncate leading-tight">{video.title}</p>
                         <p className="text-gray-400 text-[10px] mt-0.5">{video.duration}</p>
@@ -3510,7 +3935,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                       <div className="absolute top-1.5 left-1.5 right-9 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                         <div className="bg-black/65 rounded px-2 py-1">
                           <p className="text-white text-[11px] leading-tight whitespace-normal break-words">{video.title}</p>
-                          <p className="text-gray-300 text-[10px] mt-0.5">Aperçu 6s</p>
+                          <p className="text-gray-300 text-[10px] mt-0.5">AperÃ§u 6s</p>
                         </div>
                       </div>
                     </div>
@@ -3522,11 +3947,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           )}
         </div>
 
-        {/* RIGHT: Chat + Participants — masqué en mode cinéma, participants-only en mode party */}
+        {/* RIGHT: Chat + Participants â€” masquÃ© en mode cinÃ©ma, participants-only en mode party */}
         {currentScene !== "cinema" && (
         <div className={`w-80 ${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl flex flex-col sticky top-20 h-[calc(100vh-6rem)]`}>
 
-          {/* ── MODE PARTY : uniquement la liste des participants ── */}
+          {/* â”€â”€ MODE PARTY : uniquement la liste des participants â”€â”€ */}
           {currentScene === "party" ? (
             <>
               {/* Header party */}
@@ -3542,7 +3967,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
               {/* Liste participants */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {/* Soi-même */}
+                {/* Soi-mÃªme */}
                 <div className={`p-3 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-gray-200'} rounded-xl`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -3599,7 +4024,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               </div>
             </>
           ) : (
-            /* ── MODES split / interlude : tabs Chat / Participants / Sondages ── */
+            /* â”€â”€ MODES split / interlude : tabs Chat / Participants / Sondages â”€â”€ */
             <>
           <div className={`flex border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
             <button
@@ -3624,7 +4049,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             </button><button
               onClick={() => {
                 if (!canUsePolls) {
-                  toast.error("Les sondages sont désactivés pour vous");
+                  toast.error("Les sondages sont dÃ©sactivÃ©s pour vous");
                   return;
                 }
                 setActiveTab("polls");
@@ -3733,7 +4158,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                     autoComplete="off"
-                    placeholder={canUseChat ? "Message..." : "Chat désactivé"}
+                    placeholder={canUseChat ? "Message..." : "Chat dÃ©sactivÃ©"}
                     disabled={!canUseChat}
                     className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} flex-1 text-sm h-9`}
                   />
@@ -3776,6 +4201,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                         <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm flex items-center gap-2`}>
                           {currentUser.name} (Vous)
                           {isAdmin && <Crown className="w-3 h-3 text-yellow-500" />}
+                          {hasRaisedHand && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">
+                              Main levee
+                            </span>
+                          )}
+                          {activeSpeakerRequest?.participantId === speakingRequestParticipantId && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500">
+                              Parole
+                            </span>
+                          )}
                         </p>
                         <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
                           {getRoleLabel(effectiveRole)}
@@ -3785,6 +4220,62 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                   </div>
                 </div>
+
+                {(activeSpeakerRequest || speakingQueueCount > 0 || hasRaisedHand) && (
+                  <div className={`p-3 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-gray-200'} rounded-lg`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium`}>
+                          Demandes de parole
+                        </p>
+                        <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs mt-1`}>
+                          {canManageSpeakingRequests
+                            ? speakingQueueCount > 0
+                              ? `${speakingQueueCount} participant(s) en attente`
+                              : activeSpeakerRequest
+                                ? `${activeSpeakerRequest.participantName} a la parole`
+                                : "Aucune main levee pour le moment"
+                            : activeSpeakerRequest?.participantId === speakingRequestParticipantId
+                              ? "La regie vous a donne la parole."
+                              : hasRaisedHand
+                                ? currentSpeakingRequestPosition >= 0
+                                  ? `Vous etes en attente (#${currentSpeakingRequestPosition + 1})`
+                                  : "Votre demande est en attente"
+                                : activeSpeakerRequest
+                                  ? `${activeSpeakerRequest.participantName} a la parole actuellement`
+                                  : "Vous pouvez lever la main pour demander la parole"}
+                        </p>
+                      </div>
+
+                      {canManageSpeakingRequests ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => setShowSpeakingRequests(true)}
+                          className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          Ouvrir
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={isCurrentParticipantActiveSpeaker}
+                          onClick={() => {
+                            if (isCurrentParticipantActiveSpeaker) return;
+                            void (hasRaisedHand ? handleLowerHand() : handleRaiseHand());
+                          }}
+                          className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-700' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                        >
+                          {isCurrentParticipantActiveSpeaker
+                            ? "Vous avez la parole"
+                            : hasRaisedHand ? "Annuler" : "Lever la main"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {otherParticipants
                   .map((participant) => (
@@ -3801,6 +4292,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                               {participant.name}
                               {participant.role === "admin" && <Crown className="w-3 h-3 text-yellow-500" />}
                               {participant.role === "regie" && <Clapperboard className="w-3 h-3 text-red-400" />}
+                              {speakingRequests[participant.id] && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">
+                                  Main levee
+                                </span>
+                              )}
+                              {activeSpeakerRequest?.participantId === participant.id && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500">
+                                  Parole
+                                </span>
+                              )}
                             </p>
                             <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
                               {getRoleLabel(participant.role)}
@@ -3819,14 +4320,14 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             <div className="flex-1 overflow-hidden h-full flex flex-col">
               <div className={`px-3 py-2 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'} flex items-center justify-between`}>
                 <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                  🗳️ Vote vidéo en temps réel (5 min)
+                  ðŸ—³ï¸ Vote vidÃ©o en temps rÃ©el (5 min)
                 </p>
                 <Button
                   size="sm"
                   onClick={() => setShowVideoVote(true)}
                   className="h-7 bg-red-600 hover:bg-red-700 text-white text-xs"
                 >
-                  Ouvrir le vote vidéo
+                  Ouvrir le vote vidÃ©o
                 </Button>
               </div>
               <div className="flex-1 overflow-hidden">
@@ -3840,7 +4341,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           )}
           {activeTab === "polls" && !canUsePolls && (
             <div className={`flex-1 p-4 ${theme === "dark" ? "text-gray-400" : "text-gray-700"}`}>
-              Les sondages sont désactivés pour votre compte.
+              Les sondages sont dÃ©sactivÃ©s pour votre compte.
             </div>
           )}
             </>
@@ -3893,7 +4394,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
             >
               <ThumbsUp className="w-4 h-4 mr-2" />
-              Voter pour une vidéo
+              Voter pour une vidÃ©o
             </Button>
 
             <Button
@@ -3917,8 +4418,82 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
             >
               <History className="w-4 h-4 mr-2" />
-              Historique des vidéos
+              Historique des vidÃ©os
             </Button>
+
+            {canManageSpeakingRequests ? (
+              <Button
+                onClick={() => {
+                  setShowSpeakingRequests(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <Users className="w-4 h-4 mr-2" />
+                Demandes de parole{speakingQueueCount > 0 ? ` (${speakingQueueCount})` : ""}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  if (isCurrentParticipantActiveSpeaker) return;
+                  void (hasRaisedHand ? handleLowerHand() : handleRaiseHand());
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                disabled={isCurrentParticipantActiveSpeaker}
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <Users className="w-4 h-4 mr-2" />
+                {isCurrentParticipantActiveSpeaker
+                  ? "Vous avez la parole"
+                  : hasRaisedHand ? "Annuler ma demande" : "Lever la main"}
+              </Button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setAnnouncementDraft(liveAnnouncement);
+                  setShowAnnouncementPanel(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <Megaphone className="w-4 h-4 mr-2" />
+                Annonce regie
+              </Button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setPostVideoQuestionDraft(postVideoQuestion);
+                  setShowPostVideoQuestionPanel(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <MessageCircle className="w-4 h-4 mr-2" />
+                Question apres video
+              </Button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setShowRegieHistory(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <History className="w-4 h-4 mr-2" />
+                Historique regie
+              </Button>
+            )}
 
             {isAdmin && (
               <>
@@ -3933,7 +4508,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
                 >
                   <Shield className="w-4 h-4 mr-2" />
-                  Gérer les permissions
+                  GÃ©rer les permissions
                 </Button>
 
                 <Button
@@ -3945,7 +4520,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Gérer les vidéos
+                  GÃ©rer les vidÃ©os
                 </Button>
               </>
             )}
@@ -3962,7 +4537,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                   className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Gérer les vidéos
+                  GÃ©rer les vidÃ©os
                 </Button>
               </>
             )}
@@ -3984,7 +4559,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </>
       )}
 
-      {/* Feature D — Panneau Contenu du Salon (résumés IA de toutes les vidéos) */}
+      {/* Feature D â€” Panneau Contenu du Salon (rÃ©sumÃ©s IA de toutes les vidÃ©os) */}
       {showContentPanel && (
         <RoomContentPanel
           playlist={playlist}
@@ -3994,7 +4569,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         />
       )}
 
-      {/* Feature D/G : Panel de preview IA avant lancement vidéo */}
+      {/* Feature D/G : Panel de preview IA avant lancement vidÃ©o */}
       {previewVideo && (
         <AIVideoPreviewPanel
           video={previewVideo}
@@ -4078,6 +4653,19 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         />
       )}
 
+      {showSpeakingRequests && canManageSpeakingRequests && (
+        <SpeakingRequestsPanel
+          isOpen={showSpeakingRequests}
+          requests={speakingQueue}
+          activeSpeaker={activeSpeakerRequest}
+          onClose={() => setShowSpeakingRequests(false)}
+          onApprove={handleApproveSpeakingRequest}
+          onRemove={handleRemoveSpeakingRequest}
+          onClearActiveSpeaker={handleClearActiveSpeaker}
+          theme={theme}
+        />
+      )}
+
       {showVideoManagement && canManagePlaylist && (
         <VideoManagementPanel
           videos={playlist}
@@ -4097,7 +4685,202 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         />
       )}
 
-      {/* ShareRoomDialog temporairement désactivé pour debug */}
+      {showAnnouncementPanel && canControlVideo && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md overflow-hidden shadow-2xl`}>
+            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className="flex items-center gap-2">
+                <Megaphone className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} w-5 h-5`} />
+                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
+                  Annonce regie
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowAnnouncementPanel(false)}
+                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} text-sm`}
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <textarea
+                value={announcementDraft}
+                onChange={(e) => setAnnouncementDraft(e.target.value.slice(0, 140))}
+                placeholder="Ex : Pause dans 5 minutes"
+                rows={4}
+                className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500`}
+              />
+
+              {liveAnnouncement && (
+                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
+                  <p className="text-xs uppercase text-red-500">Annonce active</p>
+                  <p className="mt-1">{liveAnnouncement}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                {liveAnnouncement && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleClearAnnouncement}
+                    className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                  >
+                    Retirer
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowAnnouncementPanel(false)}
+                  className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                >
+                  Annuler
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handlePublishAnnouncement}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Afficher
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPostVideoQuestionPanel && canControlVideo && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md overflow-hidden shadow-2xl`}>
+            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className="flex items-center gap-2">
+                <MessageCircle className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} w-5 h-5`} />
+                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
+                  Question apres video
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowPostVideoQuestionPanel(false)}
+                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} text-sm`}
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
+                La question sera affichee automatiquement aux participants quand la video en cours se termine.
+              </p>
+
+              {currentVideo && (
+                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
+                  <p className="text-xs uppercase text-red-500">Video associee</p>
+                  <p className="mt-1 truncate">{currentVideo.title}</p>
+                </div>
+              )}
+
+              <textarea
+                value={postVideoQuestionDraft}
+                onChange={(e) => setPostVideoQuestionDraft(e.target.value.slice(0, 220))}
+                placeholder="Ex : Qu'avez-vous compris de ce passage ?"
+                rows={4}
+                className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500`}
+              />
+
+              {postVideoQuestion && (
+                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
+                  <p className="text-xs uppercase text-red-500">Question preparee</p>
+                  <p className="mt-1">{postVideoQuestion}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                {postVideoQuestion && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleClearPostVideoQuestion}
+                    className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                  >
+                    Retirer
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setShowPostVideoQuestionPanel(false)}
+                  className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
+                >
+                  Annuler
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleSavePostVideoQuestion}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRegieHistory && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md max-h-[80vh] overflow-hidden`}>
+            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
+              <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg`}>
+                Historique regie
+              </h2>
+              <button
+                onClick={() => setShowRegieHistory(false)}
+                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'}`}
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto max-h-[60vh]">
+              {regieActions.length === 0 ? (
+                <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
+                  Aucune action regie enregistree.
+                </p>
+              ) : (
+                regieActions.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className={`${theme === 'dark' ? 'bg-zinc-800' : 'bg-gray-100'} rounded-lg p-3`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium`}>
+                        {entry.action}
+                      </p>
+                      <span className="text-gray-500 text-xs">
+                        {entry.time}
+                      </span>
+                    </div>
+                    <p className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'} text-sm mt-1`}>
+                      {entry.details}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      Par {entry.user}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ShareRoomDialog temporairement dÃ©sactivÃ© pour debug */}
       {showShareDialog && roomCode && (
         <ShareRoomDialog
           isOpen={showShareDialog}
@@ -4108,7 +4891,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         />
       )}
 
-      {/* ── Feature 68 : Overlay compte à rebours partagé ── */}
+      {/* â”€â”€ Feature 68 : Overlay compte Ã  rebours partagÃ© â”€â”€ */}
       {activeCountdown && (
         <SharedCountdownOverlay
           key={activeCountdown.key}
@@ -4171,7 +4954,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </div>
       )}
 
-      {/* ── Feature 70 : Panneau TTS (régie uniquement) ── */}
+      {/* â”€â”€ Feature 70 : Panneau TTS (rÃ©gie uniquement) â”€â”€ */}
       {showTTSPanel && (isAdmin || effectiveRole === "regie") && (
         <TTSAnnouncementPanel
           onAnnounce={handleTTSAnnounce}
