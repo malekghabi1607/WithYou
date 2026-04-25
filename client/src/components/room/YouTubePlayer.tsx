@@ -43,7 +43,7 @@ export function YouTubePlayer({
   muted = false,
   label = "En direct",
   showPlayButton = true,
-  showBadge = true
+  showBadge = true,
 }: YouTubePlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
   const playerRef = useRef<any>(null);
@@ -92,9 +92,10 @@ export function YouTubePlayer({
             autoplay: isPlaying ? 1 : 0,
             controls: showPlayButton ? 1 : 0,
             mute: muted ? 1 : 0,
-            playsinline: 1,
+            fs: 0,
             rel: 0,
             modestbranding: 1,
+            playsinline: 1,
           },
           events: {
             onReady: (event: any) => {
@@ -226,17 +227,17 @@ export function YouTubePlayer({
       {/* Contrôle overlay (optionnel) */}
       {showPlayButton && (
         <div className="absolute bottom-4 right-4 z-10">
-        <button 
-          onClick={onPlayPause}
-          disabled={!canControl}
-          className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {isPlaying ? (
-            <Pause className="w-6 h-6 text-white" />
-          ) : (
-            <Play className="w-6 h-6 text-white ml-0.5" />
-          )}
-        </button>
+          <button
+            onClick={onPlayPause}
+            disabled={!canControl}
+            className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isPlaying ? (
+              <Pause className="w-6 h-6 text-white" />
+            ) : (
+              <Play className="w-6 h-6 text-white ml-0.5" />
+            )}
+          </button>
         </div>
       )}
     </div>

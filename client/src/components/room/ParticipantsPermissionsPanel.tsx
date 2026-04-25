@@ -88,7 +88,7 @@ const getRoleBadgeColor = (role: string) => {
 };
 
 const defaultPermissions = (role: string): MemberPermissions => {
-  if (role === "admin" || role === "regie") {
+  if (role === "admin") {
     return { chat: true, video: true, playlist: true, polls: true, pin: true, muted: false };
   }
   return { chat: true, video: false, playlist: false, polls: false, pin: false, muted: false };
@@ -190,9 +190,8 @@ export function ParticipantsPermissionsPanel({
             ? {
                 ...p,
                 role: makeRegie ? "regie" : "member",
-                permissions: makeRegie
-                  ? { chat: true, video: true, playlist: true, polls: true, pin: true, muted: false }
-                  : { chat: true, video: false, playlist: false, polls: false, pin: false, muted: false },
+                // Keep the user's explicit per-permission choices unchanged.
+                permissions: { ...p.permissions },
               }
             : p
         );

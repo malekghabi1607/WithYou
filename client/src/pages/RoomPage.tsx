@@ -24,6 +24,17 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/Input";
 import { Logo } from "../components/ui/Logo";
 import { PollSection } from "../components/room/PollSection";
+import { SceneSwitcher, type SceneMode } from "../components/room/SceneSwitcher";
+import { InterludeScreen } from "../components/room/InterludeScreen";
+import { AIVideoPreviewPanel } from "../components/room/AIVideoPreviewPanel";
+import { AIDiscussionQuestions } from "../components/room/AIDiscussionQuestions";
+import { LiveTranscriptionOverlay } from "../components/room/LiveTranscriptionOverlay";
+import { RoomContentPanel } from "../components/room/RoomContentPanel";
+import { SharedCountdownOverlay } from "../components/room/SharedCountdownOverlay";
+import { TTSAnnouncementPanel, speakTTSMessage } from "../components/room/TTSAnnouncementPanel";
+import { useLiveTranscription } from "../hooks/useLiveTranscription";
+import { useYouTubeCaptions } from "../hooks/useYouTubeCaptions";
+import { computeContentScore, generateDiscussionQuestions } from "../utils/videoContentScore";
 import {
   Play,
   Pause,
@@ -45,7 +56,11 @@ import {
   Shield,
   History,
   Share2,
-  Clapperboard
+  Clapperboard,
+  LayoutList,
+  Volume2,
+  Mic,
+  MicOff
 } from "lucide-react";
 import { LeaveRoomDialog } from "./LeaveRoomDialog";
 import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
@@ -156,13 +171,34 @@ interface VideoHistoryEntry {
   playedBy: string;
 }
 
-interface RegieActionEntry{
+interface RegieActionEntry {
   id: string;
   action: string;
   details: string;
   user: string;
   time: string;
 }
+
+interface LiveVideoVotePoll {
+  pollId: string;
+  startedAt: number;
+  endsAt: number | null;
+  isActive: boolean;
+  startedBy: string;
+  votes: Record<string, number>;
+  voterChoices: Record<string, string>;
+  winnerVideoId?: string | null;
+}
+
+type VideoTransitionType = "cut" | "fade_black" | "slide_lateral" | "flash_white";
+
+const VIDEO_TRANSITIONS: Array<{ value: VideoTransitionType; label: string }> = [
+  { value: "cut", label: "⬛ Cut brutal" },
+  { value: "fade_black", label: "🌫️ Fondu au noir" },
+  { value: "slide_lateral", label: "↔️ Glissement latéral" },
+  { value: "flash_white", label: "⚪ Flash blanc" },
+];
+
 interface RoomPageProps {
   roomId: string;
   roomName?: string;
@@ -185,6 +221,28 @@ const getErrorMessage = (error: any, fallback: string) => {
     error?.hint ||
     fallback;
   return message === fallback ? fallback : `${fallback}: ${message}`;
+};
+
+const isAbortLikeError = (error: any) => {
+  const name = String(error?.name || "");
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    name === "AbortError" ||
+    message.includes("aborted") ||
+    message.includes("abort")
+  );
+};
+
+const isNetworkLikeError = (error: any) => {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    name.includes("typeerror") ||
+    message.includes("load failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("network request failed")
+  );
 };
 
 const MESSAGE_ROOM_COLUMNS = ["salon_id", "id_salon", "room_id"] as const;
@@ -236,6 +294,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [syncNonce, setSyncNonce] = useState(0);
+  const [currentScene, setCurrentScene] = useState<SceneMode>("split");
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"chat" | "participants" | "polls">("chat");
@@ -274,7 +333,31 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [messageUserColumn, setMessageUserColumn] = useState<MessageAuthorColumn>("user_id");
   const [salonIdColumn, setSalonIdColumn] = useState<SalonIdColumn>("id_salon");
   const [storedReactionsByMessage, setStoredReactionsByMessage] = useState<MessageReactionsById>({});
+  const [isMessagePollingEnabled, setIsMessagePollingEnabled] = useState(true);
+  const [hoverPreviewVideoId, setHoverPreviewVideoId] = useState<string | null>(null);
+  const [liveVideoVotePoll, setLiveVideoVotePoll] = useState<LiveVideoVotePoll | null>(null);
+  const [videoVoteNow, setVideoVoteNow] = useState<number>(Date.now());
+  const [selectedVideoTransition, setSelectedVideoTransition] = useState<VideoTransitionType>("cut");
+  const [activeVideoTransition, setActiveVideoTransition] = useState<{ type: VideoTransitionType; key: number } | null>(null);
 
+  // ── Régie : Compte à rebours partagé (feature 68) ──────────────────────
+  const [activeCountdown, setActiveCountdown] = useState<{ seconds: number; key: number; reason?: "manual" | "startup" } | null>(null);
+
+  // ── Régie : Annonce vocale TTS (feature 70) ─────────────────────────────
+  const [showTTSPanel, setShowTTSPanel] = useState(false);
+  const [voiceCommentaryEnabled, setVoiceCommentaryEnabled] = useState(false);
+  const [voiceCommentaryBusy, setVoiceCommentaryBusy] = useState(false);
+
+  // ── IA de Contenu — États ───────────────────────────────────────────────
+  // D/G : Panneau de preview IA (avant lancement vidéo)
+  const [previewVideo, setPreviewVideo] = useState<VideoInPlaylist | null>(null);
+  const [showContentPanel, setShowContentPanel] = useState(false);
+  // E : Questions de discussion générées après chaque vidéo
+  const [discussionQuestions, setDiscussionQuestions] = useState<[string, string, string] | null>(null);
+  const [discussionVideoTitle, setDiscussionVideoTitle] = useState("");
+  const lastDiscussionVideoIdRef = useRef<string | null>(null);
+  // F : Transcription live (micro)
+  const transcription = useLiveTranscription("fr-FR");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const roomChannelRef = useRef<any>(null);
@@ -293,6 +376,22 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const canControlVideoRef = useRef<boolean>(false);
   const lastCurrentVideoIdRef = useRef<string | null>(null);
   const announcementTimeoutRef = useRef<number | null>(null);
+  const hoverPreviewTimeoutRef = useRef<number | null>(null);
+  const videoVoteFinalizingRef = useRef<boolean>(false);
+  const startupCountdownTriggeredRef = useRef<boolean>(false);
+  const videoTransitionTimeoutRef = useRef<number | null>(null);
+  const messagePollingDisabledLoggedRef = useRef<boolean>(false);
+  const messagePollingErrorCountRef = useRef<number>(0);
+  const lastNetworkWarningAtRef = useRef<number>(0);
+  const pendingPermissionUpdatesRef = useRef<Record<string, MemberPermissions>>({});
+  const permissionFlushTimeoutRef = useRef<number | null>(null);
+  const permissionFlushInFlightRef = useRef<boolean>(false);
+  const localVoiceStreamRef = useRef<MediaStream | null>(null);
+  const voicePeerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
+  const voiceOfferInFlightRef = useRef<Record<string, boolean>>({});
+  const remoteVoiceStreamRef = useRef<MediaStream | null>(null);
+  const remoteVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceAutoplayWarnedRef = useRef<boolean>(false);
   const syncAnchorRef = useRef<{ time: number; at: number; playing: boolean; videoId?: string | null }>({
     time: 0,
     at: Date.now(),
@@ -335,8 +434,38 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     effectiveRole === "admin" || effectiveRole === "regie" || currentPermissions.playlist;
   const canUsePolls =
     effectiveRole === "admin" || currentPermissions.polls;
+  const canManageVideoVotePoll =
+    effectiveRole === "admin" || effectiveRole === "regie";
+  const canVoteVideoPoll = true;
+  const voteUserKey = authUserId || currentUser.id || currentUser.email || currentUser.name;
+  const realtimeVoiceUserId = authUserId || currentUser.id || currentUser.email || currentUser.name;
+  const canManageVoiceCommentary = effectiveRole === "admin" || effectiveRole === "regie";
+  const liveVoteRemainingMs =
+    liveVideoVotePoll?.isActive && liveVideoVotePoll?.endsAt
+      ? Math.max(0, liveVideoVotePoll.endsAt - videoVoteNow)
+      : 0;
+  const liveVoteRemainingSeconds = Math.ceil(liveVoteRemainingMs / 1000);
+
+  const pickWinningVideoId = useCallback((poll: LiveVideoVotePoll) => {
+    const playlistOrder = playlist.map((video) => video.id);
+    const entries = Object.entries(poll.votes || {}).filter(([videoId]) =>
+      playlistOrder.includes(videoId)
+    );
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return playlistOrder.indexOf(a[0]) - playlistOrder.indexOf(b[0]);
+    });
+    return entries[0][0];
+  }, [playlist]);
   // Keep a ref updated so Supabase Realtime closures always see the current value
   canControlVideoRef.current = canControlVideo;
+  // Stable refs for participants/permissions so the Realtime channel doesn't need to reinitialize on every render
+  const participantsRef = useRef<Participant[]>(participants);
+  participantsRef.current = participants;
+  const participantPermissionsRef = useRef<PermissionsByParticipant>(participantPermissions);
+  participantPermissionsRef.current = participantPermissions;
+
   const voteStorageKey = `room_${roomId}_videoVotes`;
   const reactionStorageKey = `room_${roomId}_messageReactions`;
   const permissionsStorageKey = `room_${roomId}_participantPermissions`;
@@ -371,6 +500,19 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     return await sender(fallbackId);
   };
 
+  const reportError = useCallback((label: string, error: any) => {
+    if (isAbortLikeError(error)) return;
+    if (isNetworkLikeError(error)) {
+      const now = Date.now();
+      if (now - lastNetworkWarningAtRef.current > 10000) {
+        lastNetworkWarningAtRef.current = now;
+        console.warn(`${label}: connexion réseau momentanément indisponible.`);
+      }
+      return;
+    }
+    console.error(label, error);
+  }, []);
+
   // Filtrer les participants pour éviter que l'admin soit dans la liste
   const otherParticipants = participants.filter(p =>
     p.id !== currentUser.id &&
@@ -382,7 +524,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   const participantCount = otherParticipants.filter(p => p.status === "online").length + 1; // +1 pour l'utilisateur courant
   const currentVideo = playlist.find(v => v.isCurrent);
-  const previewVideo = previewVideoId
+  const regiePreviewVideo = previewVideoId
     ? playlist.find((video) => video.id === previewVideoId) || null
     : null;
 
@@ -410,6 +552,383 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   useEffect(() => () => clearAnnouncementTimeout(), [clearAnnouncementTimeout]);
 
+  const applyViewerSyncState = useCallback((payload: { time?: number; isPlaying?: boolean; videoId?: string | null }) => {
+    const baseTime = Number(payload.time ?? 0);
+    const playing = Boolean(payload.isPlaying);
+    const now = Date.now();
+    const effectiveTime = Math.max(0, baseTime);
+
+    setCurrentTime(effectiveTime);
+    setIsPlaying(playing);
+    setSyncNonce(now);
+    lastAdminPlayerTimeRef.current = effectiveTime;
+    syncAnchorRef.current = {
+      time: effectiveTime,
+      at: now,
+      playing,
+      videoId: payload.videoId ?? syncAnchorRef.current.videoId ?? null,
+    };
+  }, []);
+  // F : Sous-titres YouTube (captions réelles via Invidious, syncés avec currentTime)
+  // ⚠️ Placé ICI car currentVideo est défini à la ligne précédente
+  const ytCaptions = useYouTubeCaptions(
+    currentVideo?.youtubeId,
+    currentTime
+  );
+  const getTransitionDurationMs = (transition: VideoTransitionType) => {
+    if (transition === "fade_black") return 520;
+    if (transition === "slide_lateral") return 560;
+    if (transition === "flash_white") return 260;
+    return 0;
+  };
+
+  const playVideoTransition = useCallback(async (transition: VideoTransitionType) => {
+    const duration = getTransitionDurationMs(transition);
+    if (duration <= 0) return;
+
+    if (videoTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(videoTransitionTimeoutRef.current);
+      videoTransitionTimeoutRef.current = null;
+    }
+    setActiveVideoTransition({ type: transition, key: Date.now() });
+
+    await new Promise<void>((resolve) => {
+      videoTransitionTimeoutRef.current = window.setTimeout(() => {
+        setActiveVideoTransition(null);
+        videoTransitionTimeoutRef.current = null;
+        resolve();
+      }, duration);
+    });
+  }, []);
+
+  const stopLocalVoiceStream = useCallback(() => {
+    if (!localVoiceStreamRef.current) return;
+    for (const track of localVoiceStreamRef.current.getTracks()) {
+      track.stop();
+    }
+    localVoiceStreamRef.current = null;
+  }, []);
+
+  const stopRemoteVoiceStream = useCallback(() => {
+    if (remoteVoiceAudioRef.current) {
+      remoteVoiceAudioRef.current.srcObject = null;
+    }
+    if (remoteVoiceStreamRef.current) {
+      for (const track of remoteVoiceStreamRef.current.getTracks()) {
+        track.stop();
+      }
+      remoteVoiceStreamRef.current = null;
+    }
+  }, []);
+
+  const closeVoicePeerConnection = useCallback((peerId: string) => {
+    const pc = voicePeerConnectionsRef.current[peerId];
+    if (!pc) return;
+    try {
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      pc.close();
+    } catch {
+      // no-op
+    }
+    delete voicePeerConnectionsRef.current[peerId];
+    delete voiceOfferInFlightRef.current[peerId];
+  }, []);
+
+  const closeAllVoicePeerConnections = useCallback(() => {
+    for (const peerId of Object.keys(voicePeerConnectionsRef.current)) {
+      closeVoicePeerConnection(peerId);
+    }
+  }, [closeVoicePeerConnection]);
+
+  const sendVoiceSignal = useCallback(async (payload: Record<string, any>) => {
+    if (!roomChannelRef.current || !realtimeVoiceUserId) return;
+    try {
+      await roomChannelRef.current.send({
+        type: "broadcast",
+        event: "room_voice_signal",
+        payload: {
+          ...payload,
+          from: realtimeVoiceUserId,
+          at: Date.now(),
+        },
+      });
+    } catch (error) {
+      console.error("Erreur signal voix live", error);
+    }
+  }, [realtimeVoiceUserId]);
+
+  const shouldDisableMessagePolling = useCallback((error: any) => {
+    const blob = [
+      error?.message,
+      error?.details,
+      error?.hint,
+      error?.error_description,
+    ]
+      .filter(Boolean)
+      .join(" | ")
+      .toLowerCase();
+    const status = Number(
+      error?.status ??
+      error?.statusCode ??
+      error?.response?.status ??
+      NaN
+    );
+
+    if (status === 400) return true;
+    if (blob.includes("bad request")) return true;
+    if (blob.includes("permission denied")) return true;
+    if (blob.includes("row-level security")) return true;
+    if (blob.includes("relation \"messages\" does not exist")) return true;
+    if (blob.includes("table \"messages\" does not exist")) return true;
+    if (blob.includes("could not find the table")) return true;
+    if (blob.includes("schema cache")) return true;
+    if (blob.includes("42p01")) return true;
+    return false;
+  }, []);
+
+  const ensureRemoteAudioPlayback = useCallback(async (stream: MediaStream) => {
+    remoteVoiceStreamRef.current = stream;
+    const audioEl = remoteVoiceAudioRef.current;
+    if (!audioEl) return;
+    audioEl.srcObject = stream;
+    try {
+      await audioEl.play();
+      voiceAutoplayWarnedRef.current = false;
+    } catch (error) {
+      if (!voiceAutoplayWarnedRef.current) {
+        voiceAutoplayWarnedRef.current = true;
+        toast.info("Le commentaire vocal est prêt. Cliquez une fois sur la page pour activer le son.");
+      }
+      console.warn("Lecture audio live bloquée par le navigateur", error);
+    }
+  }, []);
+
+  const createVoicePeerConnection = useCallback((peerId: string, withLocalTracks: boolean, forceReset = false) => {
+    const existing = voicePeerConnectionsRef.current[peerId];
+    if (existing && !forceReset) return existing;
+    if (existing && forceReset) {
+      closeVoicePeerConnection(peerId);
+    }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    pc.onicecandidate = (event) => {
+      if (!event.candidate) return;
+      void sendVoiceSignal({
+        type: "ice-candidate",
+        to: peerId,
+        candidate: event.candidate.toJSON(),
+      });
+    };
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      if (!stream) return;
+      void ensureRemoteAudioPlayback(stream);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+        closeVoicePeerConnection(peerId);
+      }
+    };
+
+    if (withLocalTracks && localVoiceStreamRef.current) {
+      for (const track of localVoiceStreamRef.current.getTracks()) {
+        pc.addTrack(track, localVoiceStreamRef.current);
+      }
+    }
+
+    voicePeerConnectionsRef.current[peerId] = pc;
+    return pc;
+  }, [closeVoicePeerConnection, ensureRemoteAudioPlayback, sendVoiceSignal]);
+
+  const connectVoiceToPeer = useCallback(async (peerId: string) => {
+    if (!localVoiceStreamRef.current) return;
+    if (voiceOfferInFlightRef.current[peerId]) return;
+
+    voiceOfferInFlightRef.current[peerId] = true;
+    try {
+      // Always reset the peer before a new offer to keep m-line ordering stable.
+      const pc = createVoicePeerConnection(peerId, true, true);
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: false,
+        offerToReceiveVideo: false,
+      });
+      await pc.setLocalDescription(offer);
+      await sendVoiceSignal({
+        type: "offer",
+        to: peerId,
+        sdp: offer,
+      });
+    } finally {
+      voiceOfferInFlightRef.current[peerId] = false;
+    }
+  }, [createVoicePeerConnection, sendVoiceSignal]);
+
+  const teardownVoiceInfrastructure = useCallback(() => {
+    stopLocalVoiceStream();
+    closeAllVoicePeerConnections();
+    if (!canManageVoiceCommentary) {
+      stopRemoteVoiceStream();
+    }
+  }, [
+    canManageVoiceCommentary,
+    closeAllVoicePeerConnections,
+    stopLocalVoiceStream,
+    stopRemoteVoiceStream,
+  ]);
+
+  const stopVoiceCommentary = useCallback(async (broadcastState = true) => {
+    setVoiceCommentaryEnabled(false);
+    setVoiceCommentaryBusy(false);
+    teardownVoiceInfrastructure();
+    if (broadcastState) {
+      await sendVoiceSignal({
+        type: "voice-state",
+        enabled: false,
+      });
+    }
+  }, [
+    canManageVoiceCommentary,
+    sendVoiceSignal,
+    teardownVoiceInfrastructure,
+  ]);
+
+  const startVoiceCommentary = useCallback(async () => {
+    if (!canManageVoiceCommentary || !realtimeVoiceUserId) {
+      toast.error("Seule la régie peut activer la voix live");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Votre navigateur ne supporte pas le micro en direct");
+      return;
+    }
+    if (voiceCommentaryEnabled || voiceCommentaryBusy) return;
+
+    setVoiceCommentaryBusy(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      localVoiceStreamRef.current = stream;
+      setVoiceCommentaryEnabled(true);
+      await sendVoiceSignal({
+        type: "voice-state",
+        enabled: true,
+      });
+
+      const targets = participantsRef.current
+        .filter((participant) =>
+          participant.status === "online" &&
+          participant.id !== currentUser.id &&
+          participant.id !== authUserId &&
+          participant.email !== currentUser.email &&
+          participant.name !== currentUser.name
+        )
+        .map((participant) => participant.id)
+        .filter(Boolean);
+
+      for (const peerId of targets) {
+        await connectVoiceToPeer(peerId);
+      }
+
+      toast.success("🎙️ Mode commentaire vocal activé");
+    } catch (error: any) {
+      console.error("Erreur activation voix live", error);
+      toast.error(error?.message || "Impossible d'accéder au micro");
+      await stopVoiceCommentary(false);
+    } finally {
+      setVoiceCommentaryBusy(false);
+    }
+  }, [
+    authUserId,
+    canManageVoiceCommentary,
+    connectVoiceToPeer,
+    currentUser.email,
+    currentUser.id,
+    currentUser.name,
+    realtimeVoiceUserId,
+    sendVoiceSignal,
+    stopVoiceCommentary,
+    voiceCommentaryBusy,
+    voiceCommentaryEnabled,
+  ]);
+
+  const handleVoiceSignal = useCallback(async (data: any) => {
+    const fromId = String(data?.from || "");
+    if (!fromId || fromId === String(realtimeVoiceUserId || "")) return;
+
+    const targetId = data?.to ? String(data.to) : null;
+    if (targetId && targetId !== String(realtimeVoiceUserId || "")) return;
+
+    const signalType = String(data?.type || "");
+
+    if (signalType === "voice-state") {
+      const enabled = Boolean(data?.enabled);
+      if (!enabled) {
+        setVoiceCommentaryEnabled(false);
+        closeAllVoicePeerConnections();
+        stopRemoteVoiceStream();
+      } else if (!canManageVoiceCommentary) {
+        setVoiceCommentaryEnabled(true);
+      }
+      return;
+    }
+
+    if (signalType === "offer") {
+      if (canManageVoiceCommentary) return;
+      const offer = data?.sdp;
+      if (!offer) return;
+
+      const pc = createVoicePeerConnection(fromId, false);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await sendVoiceSignal({
+        type: "answer",
+        to: fromId,
+        sdp: answer,
+      });
+      return;
+    }
+
+    if (signalType === "answer") {
+      const answer = data?.sdp;
+      if (!answer) return;
+      const pc = voicePeerConnectionsRef.current[fromId];
+      if (!pc) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      return;
+    }
+
+    if (signalType === "ice-candidate") {
+      const candidate = data?.candidate;
+      if (!candidate) return;
+      const pc = voicePeerConnectionsRef.current[fromId];
+      if (!pc) return;
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        console.warn("ICE candidate ignoré (ordre de signalisation)", error);
+      }
+    }
+  }, [
+    canManageVoiceCommentary,
+    closeAllVoicePeerConnections,
+    createVoicePeerConnection,
+    realtimeVoiceUserId,
+    sendVoiceSignal,
+    stopRemoteVoiceStream,
+  ]);
   useEffect(() => {
     messageSalonColumnRef.current = messageSalonColumn;
   }, [messageSalonColumn]);
@@ -500,28 +1019,39 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
       return next;
     });
-  }, [backendSalonId, roomId, role, currentUser.id, currentUser.email, isCurrentParticipant]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendSalonId, roomId]);
 
   const loadMessagesSnapshot = useCallback(async () => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
-
+    if (!isMessagePollingEnabled) return;
     let messagesData: any[] | null = null;
     let msgError: any = null;
     let resolvedSalonColumn: MessageRoomColumn = messageSalonColumnRef.current;
 
-    ({ data: messagesData, error: msgError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq(resolvedSalonColumn, backendSalonId));
+    try {
+      ({ data: messagesData, error: msgError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq(resolvedSalonColumn, backendSalonId));
+    } catch (error) {
+      if (isNetworkLikeError(error)) return;
+      throw error;
+    }
 
     // Schema fallback for messages room column.
     for (let i = 0; msgError && i < MESSAGE_ROOM_COLUMNS.length - 1; i += 1) {
       if (!hasMissingColumnError(msgError, resolvedSalonColumn)) break;
       resolvedSalonColumn = getNextMessageRoomColumn(resolvedSalonColumn);
-      ({ data: messagesData, error: msgError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq(resolvedSalonColumn, backendSalonId));
+      try {
+        ({ data: messagesData, error: msgError } = await supabase
+          .from('messages')
+          .select('*')
+          .eq(resolvedSalonColumn, backendSalonId));
+      } catch (error) {
+        if (isNetworkLikeError(error)) return;
+        throw error;
+      }
       if (!msgError) {
         messageSalonColumnRef.current = resolvedSalonColumn;
         if (resolvedSalonColumn !== messageSalonColumn) {
@@ -530,14 +1060,41 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
     }
 
-    if (msgError) return;
+    if (msgError) {
+      const blob = [
+        msgError?.message,
+        msgError?.details,
+        msgError?.hint,
+        msgError?.error_description,
+      ]
+        .filter(Boolean)
+        .join(" | ")
+        .toLowerCase();
+      const isFatalMessagesSchemaError =
+        blob.includes("relation \"messages\" does not exist") ||
+        blob.includes("table \"messages\" does not exist") ||
+        blob.includes("could not find the table") ||
+        blob.includes("schema cache") ||
+        blob.includes("42p01");
+      const shouldDisableNow = shouldDisableMessagePolling(msgError);
+      messagePollingErrorCountRef.current += 1;
+      const tooManyConsecutiveErrors = messagePollingErrorCountRef.current >= 5;
+
+      if ((isFatalMessagesSchemaError || shouldDisableNow || tooManyConsecutiveErrors) && !messagePollingDisabledLoggedRef.current) {
+        messagePollingDisabledLoggedRef.current = true;
+        setIsMessagePollingEnabled(false);
+        console.warn("Polling messages désactivé après erreurs répétées (messages).");
+      }
+      return;
+    }
+    messagePollingErrorCountRef.current = 0;
 
     const canSenderChat = (senderId: string | null) => {
       if (!senderId) return true;
       const senderRole =
-        participants.find((p) => p.id === senderId)?.role || null;
+        participantsRef.current.find((p) => p.id === senderId)?.role || null;
       const senderPermissions =
-        participantPermissions[senderId] || normalizePermissions(senderRole, null);
+        participantPermissionsRef.current[senderId] || normalizePermissions(senderRole, null);
       return senderPermissions.chat && !senderPermissions.muted;
     };
 
@@ -564,7 +1121,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         };
       });
     setMessages(mappedMessages);
-  }, [backendSalonId, messageSalonColumn, currentUser.email, currentUser.id, currentUser.name, storedReactionsByMessage, participants, participantPermissions]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendSalonId, messageSalonColumn, storedReactionsByMessage, isMessagePollingEnabled, shouldDisableMessagePolling]);
 
   const loadRoomSnapshot = useCallback(async () => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -652,7 +1210,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       try {
         await connectToSalon(backendSalonId);
       } catch (error) {
-        console.error("Erreur connexion salon", error);
+        reportError("Erreur connexion salon", error);
       }
     };
 
@@ -660,10 +1218,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     return () => {
       disconnectFromSalon(backendSalonId).catch((error) => {
-        console.error("Erreur déconnexion salon", error);
+        reportError("Erreur déconnexion salon", error);
       });
     };
-  }, [backendSalonId]);
+  }, [backendSalonId, reportError]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -713,7 +1271,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         if (!isMounted) return;
         await loadParticipantsSnapshot();
       } catch (error) {
-        console.error("Erreur chargement participants", error);
+        reportError("Erreur chargement participants", error);
       }
     };
 
@@ -723,7 +1281,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       isMounted = false;
       window.clearInterval(interval);
     };
-  }, [loadParticipantsSnapshot]);
+  }, [loadParticipantsSnapshot, reportError]);
 
   useEffect(() => {
     const loadFavorites = async () => {
@@ -743,37 +1301,15 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
 
     loadRoomSnapshot().catch((error) => {
-      console.error("Erreur chargement initial", error);
+      reportError("Erreur chargement initial", error);
     });
 
-    // 3. Realtime Subscription (Messages AND Salon Updates)
+    // 3. Realtime Subscription (Salon + Participants + Broadcast only)
+    // NOTE: messages postgres_changes is intentionally removed — Supabase returns 400
+    // when Realtime is not enabled for the 'messages' table. Messages are refreshed
+    // via the 30s polling interval instead (see useEffect below).
     const channel = supabase
       .channel(`room-${backendSalonId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        async (payload) => {
-          const newMsg = payload.new as any;
-          const belongsToRoom = MESSAGE_ROOM_COLUMNS.some((column) => {
-            const value = newMsg?.[column];
-            return typeof value === "string" && value === backendSalonId;
-          });
-          if (!belongsToRoom) return;
-          const senderId = newMsg?.user_id || newMsg?.id_user || null;
-          if (senderId) {
-            const sid = String(senderId);
-            const senderRole = participants.find((p) => p.id === sid)?.role || null;
-            const senderPermissions =
-              participantPermissions[sid] || normalizePermissions(senderRole, null);
-            if (!senderPermissions.chat || senderPermissions.muted) return;
-          }
-          const mapped = mapDbMessageToUi(newMsg, currentUser);
-          setMessages(prev => {
-            if (prev.some(m => m.id === mapped.id)) return prev;
-            return [...prev, mapped];
-          });
-        }
-      )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'salon', filter: `id_salon=eq.${backendSalonId}` },
@@ -784,16 +1320,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
           // Viewers follow salon state strictly.
           if (!canControlVideoRef.current) {
-            setCurrentTime(nextTime);
-            setIsPlaying(newSalonState?.video_status === "playing");
-            setSyncNonce(Date.now());
-            lastAdminPlayerTimeRef.current = nextTime;
-            syncAnchorRef.current = {
+            applyViewerSyncState({
               time: nextTime,
-              at: Date.now(),
-              playing: newSalonState?.video_status === "playing",
+              isPlaying: newSalonState?.video_status === "playing",
               videoId: newSalonState?.current_video_id ? String(newSalonState.current_video_id) : null,
-            };
+            });
           }
 
           if (newSalonState.current_video_id) {
@@ -837,18 +1368,24 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           // Ignore messages sent by the current user
           if (data?.by === currentUser.id) return;
 
+          const incomingVideoId = data.videoId ? String(data.videoId) : null;
+          const shouldAnimateTransition =
+            incomingVideoId !== null &&
+            incomingVideoId !== lastCurrentVideoIdRef.current &&
+            typeof data.transition === "string" &&
+            ["fade_black", "slide_lateral", "flash_white"].includes(data.transition);
+          if (shouldAnimateTransition) {
+            await playVideoTransition(data.transition as VideoTransitionType);
+          }
+
           // Apply time sync
           if (typeof data.time === "number") {
             const nextTime = Math.max(0, data.time);
-            setCurrentTime(nextTime);
-            setSyncNonce(Date.now());
-            lastAdminPlayerTimeRef.current = nextTime;
-            syncAnchorRef.current = {
+            applyViewerSyncState({
               time: nextTime,
-              at: Date.now(),
-              playing: typeof data.isPlaying === "boolean" ? data.isPlaying : isPlayingRef.current,
+              isPlaying: typeof data.isPlaying === "boolean" ? data.isPlaying : isPlayingRef.current,
               videoId: data.videoId ? String(data.videoId) : syncAnchorRef.current.videoId,
-            };
+            });
           }
           if (typeof data.isPlaying === "boolean") {
             setIsPlaying(data.isPlaying);
@@ -856,6 +1393,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
           // Update playlist if videoId changed
           if (data.videoId) {
+            lastCurrentVideoIdRef.current = String(data.videoId);
             let found = false;
             setPlaylist((prev) =>
               prev.map((item) => {
@@ -879,6 +1417,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             toast.info("La vidéo redémarre depuis le début 🔄");
           } else if (data.explicit) {
             toast.info("📡 Synchronisation reçue");
+          }
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_scene_change' },
+        (payload) => {
+          const data = payload?.payload || {};
+          // Only apply if sent by someone else
+          if (data?.by === currentUser.id) return;
+          if (data?.scene) {
+            setCurrentScene(data.scene as SceneMode);
           }
         }
       )
@@ -917,31 +1467,152 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           toast.info(question ? "Question de fin de vidéo préparée" : "Question de fin de vidéo retirée");
         }
       )
-      .subscribe();
+      .on(
+        'broadcast',
+        { event: 'room_video_vote_poll' },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+          if (!data?.poll || typeof data.poll !== "object") return;
+          setLiveVideoVotePoll(data.poll as LiveVideoVotePoll);
+          if (data.action === "start") {
+            setShowVideoVote(true);
+            toast.info("🗳️ La régie a lancé un vote (5 min)");
+          }
+          if (data.action === "finish") {
+            const winnerId = (data.poll as LiveVideoVotePoll).winnerVideoId;
+            const winner = winnerId ? playlist.find((video) => video.id === winnerId) : null;
+            if (winner) {
+              toast.success(`Résultat du vote: "${winner.title}"`);
+            } else {
+              toast.info("Résultat du vote disponible");
+            }
+          }
+        }
+      )
+      // ── Feature 68 : Compte à rebours partagé ──────────────────────────
+      .on(
+        'broadcast',
+        { event: 'room_countdown' },
+        (payload) => {
+          const data = payload?.payload || {};
+          // Show the countdown for everyone (including sender is fine here)
+          if (typeof data.seconds === "number" && data.seconds > 0) {
+            const reason = data?.reason === "startup" ? "startup" : "manual";
+            if (reason === "startup") {
+              startupCountdownTriggeredRef.current = true;
+            }
+            setActiveCountdown({ seconds: data.seconds, key: Date.now(), reason });
+          }
+        }
+      )
+      // ── Feature 70 : Annonce vocale TTS ────────────────────────────────
+      .on(
+        'broadcast',
+        { event: 'room_tts_announce' },
+        (payload) => {
+          const data = payload?.payload || {};
+          // The régie already spoke locally; others read here
+          if (data?.by === currentUser.id) return;
+          if (typeof data.text === "string" && data.text.trim()) {
+            speakTTSMessage(data.text.trim());
+            toast.info(`📢 Annonce : "${data.text.trim().slice(0, 60)}${data.text.length > 60 ? '…' : ''}"`)
+          }
+        }
+      )
+      .on(
+        "broadcast",
+        { event: "room_permissions_update" },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+          const updates = Array.isArray(data?.updates) ? data.updates : [];
+          if (updates.length === 0) return;
+
+          setParticipantPermissionsMap((prev) => {
+            const next = { ...prev };
+            for (const update of updates) {
+              const participantId = String(update?.participantId || "");
+              const nextPermissions = update?.nextPermissions as MemberPermissions | undefined;
+              if (!participantId || !nextPermissions) continue;
+              next[participantId] = normalizePermissions(
+                participantsRef.current.find((p) => p.id === participantId)?.role || "member",
+                nextPermissions
+              );
+            }
+            return next;
+          });
+
+          for (const update of updates) {
+            const participantId = String(update?.participantId || "");
+            const nextPermissions = update?.nextPermissions as MemberPermissions | undefined;
+            if (!participantId || !nextPermissions) continue;
+            const isMe =
+              participantId === authUserId ||
+              participantId === currentUser.id;
+            if (!isMe) continue;
+
+            if (!nextPermissions.chat || nextPermissions.muted) {
+              setNewMessage("");
+              toast.error("Le chat vient d'être désactivé pour vous");
+            } else {
+              toast.success("Le chat est activé pour vous");
+            }
+          }
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'room_voice_signal' },
+        (payload) => {
+          const data = payload?.payload || {};
+          void handleVoiceSignal(data);
+        }
+      )
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          // 400 from Supabase — table may not have Realtime enabled.
+          // Do NOT retry automatically to avoid flooding the console.
+          console.warn("⚠️ Supabase Realtime: CHANNEL_ERROR (400). Vérifiez que la table 'messages' a Realtime activé dans le dashboard Supabase.");
+        }
+      });
 
     roomChannelRef.current = channel;
 
     return () => {
       roomChannelRef.current = null;
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel).catch((error) => {
+        reportError("Erreur removeChannel", error);
+      });
     };
-  }, [roomId, backendSalonId, currentUser.id, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, showAnnouncementForDuration]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration]);
+
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
+    setIsMessagePollingEnabled(true);
+    messagePollingDisabledLoggedRef.current = false;
+    messagePollingErrorCountRef.current = 0;
+  }, [backendSalonId]);
+
+  useEffect(() => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
+    if (!isMessagePollingEnabled) return;
 
     const refreshMessages = async () => {
       try {
         await loadMessagesSnapshot();
       } catch (error) {
-        console.error("Erreur refresh messages", error);
+        reportError("Erreur refresh messages", error);
       }
     };
 
     refreshMessages();
     const interval = window.setInterval(refreshMessages, 3000);
     return () => window.clearInterval(interval);
-  }, [backendSalonId, loadMessagesSnapshot]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendSalonId, isMessagePollingEnabled, reportError]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -956,12 +1627,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         if (error || !data) return;
 
         const salonData = data as any;
-        const nextTime = Number(salonData.video_time || 0);
+        const fetchAt = Date.now();
+        const baseTime = Number(salonData.video_time || 0);
         const nextPlaying = salonData.video_status === "playing";
+        const adjustedTime = nextPlaying
+          ? Math.max(0, baseTime + (Date.now() - fetchAt) / 1000)
+          : Math.max(0, baseTime);
 
-        setCurrentTime(nextTime);
-        setSyncNonce(Date.now());
-        setIsPlaying(nextPlaying);
+        applyViewerSyncState({
+          time: adjustedTime,
+          isPlaying: nextPlaying,
+          videoId: salonData.current_video_id ? String(salonData.current_video_id) : null,
+        });
 
         if (salonData.current_video_id) {
           const target = String(salonData.current_video_id);
@@ -976,7 +1653,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           });
         }
       } catch (err) {
-        console.error("Erreur sync automatique salon", err);
+        reportError("Erreur sync automatique salon", err);
       } finally {
         isSyncing = false;
       }
@@ -984,8 +1661,28 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     syncFromSalon();
     const interval = window.setInterval(syncFromSalon, 3000);
-    return () => window.clearInterval(interval);
-  }, [backendSalonId, canControlVideo, loadRoomSnapshot, selectSalonSingle]);
+
+    const onOnline = () => {
+      void syncFromSalon();
+    };
+    const onFocus = () => {
+      void syncFromSalon();
+    };
+    const onVisibility = () => {
+      if (!document.hidden) void syncFromSalon();
+    };
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [backendSalonId, canControlVideo, loadRoomSnapshot, selectSalonSingle, applyViewerSyncState, reportError]);
 
   // Keep favorite flags in sync without blocking initial playlist load.
   useEffect(() => {
@@ -1060,6 +1757,15 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    if (!liveVideoVotePoll?.isActive) return;
+    setVideoVoteNow(Date.now());
+    const interval = window.setInterval(() => {
+      setVideoVoteNow(Date.now());
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [liveVideoVotePoll?.pollId, liveVideoVotePoll?.isActive]);
 
   useEffect(() => {
     try {
@@ -1157,6 +1863,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     });
 
     lastTrackedVideoIdRef.current = currentVideo.id;
+
+    // ── Feature E : générer des questions de discussion après chaque vidéo ──
+    if (lastDiscussionVideoIdRef.current !== currentVideo.id) {
+      lastDiscussionVideoIdRef.current = currentVideo.id;
+      const questions = generateDiscussionQuestions({
+        title: currentVideo.title,
+        duration: currentVideo.duration,
+        youtubeId: currentVideo.youtubeId,
+      });
+      setDiscussionQuestions(questions);
+      setDiscussionVideoTitle(currentVideo.title);
+    }
   }, [currentVideo?.id, currentVideo?.youtubeId, currentUser.name, currentVideo?.title, currentVideo?.thumbnail, currentVideo?.duration]);
 
   const handleSendMessage = async () => {
@@ -1350,8 +2068,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     if (roomChannelRef.current) {
       await roomChannelRef.current.send({
-        type: 'broadcast',
-        event: 'room_announcement',
+        type: "broadcast",
+        event: "room_announcement",
         payload: {
           by: currentUser.id,
           at: Date.now(),
@@ -1410,8 +2128,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     if (roomChannelRef.current) {
       await roomChannelRef.current.send({
-        type: 'broadcast',
-        event: 'room_post_video_question',
+        type: "broadcast",
+        event: "room_post_video_question",
         payload: {
           by: currentUser.id,
           at: Date.now(),
@@ -1476,7 +2194,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     toast.info("Question de fin de vidéo affichée");
   }, [currentVideo?.id, postVideoQuestion, postVideoQuestionVideoId, showPostVideoQuestion]);
 
-
   const handlePlayPause = async () => {
     if (!canControlVideo) {
       toast.error("Seuls l'admin ou la regie video peuvent controler la lecture");
@@ -1517,16 +2234,17 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       }
     }
 
-    addRegieAction(
-      newPlayingState ? "Lecture" : "Pause",
-      newPlayingState ? "La vidéo a été lancée" : "La vidéo a été mise en pause"
-    );
-
     toast.success(
       newPlayingState
         ? `${currentUser.name} a lancé la vidéo`
         : `${currentUser.name} a mis en pause`,
       { icon: newPlayingState ? '▶️' : '⏸️' }
+    );
+  };
+
+  addRegieAction(
+      newPlayingState ? "Lecture" : "Pause",
+      newPlayingState ? "La vidéo a été lancée" : "La vidéo a été mise en pause"
     );
   };
 
@@ -1615,7 +2333,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         });
       }
       toast.success("📡 Synchronisation envoyée à tous les invités");
-      addRegieAction("Synchronisation", "La vidéo a été synchronisée pour tous les participants");
     } catch (error: any) {
       toast.error(error?.message || "Erreur synchronisation");
       console.error("Erreur sync salon", error);
@@ -1650,7 +2367,16 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       });
       setPlaylist(mapped);
       toast.success(`✅ Vidéo "${title}" ajoutée à la playlist !`);
-      addRegieAction("Ajout vidéo", `Vidéo ajoutée : ${title}`);
+
+      // ── Feature G : alerte si contenu potentiellement inapproprié ──────
+      if (canControlVideo) {
+        const score = computeContentScore({ title, duration: "0:00" });
+        if (score.alert) {
+          toast.warning(`⚠️ Contenu à vérifier : ${score.alert}`, { duration: 6000 });
+        } else if (score.score < 40) {
+          toast.warning(`🟠 Note faible (${score.score}/100) pour "${title}" — vérifiez le contenu.`, { duration: 5000 });
+        }
+      }
     } catch (error) {
       toast.error(getErrorMessage(error, "Erreur ajout vidéo"));
       console.error(error);
@@ -1669,13 +2395,92 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       setPlaylist(prev => prev.filter(v => v.id !== videoId));
       if (videoToRemove) {
         toast.success(`🗑️ Vidéo "${videoToRemove.title}" supprimée`);
-        addRegieAction("Suppression vidéo", `Vidéo supprimée : ${videoToRemove.title}`);
       }
     } catch (error) {
       toast.error(getErrorMessage(error, "Erreur suppression vidéo"));
       console.error(error);
     }
   };
+
+  const flushPendingPermissionUpdates = useCallback(async () => {
+    if (permissionFlushInFlightRef.current) return;
+
+    const entries = Object.entries(pendingPermissionUpdatesRef.current);
+    if (entries.length === 0) return;
+
+    pendingPermissionUpdatesRef.current = {};
+    permissionFlushInFlightRef.current = true;
+
+    let saveFailures = 0;
+    const effectiveUpdates: Array<{
+      participantId: string;
+      nextPermissions: MemberPermissions;
+    }> = [];
+
+    for (const [participantId, nextPermissions] of entries) {
+      try {
+        await setParticipantPermissionsApi(
+          backendSalonId || roomId,
+          participantId,
+          nextPermissions
+        );
+        effectiveUpdates.push({ participantId, nextPermissions });
+      } catch (error: any) {
+        saveFailures += 1;
+        // Keep real-time behavior even if persistence fails.
+        effectiveUpdates.push({ participantId, nextPermissions });
+        const msg = String(error?.message || "");
+        if (msg.toLowerCase().includes("permission denied") || msg.toLowerCase().includes("row-level security")) {
+          toast.error("Supabase RLS bloque la mise à jour des permissions.");
+        } else {
+          toast.error(getErrorMessage(error, "Impossible de sauvegarder les permissions"));
+        }
+      }
+    }
+
+    if (roomChannelRef.current && effectiveUpdates.length > 0) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_permissions_update",
+          payload: {
+            by: currentUser.id,
+            updates: effectiveUpdates,
+          },
+        });
+      } catch (error) {
+        console.error("Erreur broadcast permissions", error);
+      }
+    }
+
+    // Avoid overriding optimistic updates when DB write failed.
+    if (saveFailures === 0) {
+      await loadParticipantsSnapshot();
+    }
+
+    if (effectiveUpdates.length > 0 && saveFailures === 0) {
+      toast.success("Permissions mises à jour");
+    } else if (effectiveUpdates.length > 0) {
+      toast.warning("Permissions appliquées en direct, mais non persistées côté serveur.");
+    }
+
+    permissionFlushInFlightRef.current = false;
+
+    if (Object.keys(pendingPermissionUpdatesRef.current).length > 0) {
+      void flushPendingPermissionUpdates();
+    }
+  }, [backendSalonId, currentUser.id, loadParticipantsSnapshot, roomId]);
+
+  const schedulePermissionFlush = useCallback(() => {
+    if (permissionFlushTimeoutRef.current !== null) {
+      window.clearTimeout(permissionFlushTimeoutRef.current);
+      permissionFlushTimeoutRef.current = null;
+    }
+    permissionFlushTimeoutRef.current = window.setTimeout(() => {
+      permissionFlushTimeoutRef.current = null;
+      void flushPendingPermissionUpdates();
+    }, 120);
+  }, [flushPendingPermissionUpdates]);
 
   const handleUpdatePermissions = (updatedParticipants: any[]) => {
     setParticipants((prev) =>
@@ -1697,7 +2502,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       for (const participant of updatedParticipants) {
         const participantId = participant?.id;
         if (!participantId || String(participantId).startsWith("current-user-")) continue;
-        const resolvedRole = (participant.role || participants.find((p) => p.id === participantId)?.role || "member") as SalonRole;
+        const resolvedRole = (
+          participant.role ||
+          participantsRef.current.find((p) => p.id === participantId)?.role ||
+          "member"
+        ) as SalonRole;
         const nextPermissions = normalizePermissions(
           resolvedRole,
           participant.permissions
@@ -1715,76 +2524,125 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       return nextMap;
     });
 
-    void (async () => {
-      // Same flow as regie: persist on salon_member then let postgres_changes propagate.
-      let saveFailures = 0;
-      for (const update of updates) {
-        try {
-          await setParticipantPermissionsApi(
-            backendSalonId || roomId,
-            update.participantId,
-            update.nextPermissions
-          );
-        } catch (error: any) {
-          saveFailures += 1;
-          const msg = String(error?.message || "");
-          if (msg.toLowerCase().includes("permission denied") || msg.toLowerCase().includes("row-level security")) {
-            toast.error("Supabase RLS bloque la mise à jour des permissions.");
-          } else {
-            toast.error(getErrorMessage(error, "Impossible de sauvegarder les permissions"));
-          }
-        }
-      }
-      await loadParticipantsSnapshot();
-      if (updates.length > 0 && saveFailures === 0) {
-        toast.success("Permissions mises à jour");
-      }
-    })();
+    for (const update of updates) {
+      pendingPermissionUpdatesRef.current[update.participantId] = update.nextPermissions;
+    }
+    if (updates.length > 0) {
+      schedulePermissionFlush();
+    }
   };
 
-  const handleVoteVideo = (videoId: string) => {
-    const next = {
-      ...videoVoteCounts,
-      [videoId]: (videoVoteCounts[videoId] || 0) + 1,
-    };
-    setVideoVoteCounts(next);
+  const broadcastVideoVotePoll = async (
+    action: "start" | "vote" | "finish",
+    poll: LiveVideoVotePoll
+  ) => {
+    if (!roomChannelRef.current) return;
     try {
-      localStorage.setItem(voteStorageKey, JSON.stringify(next));
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_video_vote_poll',
+        payload: {
+          by: currentUser.id,
+          action,
+          poll,
+        }
+      });
     } catch (error) {
-      console.error("Erreur sauvegarde votes vidéo:", error);
+      console.error("Erreur broadcast vote vidéo", error);
     }
   };
 
-  const handlePrepareVideo = (video: VideoInPlaylist) => {
+  const handleStartVideoVotePoll = async () => {
+    if (!canManageVideoVotePoll) {
+      toast.error("Seule la régie peut lancer ce vote");
+      return;
+    }
+    const candidates = playlist.filter((video) => !video.isCurrent);
+    if (candidates.length < 1) {
+      toast.error("Ajoutez d'autres vidéos à la playlist avant de lancer le vote");
+      return;
+    }
+
+    const votes: Record<string, number> = {};
+    for (const video of candidates) {
+      votes[video.id] = 0;
+    }
+
+    const poll: LiveVideoVotePoll = {
+      pollId: `video-poll-${Date.now()}`,
+      startedAt: Date.now(),
+      endsAt: Date.now() + 5 * 60 * 1000,
+      isActive: true,
+      startedBy: currentUser.id,
+      votes,
+      voterChoices: {},
+      winnerVideoId: null,
+    };
+
+    setLiveVideoVotePoll(poll);
+    setVideoVoteNow(Date.now());
+    setShowVideoVote(true);
+    await broadcastVideoVotePoll("start", poll);
+    toast.success("🗳️ Vote lancé: 5 minutes pour choisir la prochaine vidéo");
+  };
+
+  const handleVoteVideo = async (videoId: string) => {
+    if (!liveVideoVotePoll?.isActive || !liveVideoVotePoll?.endsAt) {
+      toast.error("Le vote n'est pas actif");
+      return;
+    }
+    if (Date.now() >= liveVideoVotePoll.endsAt) {
+      toast.error("Le vote est terminé");
+      return;
+    }
+    if (!canVoteVideoPoll) {
+      toast.error("Le vote vidéo n'est pas disponible pour vous");
+      return;
+    }
+
+    let nextPoll: LiveVideoVotePoll | null = null;
+    setLiveVideoVotePoll((prev) => {
+      if (!prev?.isActive) return prev;
+      if (!Object.prototype.hasOwnProperty.call(prev.votes, videoId)) return prev;
+      if (prev.voterChoices[voteUserKey]) return prev;
+
+      nextPoll = {
+        ...prev,
+        votes: {
+          ...prev.votes,
+          [videoId]: (prev.votes[videoId] || 0) + 1,
+        },
+        voterChoices: {
+          ...prev.voterChoices,
+          [voteUserKey]: videoId,
+        },
+      };
+      return nextPoll;
+    });
+
+    if (!nextPoll) {
+      toast.error("Vous avez déjà voté pour ce tour");
+      return;
+    }
+
+    await broadcastVideoVotePoll("vote", nextPoll);
+    toast.success("Vote enregistré");
+  };
+
+  // ── Feature D/G : ouvre le panel de preview IA avant de lancer ──────────
+  const handlePlayVideoRequest = (video: VideoInPlaylist) => {
     if (!canControlVideo) {
-      toast.error("Seuls l'admin ou la régie vidéo peuvent préparer une vidéo");
+      toast.error("Seuls l'admin ou la regie video peuvent changer de video");
       return;
     }
-
-    if (video.isCurrent) {
-      toast.info("Cette vidéo est déjà en direct");
-      return;
-    }
-
-    setPreviewVideoId(video.id);
-    addRegieAction("Prévisualisation", `Vidéo préparée : ${video.title}`);
-    toast.info(`Vidéo préparée : ${video.title}`);
+    // Afficher le panel de preview pour admin/régie
+    setPreviewVideo(video);
   };
 
-  const handleTakePreview = async () => {
-    if (!previewVideo) {
-      toast.error("Aucune vidéo en aperçu");
-      return;
-    }
+  const handlePlayVideo = async (video: VideoInPlaylist, transition: VideoTransitionType = selectedVideoTransition) => {
+    // Fermer le panel de preview si ouvert
+    setPreviewVideo(null);
 
-    await handlePlayVideo(previewVideo);
-    addRegieAction("Passage antenne", `Vidéo diffusée : ${previewVideo.title}`);
-    setPreviewVideoId(null);
-  };
-
-
-
-  const handlePlayVideo = async (video: VideoInPlaylist) => {
     try {
       if (!video?.id) return;
       if (!canControlVideo) {
@@ -1792,18 +2650,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         return;
       }
 
+      await playVideoTransition(transition);
+
       toast.success(`Lecture de "${video.title}"`, {
         duration: 3000,
         icon: '🎬',
         description: `Lancée par ${currentUser.name}`,
       });
-      addRegieAction("Changement vidéo", `Nouvelle vidéo lancée : ${video.title}`);
 
       // Basculer immédiatement côté UI
       setPlaylist(prev => prev.map(v =>
         v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
       ));
-      setShowPostVideoQuestion(false);
       setCurrentTime(0);
       setIsPlaying(true);
       setSyncNonce(Date.now());
@@ -1818,8 +2676,29 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         });
 
         if (updateError) {
-          console.error("Error updating salon video state", updateError);
-          throw updateError;
+          // Erreur réseau ou Supabase temporairement indisponible
+          // On ne bloque pas la lecture — la vidéo joue localement
+          // La synchronisation se rétablira automatiquement à la reconnexion
+          const isNetworkError = updateError?.message?.includes?.("Load failed") ||
+            updateError?.message?.includes?.("connexion") ||
+            updateError?.message?.includes?.("network") ||
+            updateError?.code === "NETWORK_ERROR";
+
+          if (isNetworkError) {
+            console.warn("⚠️ Sync Supabase échouée (réseau) — lecture locale maintenue", updateError);
+            toast.warning("Connexion instable — la vidéo joue en local, la sync reprendra automatiquement.", {
+              duration: 4000,
+              id: "network-sync-warning",
+            });
+            // Ne pas throw — laisser la vidéo continuer
+          } else {
+            console.error("Error updating salon video state", updateError);
+            // Erreur non-réseau : on log mais on ne bloque toujours pas la lecture
+            toast.warning("Sync partielle — la vidéo joue mais les autres participants pourraient ne pas voir le changement.", {
+              duration: 3000,
+              id: "sync-partial-warning",
+            });
+          }
         }
 
         if (roomChannelRef.current) {
@@ -1833,6 +2712,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 videoId: video.id,
                 isPlaying: true,
                 time: 0,
+                transition,
                 forceSeek: true,
                 forceReload: true,
                 explicit: true,
@@ -1849,6 +2729,51 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       toast.error("Impossible de changer la vidéo");
     }
   };
+
+  useEffect(() => {
+    if (!liveVideoVotePoll) return;
+    setVideoVoteCounts((prev) => ({ ...prev, ...liveVideoVotePoll.votes }));
+  }, [liveVideoVotePoll]);
+
+  useEffect(() => {
+    if (!liveVideoVotePoll?.isActive || !liveVideoVotePoll.endsAt) return;
+    if (liveVoteRemainingMs > 0) return;
+    if (!canManageVideoVotePoll) return;
+    if (videoVoteFinalizingRef.current) return;
+
+    const pollSnapshot = liveVideoVotePoll;
+    const winnerVideoId = pickWinningVideoId(pollSnapshot);
+    const winnerVideo = winnerVideoId
+      ? playlist.find((video) => video.id === winnerVideoId)
+      : null;
+
+    videoVoteFinalizingRef.current = true;
+
+    const finishedPoll: LiveVideoVotePoll = {
+      ...pollSnapshot,
+      isActive: false,
+      endsAt: null,
+      winnerVideoId: winnerVideoId || null,
+    };
+
+    setLiveVideoVotePoll(finishedPoll);
+    void broadcastVideoVotePoll("finish", finishedPoll);
+
+    if (winnerVideo) {
+      void handlePlayVideo(winnerVideo);
+      toast.success(`🎬 Vote terminé: "${winnerVideo.title}" est sélectionnée`);
+    } else {
+      toast.warning("Vote terminé: aucune vidéo gagnante");
+    }
+
+    videoVoteFinalizingRef.current = false;
+  }, [
+    liveVideoVotePoll,
+    liveVoteRemainingMs,
+    canManageVideoVotePoll,
+    pickWinningVideoId,
+    playlist,
+  ]);
 
   const handleAddVideosBatch = async (items: Array<{ url: string; title: string }>) => {
     if (!canManagePlaylist) {
@@ -1887,6 +2812,30 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       toast.error(getErrorMessage(error, "Erreur ajout multiple de videos"));
       console.error(error);
     }
+  };
+
+  const clearHoverPreviewTimeout = () => {
+    if (hoverPreviewTimeoutRef.current !== null) {
+      window.clearTimeout(hoverPreviewTimeoutRef.current);
+      hoverPreviewTimeoutRef.current = null;
+    }
+  };
+
+  const getHoverPreviewUrl = (youtubeId: string) =>
+    `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&start=12&end=18&disablekb=1&iv_load_policy=3&fs=0`;
+
+  const startHoverPreview = (videoId: string) => {
+    clearHoverPreviewTimeout();
+    setHoverPreviewVideoId(videoId);
+    hoverPreviewTimeoutRef.current = window.setTimeout(() => {
+      setHoverPreviewVideoId((current) => (current === videoId ? null : current));
+      hoverPreviewTimeoutRef.current = null;
+    }, 6000);
+  };
+
+  const stopHoverPreview = () => {
+    clearHoverPreviewTimeout();
+    setHoverPreviewVideoId(null);
   };
 
   const handlePlayerTimeUpdate = useCallback((seconds: number) => {
@@ -1965,6 +2914,23 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   }, [backendSalonId, canControlVideo, currentUser.id, currentVideo?.id, updateSalonState]);
 
+  useEffect(() => {
+    return () => {
+      if (hoverPreviewTimeoutRef.current !== null) {
+        window.clearTimeout(hoverPreviewTimeoutRef.current);
+        hoverPreviewTimeoutRef.current = null;
+      }
+      if (videoTransitionTimeoutRef.current !== null) {
+        window.clearTimeout(videoTransitionTimeoutRef.current);
+        videoTransitionTimeoutRef.current = null;
+      }
+      if (permissionFlushTimeoutRef.current !== null) {
+        window.clearTimeout(permissionFlushTimeoutRef.current);
+        permissionFlushTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const handleAdminPlaybackStateChange = useCallback((playing: boolean) => {
     if (!canControlVideo) return;
 
@@ -2012,6 +2978,138 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   }, [backendSalonId, canControlVideo, currentUser.id, updateSalonState]);
 
+  // ── Scene switcher ─────────────────────────────────────────────────────
+  const handleSceneChange = async (scene: SceneMode) => {
+    setCurrentScene(scene);
+    if (!roomChannelRef.current) return;
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_scene_change',
+        payload: { scene, by: currentUser.id },
+      });
+      const sceneLabels: Record<SceneMode, string> = {
+        cinema: "🎬 Mode Cinéma",
+        split: "▣ Mode Split",
+        party: "👥 Watch Party",
+        interlude: "⏸ Interlude",
+      };
+      toast.success(`Scène : ${sceneLabels[scene]}`);
+    } catch (err) {
+      console.error("Erreur broadcast scène", err);
+    }
+  };
+
+  // ── Feature 68 : Lancer le compte à rebours ────────────────────────────
+  const handleLaunchCountdown = async (seconds: number, reason: "manual" | "startup" = "manual") => {
+    // Show locally for the régie too
+    if (reason === "startup") {
+      startupCountdownTriggeredRef.current = true;
+    }
+    setActiveCountdown({ seconds, key: Date.now(), reason });
+    if (!roomChannelRef.current) return;
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_countdown',
+        payload: { seconds, by: currentUser.id, reason },
+      });
+    } catch (err) {
+      console.error("Erreur broadcast countdown", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
+    if (!isAdmin) return;
+    if (startupCountdownTriggeredRef.current) return;
+
+    const timeout = window.setTimeout(() => {
+      void handleLaunchCountdown(3, "startup");
+    }, 1200);
+
+    return () => window.clearTimeout(timeout);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendSalonId, isAdmin]);
+
+  const handleCountdownFinished = () => {
+    const finishedReason = activeCountdown?.reason;
+    setActiveCountdown(null);
+    if (finishedReason === "startup" && isAdmin) {
+      toast.success("GO ! Lancez la vidéo quand vous êtes prêt.");
+    }
+  };
+
+  // ── Feature 70 : Diffuser une annonce TTS ─────────────────────────────
+  const handleTTSAnnounce = async (text: string) => {
+    if (!roomChannelRef.current) return;
+    try {
+      await roomChannelRef.current.send({
+        type: 'broadcast',
+        event: 'room_tts_announce',
+        payload: { text, by: currentUser.id },
+      });
+    } catch (err) {
+      console.error("Erreur broadcast TTS", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!voiceCommentaryEnabled) return;
+    if (!canManageVoiceCommentary) return;
+    if (!localVoiceStreamRef.current) return;
+
+    const targets = participants
+      .filter((participant) =>
+        participant.status === "online" &&
+        participant.id !== currentUser.id &&
+        participant.id !== authUserId &&
+        participant.email !== currentUser.email &&
+        participant.name !== currentUser.name
+      )
+      .map((participant) => participant.id)
+      .filter(Boolean);
+
+    for (const peerId of targets) {
+      if (voicePeerConnectionsRef.current[peerId]) continue;
+      void connectVoiceToPeer(peerId);
+    }
+  }, [
+    authUserId,
+    canManageVoiceCommentary,
+    connectVoiceToPeer,
+    currentUser.email,
+    currentUser.id,
+    currentUser.name,
+    participants,
+    voiceCommentaryEnabled,
+  ]);
+
+  useEffect(() => {
+    if (canManageVoiceCommentary) return;
+    if (!voiceCommentaryEnabled) return;
+    void stopVoiceCommentary(false);
+  }, [canManageVoiceCommentary, stopVoiceCommentary, voiceCommentaryEnabled]);
+
+  useEffect(() => {
+    return () => {
+      teardownVoiceInfrastructure();
+    };
+  }, [teardownVoiceInfrastructure]);
+
+  const handleToggleVoiceCommentary = async () => {
+    if (!canManageVoiceCommentary) {
+      toast.error("Seule la régie peut contrôler la voix live");
+      return;
+    }
+    if (voiceCommentaryEnabled) {
+      await stopVoiceCommentary(true);
+      toast.info("Micro commentaire désactivé");
+      return;
+    }
+    await startVoiceCommentary();
+  };
+
   const handleAssignRegie = async (participantId: string, enabled: boolean) => {
     try {
       await setParticipantRole(backendSalonId || roomId, participantId, enabled ? "regie" : "member");
@@ -2039,6 +3137,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
   return (
     <div className={`min-h-screen flex flex-col ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
+      <audio ref={remoteVoiceAudioRef} autoPlay playsInline className="hidden" />
       {/* Header Fixed - ne scroll pas */}
       <header className={`sticky top-0 z-30 ${theme === 'dark' ? 'bg-black border-zinc-800' : 'bg-white border-gray-200'} border-b px-6 py-3 flex items-center justify-between`}>
         <div className="flex items-center gap-6">
@@ -2060,6 +3159,108 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <Crown className="w-3 h-3" />
               {effectiveRole === null ? "..." : effectiveRole === "admin" ? "Admin" : effectiveRole === "regie" ? "Regie" : "Invite"}
             </Badge>
+
+            {/* Scene Switcher — visible only for admin/regie */}
+            <SceneSwitcher
+              currentScene={currentScene}
+              onSceneChange={handleSceneChange}
+              theme={theme}
+              canControl={isAdmin || effectiveRole === "regie"}
+            />
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <select
+                value={selectedVideoTransition}
+                onChange={(e) => setSelectedVideoTransition(e.target.value as VideoTransitionType)}
+                title="Transition entre vidéos"
+                className={`h-8 rounded-md border px-2 text-xs font-medium outline-none ${
+                  theme === "dark"
+                    ? "border-zinc-700 bg-zinc-900 text-zinc-200"
+                    : "border-gray-300 bg-white text-gray-700"
+                }`}
+              >
+                {VIDEO_TRANSITIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* ── Feature 70 : Annonce TTS — admin/regie uniquement ── */}
+            {(isAdmin || effectiveRole === "regie") && (
+              <button
+                id="voice-commentary-btn"
+                onClick={() => {
+                  void handleToggleVoiceCommentary();
+                }}
+                title={voiceCommentaryEnabled ? "Couper la voix live" : "Activer la voix live"}
+                disabled={voiceCommentaryBusy}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  padding: "0.35rem 0.65rem",
+                  borderRadius: "0.5rem",
+                  border: voiceCommentaryEnabled
+                    ? "1px solid #ef4444"
+                    : theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                  background: voiceCommentaryEnabled
+                    ? "rgba(239,68,68,0.15)"
+                    : theme === "dark" ? "rgba(39,39,42,0.8)" : "rgba(255,255,255,0.8)",
+                  color: voiceCommentaryEnabled ? "#ef4444" : theme === "dark" ? "#fca5a5" : "#dc2626",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  cursor: voiceCommentaryBusy ? "not-allowed" : "pointer",
+                  opacity: voiceCommentaryBusy ? 0.6 : 1,
+                  backdropFilter: "blur(4px)",
+                  transition: "all 0.15s",
+                }}
+              >
+                {voiceCommentaryEnabled ? (
+                  <MicOff style={{ width: 14, height: 14 }} />
+                ) : (
+                  <Mic style={{ width: 14, height: 14 }} />
+                )}
+                {voiceCommentaryEnabled ? "Voix ON" : "Voix"}
+              </button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <button
+                id="tts-announce-btn"
+                onClick={() => setShowTTSPanel((v) => !v)}
+                title="Annonce vocale pour tous"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  padding: "0.35rem 0.65rem",
+                  borderRadius: "0.5rem",
+                  border: showTTSPanel
+                    ? "1px solid #8b5cf6"
+                    : theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                  background: showTTSPanel
+                    ? "rgba(139,92,246,0.15)"
+                    : theme === "dark" ? "rgba(39,39,42,0.8)" : "rgba(255,255,255,0.8)",
+                  color: showTTSPanel ? "#8b5cf6" : theme === "dark" ? "#a78bfa" : "#7c3aed",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  backdropFilter: "blur(4px)",
+                  transition: "all 0.15s",
+                }}
+              >
+                <Volume2 style={{ width: 14, height: 14 }} />
+                TTS
+              </button>
+            )}
+
+            {!canManageVoiceCommentary && voiceCommentaryEnabled && (
+              <Badge className="bg-red-600 text-white hover:bg-red-600 px-2 py-1 text-[11px]">
+                🎙️ Commentaire vocal live
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -2121,6 +3322,27 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             Sync
           </Button>
 
+          {/* Bouton Contenu du Salon — résumés IA de toutes les vidéos */}
+          <Button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowContentPanel(true);
+            }}
+            variant="ghost"
+            size="sm"
+            className={`text-sm h-9 transition-all ${
+              showContentPanel
+                ? "text-purple-400 bg-purple-600/15 hover:bg-purple-600/25"
+                : theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'
+            }`}
+            title="Contenu du Salon — Résumés IA de toutes les vidéos"
+          >
+            <LayoutList className="w-4 h-4 mr-1.5" />
+            <span className="hidden sm:inline">Contenu</span>
+          </Button>
+
           {onThemeToggle && (
             <Button
               type="button"
@@ -2154,13 +3376,23 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </div>
       </header>
 
-      {/* Main Content - SCROLL GLOBAL sur toute la page */}
-      <div className="flex gap-4 p-4">
-        {/* LEFT: Video + Playlist - 2/3 de l'écran */}
-        <div className="flex-1 space-y-6">
-          {/* Video Player */}
-          <div className="relative">
-            {currentVideo && currentVideo.youtubeId ? (
+      {/* Main Content - layout conditionnel selon currentScene */}
+      <div
+        className={`flex gap-4 p-4 ${
+          currentScene === "cinema" ? "flex-col" : ""
+        }`}
+      >
+        {/* LEFT: Video + Playlist */}
+        <div
+          className={`space-y-6 ${
+            currentScene === "cinema" ? "w-full" : "flex-1"
+          }`}
+        >
+          {/* Video Player — ou InterludeScreen si scène interlude */}
+          {currentScene === "interlude" ? (
+            <InterludeScreen roomName={roomName} theme={theme} />
+          ) : currentVideo && currentVideo.youtubeId ? (
+            <div className="relative">
               <YouTubePlayer
                 videoId={currentVideo.youtubeId}
                 isPlaying={isPlaying}
@@ -2170,191 +3402,205 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
                 syncNonce={syncNonce}
                 onTimeUpdate={handlePlayerTimeUpdate}
                 onPlaybackStateChange={handleAdminPlaybackStateChange}
-                onEnded={handleMainVideoEnded}
                 theme={theme}
               />
-            ) : (
-              <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden aspect-video flex items-center justify-center`}>
-                <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1">
-                  En direct
-                </Badge>
-
-                <button
-                  onClick={handlePlayPause}
-                  disabled={!canControlVideo}
-                  className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all"
-                >
-                  {isPlaying ? (
-                    <Pause className="w-10 h-10 text-white/80" />
-                  ) : (
-                    <Play className="w-10 h-10 text-white/80 ml-1" />
-                  )}
-                </button>
-              </div>
-            )}
-
-            {liveAnnouncement && (
-              <div className="pointer-events-none absolute left-4 right-4 top-4 z-20 flex justify-center">
-                <div className="max-w-3xl rounded-md border border-red-400/40 bg-red-600/95 px-4 py-2 shadow-xl backdrop-blur">
-                  <p className="truncate text-center text-sm font-semibold text-white">
-                    <span className="mr-2 text-white/80">ANNONCE RÉGIE</span>
-                    {liveAnnouncement}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {showPostVideoQuestion && postVideoQuestion && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-6">
-                <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-gray-200'} w-full max-w-xl rounded-xl border p-5 shadow-2xl`}>
-                  <p className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} text-xs font-semibold`}>
-                    QUESTION APRÈS VIDÉO
-                  </p>
-                  <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} mt-2 text-lg font-semibold`}>
-                    {postVideoQuestion}
-                  </p>
-                  <div className="mt-4 flex justify-end gap-2">
-                    {canControlVideo && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={handleClearPostVideoQuestion}
-                        className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
-                      >
-                        Retirer
-                      </Button>
-                    )}
-                    <Button
-                      type="button"
-                      onClick={() => setShowPostVideoQuestion(false)}
-                      className="bg-red-600 hover:bg-red-700 text-white"
-                    >
-                      Fermer
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {canControlVideo && previewVideo?.youtubeId && (
-            <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-gray-100 border-gray-200'} border rounded-xl p-3`}>
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-36 shrink-0 overflow-hidden rounded bg-black">
-                    <YouTubePlayer
-                      videoId={previewVideo.youtubeId}
-                      isPlaying={true}
-                      onPlayPause={() => {}}
-                      canControl={false}
-                      theme={theme}
-                      muted={true}
-                      label="Apercu regie"
-                      showPlayButton={false}
-                      showBadge={false}
-                    />
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} text-xs font-semibold`}>
-                      APERÇU RÉGIE
-                    </p>
-                    <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium truncate`}>
-                      {previewVideo.title}
-                    </p>
-                    <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
-                      Prête à être diffusée
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleTakePreview}
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    Passer à l'antenne
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    onClick={() => setPreviewVideoId(null)}
-                    className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-200'}`}
-                  >
-                    Annuler
-                  </Button>
-                </div>
-              </div>
+              {/* Feature F — Overlay de sous-titres (YouTube captions + micro fallback) */}
+              <LiveTranscriptionOverlay
+                isActive={transcription.isActive}
+                captionLine={ytCaptions.currentCaption}
+                captionsAvailable={ytCaptions.isAvailable}
+                captionsLoading={ytCaptions.isLoading}
+                captionsLanguage={ytCaptions.language}
+                isListening={transcription.isListening}
+                words={transcription.words}
+                micError={transcription.error}
+                isSupported={transcription.isSupported}
+              />
+            </div>
+          ) : (
+            <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden aspect-video flex items-center justify-center`}>
+              <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1">
+                En direct
+              </Badge>
+              <button
+                onClick={handlePlayPause}
+                disabled={!canControlVideo}
+                className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center hover:bg-white/20 transition-all"
+              >
+                {isPlaying ? (
+                  <Pause className="w-10 h-10 text-white/80" />
+                ) : (
+                  <Play className="w-10 h-10 text-white/80 ml-1" />
+                )}
+              </button>
             </div>
           )}
 
-
-          {/* Playlist Section - PAS DE SCROLL INTERNE, grille compacte 4 colonnes */}
-          <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-semibold flex items-center gap-2`}>
-                <Menu className="w-4 h-4" />
-                PLAYLIST ({playlist.length})
-              </h2>
-            </div>
-
-            {playlist.length === 0 ? (
-              <EmptyState type="videos" theme={theme} />
-            ) : (
-              <div className="grid grid-cols-4 gap-2">
-                {playlist.map((video) => (
-                  <div
-                    key={video.id}
-                    onClick={() => {
-                      if (canControlVideo) {
-                        handlePrepareVideo(video);
-                      }
-                    }}
-
-
-                    className={`relative group rounded-lg overflow-hidden ${video.isCurrent ? "ring-2 ring-red-600" : ""
-                      } cursor-pointer hover:ring-2 hover:ring-red-400 transition-all`}
-                  >
-                    <img
-                      src={video.thumbnail}
-                      alt={video.title}
-                      className="w-full aspect-video object-cover"
-                    />
-
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Play className="w-6 h-6 text-white" />
-                    </div>
-
-                    {video.isCurrent && (
-                      <div className="absolute top-1.5 left-1.5 bg-red-600 rounded px-1.5 py-0.5 flex items-center gap-1">
-                        <Play className="w-2 h-2 text-white fill-white" />
-                        <span className="text-white text-[10px] font-medium">EN COURS</span>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleFavorite(video.id);
-                      }}
-                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-                    >
-                      <Heart className={`w-3 h-3 ${video.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
-                    </button>
-
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
-                      <p className="text-white text-[11px] truncate leading-tight">{video.title}</p>
-                      <p className="text-gray-400 text-[10px] mt-0.5">{video.duration}</p>
-                    </div>
-                  </div>
-                ))}
+          {/* Playlist Section — cachée en mode cinéma */}
+          {currentScene !== "cinema" && (
+            <div className={`${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl p-4`}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-semibold flex items-center gap-2`}>
+                  <Menu className="w-4 h-4" />
+                  PLAYLIST ({playlist.length})
+                </h2>
               </div>
-            )}
-          </div>
+
+              {playlist.length === 0 ? (
+                <EmptyState type="videos" theme={theme} />
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  {playlist.map((video) => {
+                    return (
+                    <div
+                      key={video.id}
+                      onMouseEnter={() => {
+                        if (video.youtubeId) startHoverPreview(video.id);
+                      }}
+                      onMouseLeave={stopHoverPreview}
+                      onClick={() => {
+                        if (canControlVideo) {
+                          handlePlayVideoRequest(video);
+                        }
+                      }}
+                      className={`relative group rounded-lg overflow-hidden ${video.isCurrent ? "ring-2 ring-red-600" : ""
+                        } cursor-pointer hover:ring-2 hover:ring-red-400 transition-all`}
+                    >
+                      <img
+                        src={video.thumbnail}
+                        alt={video.title}
+                        className="w-full aspect-video object-cover"
+                      />
+                      {video.youtubeId && hoverPreviewVideoId === video.id && (
+                        <iframe
+                          src={getHoverPreviewUrl(video.youtubeId)}
+                          title={`Aperçu ${video.title}`}
+                          className="absolute inset-0 w-full h-full pointer-events-none"
+                          allow="autoplay; encrypted-media; picture-in-picture"
+                          referrerPolicy="strict-origin-when-cross-origin"
+                        />
+                      )}
+
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Play className="w-6 h-6 text-white" />
+                      </div>
+
+                      {video.isCurrent && (
+                        <div className="absolute top-1.5 left-1.5 bg-red-600 rounded px-1.5 py-0.5 flex items-center gap-1">
+                          <Play className="w-2 h-2 text-white fill-white" />
+                          <span className="text-white text-[10px] font-medium">EN COURS</span>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleFavorite(video.id);
+                        }}
+                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                      >
+                        <Heart className={`w-3 h-3 ${video.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
+                      </button>
+
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-1.5">
+                        <p className="text-white text-[11px] truncate leading-tight">{video.title}</p>
+                        <p className="text-gray-400 text-[10px] mt-0.5">{video.duration}</p>
+                      </div>
+
+                      <div className="absolute top-1.5 left-1.5 right-9 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        <div className="bg-black/65 rounded px-2 py-1">
+                          <p className="text-white text-[11px] leading-tight whitespace-normal break-words">{video.title}</p>
+                          <p className="text-gray-300 text-[10px] mt-0.5">Aperçu 6s</p>
+                        </div>
+                      </div>
+                    </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* RIGHT: Chat + Participants - 1/3 de l'écran, hauteur fixe */}
+        {/* RIGHT: Chat + Participants — masqué en mode cinéma, participants-only en mode party */}
+        {currentScene !== "cinema" && (
         <div className={`w-80 ${theme === 'dark' ? 'bg-zinc-900' : 'bg-gray-100'} rounded-xl flex flex-col sticky top-20 h-[calc(100vh-6rem)]`}>
+
+          {/* ── MODE PARTY : uniquement la liste des participants ── */}
+          {currentScene === "party" ? (
+            <>
+              {/* Header party */}
+              <div className={`flex items-center gap-2 px-4 py-3 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
+                <Users className="w-4 h-4 text-green-400" />
+                <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-black'}`}>
+                  Watch Party
+                </span>
+                <span className={`ml-auto text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                  {participantCount} en ligne
+                </span>
+              </div>
+
+              {/* Liste participants */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {/* Soi-même */}
+                <div className={`p-3 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-gray-200'} rounded-xl`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                        {currentUser.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium flex items-center gap-2`}>
+                          {currentUser.name}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-zinc-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>Vous</span>
+                          {isAdmin && <Crown className="w-3 h-3 text-yellow-500" />}
+                        </p>
+                        <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
+                          {getRoleLabel(effectiveRole)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="w-2 h-2 bg-green-500 rounded-full" />
+                  </div>
+                </div>
+
+                {/* Autres participants */}
+                {otherParticipants.length === 0 ? (
+                  <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'} text-sm`}>
+                    <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    Aucun autre participant
+                  </div>
+                ) : (
+                  otherParticipants.map((participant) => (
+                    <div key={participant.id} className={`p-3 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-gray-200'} rounded-xl`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={participant.avatar}
+                            alt={participant.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                          <div>
+                            <p className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-sm font-medium flex items-center gap-2`}>
+                              {participant.name}
+                              {participant.role === "admin" && <Crown className="w-3 h-3 text-yellow-500" />}
+                              {participant.role === "regie" && <Clapperboard className="w-3 h-3 text-red-400" />}
+                            </p>
+                            <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-xs`}>
+                              {getRoleLabel(participant.role)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`w-2 h-2 rounded-full ${participant.status === "online" ? "bg-green-500" : "bg-gray-500"}`} />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            /* ── MODES split / interlude : tabs Chat / Participants / Sondages ── */
+            <>
           <div className={`flex border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
             <button
               onClick={() => setActiveTab("chat")}
@@ -2395,6 +3641,24 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
           {activeTab === "chat" && (
             <>
+              {/* Feature E : Questions de discussion IA */}
+              {discussionQuestions && discussionVideoTitle && (
+                <div className="px-3 pt-3">
+                  <AIDiscussionQuestions
+                    questions={discussionQuestions}
+                    videoTitle={discussionVideoTitle}
+                    onSendQuestion={(q) => {
+                      setNewMessage(q);
+                      // Auto-envoyer dans le chat
+                      setTimeout(() => {
+                        const el = document.getElementById('chat-input-field');
+                        if (el) el.focus();
+                      }, 50);
+                    }}
+                    theme={theme}
+                  />
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(100vh - 20rem)' }}>
                 {messages.length === 0 ? (
                   <EmptyState type="messages" theme={theme} />
@@ -2464,6 +3728,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <div className={`p-4 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
                 <div className="flex gap-2">
                   <Input
+                    id="chat-input-field"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
@@ -2551,12 +3816,26 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             </div>
           )}
           {activeTab === "polls" && backendSalonId && canUsePolls && (
-            <div className="flex-1 overflow-hidden h-full">
-              <PollSection
-                salonId={backendSalonId}
-                isAdmin={isAdmin}
-                currentUser={currentUser.name}
-              />
+            <div className="flex-1 overflow-hidden h-full flex flex-col">
+              <div className={`px-3 py-2 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'} flex items-center justify-between`}>
+                <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                  🗳️ Vote vidéo en temps réel (5 min)
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => setShowVideoVote(true)}
+                  className="h-7 bg-red-600 hover:bg-red-700 text-white text-xs"
+                >
+                  Ouvrir le vote vidéo
+                </Button>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <PollSection
+                  salonId={backendSalonId}
+                  isAdmin={isAdmin}
+                  currentUser={currentUser.name}
+                />
+              </div>
             </div>
           )}
           {activeTab === "polls" && !canUsePolls && (
@@ -2564,7 +3843,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               Les sondages sont désactivés pour votre compte.
             </div>
           )}
+            </>
+          )}
         </div>
+        )}
       </div>
 
       {/* Mobile Menu - popup au-dessus des boutons */}
@@ -2637,50 +3919,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
               <History className="w-4 h-4 mr-2" />
               Historique des vidéos
             </Button>
-            {(isAdmin || effectiveRole === "regie") && (
-              <Button
-                onClick={() => {
-                  setAnnouncementDraft(liveAnnouncement);
-                  setShowAnnouncementPanel(true);
-                  setShowMenu(false);
-                }}
-                variant="ghost"
-                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
-              >
-                <Megaphone className="w-4 h-4 mr-2" />
-                Annonce régie
-              </Button>
-            )}
-
-            {(isAdmin || effectiveRole === "regie") && (
-              <Button
-                onClick={() => {
-                  setPostVideoQuestionDraft(postVideoQuestion);
-                  setShowPostVideoQuestionPanel(true);
-                  setShowMenu(false);
-                }}
-                variant="ghost"
-                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
-              >
-                <MessageCircle className="w-4 h-4 mr-2" />
-                Question après vidéo
-              </Button>
-            )}
-
-            {(isAdmin || effectiveRole === "regie") && (
-              <Button
-                onClick={() => {
-                  setShowRegieHistory(true);
-                  setShowMenu(false);
-                }}
-                variant="ghost"
-                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
-              >
-                <History className="w-4 h-4 mr-2" />
-                Historique régie
-              </Button>
-            )}
-
 
             {isAdmin && (
               <>
@@ -2746,6 +3984,26 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         </>
       )}
 
+      {/* Feature D — Panneau Contenu du Salon (résumés IA de toutes les vidéos) */}
+      {showContentPanel && (
+        <RoomContentPanel
+          playlist={playlist}
+          roomName={roomName}
+          theme={theme}
+          onClose={() => setShowContentPanel(false)}
+        />
+      )}
+
+      {/* Feature D/G : Panel de preview IA avant lancement vidéo */}
+      {previewVideo && (
+        <AIVideoPreviewPanel
+          video={previewVideo}
+          onConfirm={(video) => handlePlayVideo(video)}
+          onCancel={() => setPreviewVideo(null)}
+          theme={theme}
+        />
+      )}
+
       {showLeaveDialog && (
         <LeaveRoomDialog
           onClose={() => setShowLeaveDialog(false)}
@@ -2784,6 +4042,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
             thumbnail: v.thumbnail,
             votes: v.votes || 0
           }))}
+          poll={liveVideoVotePoll}
+          remainingSeconds={liveVoteRemainingSeconds}
+          canManagePoll={canManageVideoVotePoll}
+          canVote={canVoteVideoPoll}
+          currentUserVoteKey={voteUserKey}
+          onStartPoll={handleStartVideoVotePoll}
           onClose={() => setShowVideoVote(false)}
           onVote={handleVoteVideo}
           theme={theme}
@@ -2833,187 +4097,6 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         />
       )}
 
-      {showAnnouncementPanel && canControlVideo && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md overflow-hidden shadow-2xl`}>
-            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
-              <div className="flex items-center gap-2">
-                <Megaphone className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} w-5 h-5`} />
-                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
-                  Annonce régie
-                </h2>
-              </div>
-              <button
-                onClick={() => setShowAnnouncementPanel(false)}
-                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} text-sm`}
-              >
-                X
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <textarea
-                value={announcementDraft}
-                onChange={(e) => setAnnouncementDraft(e.target.value.slice(0, 140))}
-                placeholder="Ex : Pause dans 5 minutes"
-                rows={4}
-                className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500`}
-              />
-
-              {liveAnnouncement && (
-                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
-                  <p className="text-xs uppercase text-red-500">Annonce active</p>
-                  <p className="mt-1">{liveAnnouncement}</p>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                {liveAnnouncement && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleClearAnnouncement}
-                    className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
-                  >
-                    Retirer
-                  </Button>
-                )}
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setShowAnnouncementPanel(false)}
-                  className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
-                >
-                  Annuler
-                </Button>
-
-                <Button
-                  type="button"
-                  onClick={handlePublishAnnouncement}
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Afficher
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPostVideoQuestionPanel && canControlVideo && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className={`${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'} border rounded-xl w-full max-w-md overflow-hidden shadow-2xl`}>
-            <div className={`p-4 border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'} flex items-center justify-between`}>
-              <div className="flex items-center gap-2">
-                <MessageCircle className={`${theme === 'dark' ? 'text-red-400' : 'text-red-600'} w-5 h-5`} />
-                <h2 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-lg font-semibold`}>
-                  Question après vidéo
-                </h2>
-              </div>
-              <button
-                onClick={() => setShowPostVideoQuestionPanel(false)}
-                className={`${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-black'} text-sm`}
-              >
-                X
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
-                La question sera affichée automatiquement aux participants quand la vidéo en cours se termine.
-              </p>
-
-              {currentVideo && (
-                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
-                  <p className="text-xs uppercase text-red-500">Vidéo associée</p>
-                  <p className="mt-1 truncate">{currentVideo.title}</p>
-                </div>
-              )}
-
-              <textarea
-                value={postVideoQuestionDraft}
-                onChange={(e) => setPostVideoQuestionDraft(e.target.value.slice(0, 220))}
-                placeholder="Ex : Qu'avez-vous compris de ce passage ?"
-                rows={4}
-                className={`${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white placeholder:text-gray-500' : 'bg-white border-gray-300 text-black placeholder:text-gray-400'} w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-red-500`}
-              />
-
-              {postVideoQuestion && (
-                <div className={`${theme === 'dark' ? 'bg-zinc-800 text-gray-300' : 'bg-gray-100 text-gray-700'} rounded-lg p-3 text-sm`}>
-                  <p className="text-xs uppercase text-red-500">Question préparée</p>
-                  <p className="mt-1">{postVideoQuestion}</p>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                {postVideoQuestion && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleClearPostVideoQuestion}
-                    className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
-                  >
-                    Retirer
-                  </Button>
-                )}
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setShowPostVideoQuestionPanel(false)}
-                  className={`${theme === 'dark' ? 'text-gray-300 hover:text-white hover:bg-zinc-800' : 'text-gray-700 hover:text-black hover:bg-gray-100'}`}
-                >
-                  Annuler
-                </Button>
-
-                <Button
-                  type="button"
-                  onClick={handleSavePostVideoQuestion}
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                >
-                  Enregistrer
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showRegieHistory && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-md max-h-[80vh] overflow-hidden">
-            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-              <h2 className="text-white text-lg">Historique régie</h2>
-              <button
-                onClick={() => setShowRegieHistory(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                X
-              </button>
-            </div>
-
-            <div className="p-4 space-y-3 overflow-y-auto max-h-[60vh]">
-              {regieActions.length === 0 ? (
-                <p className="text-gray-400 text-sm">Aucune action régie enregistrée.</p>
-              ) : (
-                regieActions.map((entry) => (
-                  <div key={entry.id} className="bg-zinc-800 rounded-lg p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-white text-sm font-medium">{entry.action}</p>
-                      <span className="text-gray-500 text-xs">{entry.time}</span>
-                    </div>
-                    <p className="text-gray-300 text-sm mt-1">{entry.details}</p>
-                    <p className="text-gray-500 text-xs mt-1">Par {entry.user}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-
       {/* ShareRoomDialog temporairement désactivé pour debug */}
       {showShareDialog && roomCode && (
         <ShareRoomDialog
@@ -3022,6 +4105,78 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           roomName={roomName || 'Salon'}
           onClose={() => setShowShareDialog(false)}
           theme={theme}
+        />
+      )}
+
+      {/* ── Feature 68 : Overlay compte à rebours partagé ── */}
+      {activeCountdown && (
+        <SharedCountdownOverlay
+          key={activeCountdown.key}
+          seconds={activeCountdown.seconds}
+          theme={theme}
+          onFinished={handleCountdownFinished}
+        />
+      )}
+
+      {activeVideoTransition && (
+        <div className="fixed inset-0 z-[10020] pointer-events-none">
+          {activeVideoTransition.type === "fade_black" && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "#000",
+                animation: "videoTransitionFadeBlack 520ms ease-in-out forwards",
+              }}
+            />
+          )}
+          {activeVideoTransition.type === "slide_lateral" && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.9) 42%, rgba(0,0,0,0.9) 58%, transparent 100%)",
+                transform: "translateX(-110%)",
+                animation: "videoTransitionSlideLateral 560ms cubic-bezier(.22,1,.36,1) forwards",
+              }}
+            />
+          )}
+          {activeVideoTransition.type === "flash_white" && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "#fff",
+                animation: "videoTransitionFlashWhite 260ms ease-out forwards",
+              }}
+            />
+          )}
+          <style>{`
+            @keyframes videoTransitionFadeBlack {
+              0% { opacity: 0; }
+              45% { opacity: 1; }
+              100% { opacity: 0; }
+            }
+            @keyframes videoTransitionSlideLateral {
+              0% { transform: translateX(-110%); opacity: 1; }
+              100% { transform: translateX(110%); opacity: 1; }
+            }
+            @keyframes videoTransitionFlashWhite {
+              0% { opacity: 0; }
+              25% { opacity: 0.95; }
+              100% { opacity: 0; }
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* ── Feature 70 : Panneau TTS (régie uniquement) ── */}
+      {showTTSPanel && (isAdmin || effectiveRole === "regie") && (
+        <TTSAnnouncementPanel
+          onAnnounce={handleTTSAnnounce}
+          theme={theme}
+          onClose={() => setShowTTSPanel(false)}
         />
       )}
     </div>

@@ -1,34 +1,6 @@
-/**
- * Projet : WithYou
- * Fichier : components/room/VideoVotePanel.tsx
- *
- * Description :
- * Composant modal permettant aux utilisateurs de voter pour la
- * prochaine vidéo à lancer dans un salon.
- *
- * Fonctionnalités :
- * - Affiche la liste des vidéos disponibles avec leur nombre de votes
- * - Permet à l’utilisateur de sélectionner une seule vidéo
- * - Enregistre le vote avec une limite d’un vote toutes les 24 heures
- * - Empêche le revote avant la fin du délai
- * - Met en évidence la vidéo actuellement en tête des votes
- *
- * UX / UI :
- * - Interface modale avec fond sombre et flou
- * - Feedback visuel sur la sélection et l’état du vote
- * - Notifications utilisateur via Sonner (succès / erreur)
- * - Fermeture automatique après validation du vote
- *
- * Objectif :
- * Favoriser une décision collective et équitable pour choisir
- * la prochaine vidéo à regarder dans le salon.
- */
-
-import { X, ThumbsUp, Clock } from "lucide-react";
-import { useState, useEffect } from "react";
-import { toast } from "sonner";
+import { useMemo } from "react";
+import { X, Clock, ThumbsUp, Play, Trophy } from "lucide-react";
 import { Button } from "../ui/Button";
-import { hasVotedForVideo, recordVideoVote, getTimeUntilNextVote, formatTimeUntilNextVote } from "../../utils/voteStorage";
 
 interface Video {
   id: string;
@@ -37,83 +9,85 @@ interface Video {
   votes: number;
 }
 
+interface LiveVideoVotePoll {
+  pollId: string;
+  startedAt: number;
+  endsAt: number | null;
+  isActive: boolean;
+  startedBy: string;
+  votes: Record<string, number>;
+  voterChoices: Record<string, string>;
+  winnerVideoId?: string | null;
+}
+
 export interface VideoVotePanelProps {
   videos: Video[];
+  poll: LiveVideoVotePoll | null;
+  remainingSeconds: number;
+  canManagePoll: boolean;
+  canVote: boolean;
+  currentUserVoteKey: string;
+  onStartPoll: () => void;
   onClose: () => void;
   onVote: (videoId: string) => void;
   theme?: "light" | "dark";
 }
 
-export function VideoVotePanel({ onClose, videos, onVote }: VideoVotePanelProps) {
-  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
-  const [videoVotes, setVideoVotes] = useState<Map<string, number>>(
-    new Map(videos.map(v => [v.id, v.votes || 0]))
-  );
-  const [votedVideoId, setVotedVideoId] = useState<string | null>(null);
-  const totalVotes = Array.from(videoVotes.values()).reduce((sum, count) => sum + count, 0);
-  const sortedResults = [...videos]
-    .map((video) => ({
-      ...video,
-      currentVotes: videoVotes.get(video.id) || 0,
-    }))
-    .sort((a, b) => b.currentVotes - a.currentVotes);
+export function VideoVotePanel({
+  onClose,
+  videos,
+  poll,
+  remainingSeconds,
+  canManagePoll,
+  canVote,
+  currentUserVoteKey,
+  onStartPoll,
+  onVote,
+}: VideoVotePanelProps) {
+  const formatRemaining = (seconds: number) => {
+    const safe = Math.max(0, seconds);
+    const min = Math.floor(safe / 60);
+    const sec = safe % 60;
+    return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  };
 
-  useEffect(() => {
-    // Vérifier si l'utilisateur a déjà voté pour une des vidéos
-    for (const video of videos) {
-      if (hasVotedForVideo(video.id)) {
-        setVotedVideoId(video.id);
-        break;
+  const activePoll = poll?.isActive ? poll : null;
+  const availableVideos = useMemo(() => {
+    if (!poll?.votes) return videos;
+    const ids = new Set(Object.keys(poll.votes));
+    const filtered = videos.filter((video) => ids.has(video.id));
+    return filtered.length > 0 ? filtered : videos;
+  }, [videos, poll]);
+
+  const userVotedVideoId = poll?.voterChoices?.[currentUserVoteKey] || null;
+  const totalVotes = useMemo(() => {
+    if (!poll?.votes) return 0;
+    return Object.values(poll.votes).reduce((sum, v) => sum + v, 0);
+  }, [poll]);
+
+  const topVideoId = useMemo(() => {
+    if (!poll?.votes) return null;
+    let bestId: string | null = null;
+    let bestCount = -1;
+    for (const video of availableVideos) {
+      const count = poll.votes[video.id] || 0;
+      if (count > bestCount) {
+        bestCount = count;
+        bestId = video.id;
       }
     }
-  }, [videos]);
+    return bestCount >= 0 ? bestId : null;
+  }, [availableVideos, poll]);
 
-  const handleVote = (videoId: string) => {
-    if (votedVideoId) {
-      const hoursRemaining = getTimeUntilNextVote("video", votedVideoId);
-      toast.error(`Vous avez déjà voté ! ${formatTimeUntilNextVote(hoursRemaining)}`);
-      return;
-    }
-    setSelectedVideo(videoId);
-  };
-
-  const handleConfirmVote = () => {
-    if (!selectedVideo) {
-      toast.error("Veuillez sélectionner une vidéo");
-      return;
-    }
-
-    // Enregistrer le vote avec la limite de 24h
-    const success = recordVideoVote(selectedVideo);
-    if (!success) {
-      const hoursRemaining = getTimeUntilNextVote("video", selectedVideo);
-      toast.error(`Vous avez déjà voté ! ${formatTimeUntilNextVote(hoursRemaining)}`);
-      return;
-    }
-
-    setVideoVotes(prev => {
-      const newMap = new Map(prev);
-      newMap.set(selectedVideo, (newMap.get(selectedVideo) || 0) + 1);
-      return newMap;
-    });
-    
-    setVotedVideoId(selectedVideo);
-    onVote(selectedVideo);
-    const videoTitle = videos.find(v => v.id === selectedVideo)?.title;
-    toast.success(`Vote enregistré pour : ${videoTitle} ! Prochain vote dans 24h.`);
-    
-    // Fermer automatiquement après 2 secondes
-    setTimeout(() => {
-      onClose();
-    }, 2000);
-  };
+  const winnerVideo = poll?.winnerVideoId
+    ? availableVideos.find((video) => video.id === poll.winnerVideoId) || null
+    : null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md border border-zinc-800 max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white text-xl">Votez pour la prochaine vidéo</h2>
+      <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-xl border border-zinc-800 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-white text-xl">Vote vidéo en temps réel</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
@@ -122,123 +96,117 @@ export function VideoVotePanel({ onClose, videos, onVote }: VideoVotePanelProps)
           </button>
         </div>
 
-        {/* Subtitle */}
-        <p className="text-gray-400 text-sm mb-6">
-          {votedVideoId ? "Merci pour votre vote !" : "Choisissez une seule vidéo"}
-        </p>
+        {activePoll ? (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-red-600/15 border border-red-500/30 px-3 py-2">
+            <div className="flex items-center gap-2 text-red-300 text-sm">
+              <Clock className="w-4 h-4" />
+              <span>Temps restant: <strong>{formatRemaining(remainingSeconds)}</strong></span>
+            </div>
+            <span className="text-xs text-gray-300">1 vote par personne</span>
+          </div>
+        ) : (
+          <div className="mb-4 rounded-lg bg-zinc-800/80 border border-zinc-700 px-3 py-2 text-sm text-gray-300">
+            {winnerVideo ? (
+              <span className="flex items-center gap-2 text-green-400">
+                <Trophy className="w-4 h-4" />
+                Dernière gagnante: {winnerVideo.title}
+              </span>
+            ) : (
+              <span>La régie peut lancer un vote de 5 minutes.</span>
+            )}
+          </div>
+        )}
 
-        {/* Video List */}
-        <div className="space-y-3 overflow-y-auto flex-1 mb-6">
-          {videos.map((video) => {
-            const isSelected = selectedVideo === video.id;
-            const currentVotes = videoVotes.get(video.id) || 0;
-            const isWinning = currentVotes === Math.max(...Array.from(videoVotes.values()));
+        <div className="space-y-3 overflow-y-auto flex-1 mb-4">
+          {availableVideos.length === 0 && (
+            <p className="text-sm text-gray-400">Aucune vidéo disponible pour ce vote.</p>
+          )}
+
+          {availableVideos.map((video) => {
+            const votes = poll?.votes?.[video.id] || 0;
+            const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+            const isUserChoice = userVotedVideoId === video.id;
+            const isLeading = topVideoId === video.id;
+            const canClickVote = Boolean(activePoll) && !userVotedVideoId && canVote;
 
             return (
               <button
                 key={video.id}
-                onClick={() => handleVote(video.id)}
-                disabled={Boolean(votedVideoId)}
-                className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
-                  votedVideoId
-                    ? isWinning && currentVotes > 0
-                      ? "bg-green-600/20 border-2 border-green-600"
-                      : "bg-zinc-800/30 border-2 border-transparent opacity-60"
-                    : isSelected
-                    ? "bg-red-600/20 border-2 border-red-600"
-                    : "bg-zinc-800/50 border-2 border-transparent hover:bg-zinc-800 hover:border-zinc-700"
-                } ${votedVideoId ? "cursor-not-allowed" : "cursor-pointer"}`}
+                onClick={() => canClickVote && onVote(video.id)}
+                disabled={!canClickVote}
+                className={`w-full text-left rounded-lg border p-3 transition-all ${
+                  isUserChoice
+                    ? "border-red-500 bg-red-500/15"
+                    : isLeading
+                    ? "border-green-500/50 bg-green-500/10"
+                    : "border-zinc-700 bg-zinc-800/60"
+                } ${canClickVote ? "hover:border-red-400" : "cursor-default"}`}
               >
-                {/* Thumbnail */}
-                <img
-                  src={video.thumbnail}
-                  alt={video.title}
-                  className="w-24 h-14 rounded object-cover shrink-0"
-                />
-
-                {/* Info */}
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-white text-sm truncate">{video.title}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <p className="text-gray-400 text-xs flex items-center gap-1">
-                      <ThumbsUp className="w-3 h-3" />
-                      {currentVotes} {currentVotes === 1 ? "vote" : "votes"}
-                    </p>
-                    {votedVideoId && isWinning && currentVotes > 0 && (
-                      <span className="text-green-500 text-xs font-semibold">
-                        En tête
+                <div className="flex gap-3">
+                  <img
+                    src={video.thumbnail}
+                    alt={video.title}
+                    className="w-24 h-14 rounded object-cover shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white text-sm whitespace-normal break-words leading-snug">{video.title}</p>
+                    <div className="mt-1 flex items-center gap-3 text-xs">
+                      <span className="text-gray-300 flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3" />
+                        {votes} vote{votes > 1 ? "s" : ""}
                       </span>
-                    )}
+                      {isLeading && totalVotes > 0 && (
+                        <span className="text-green-400">En tête</span>
+                      )}
+                      {isUserChoice && (
+                        <span className="text-red-300">Votre vote</span>
+                      )}
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-700 rounded mt-2 overflow-hidden">
+                      <div
+                        className="h-1.5 bg-red-500 rounded"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-
-                {/* Vote Indicator */}
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                    isSelected
-                      ? "bg-red-600 border-2 border-red-400"
-                      : "bg-zinc-700 border-2 border-zinc-600"
-                  }`}
-                >
-                  {isSelected && (
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  )}
                 </div>
               </button>
             );
           })}
         </div>
 
-        {/* Confirm Button */}
-        {!votedVideoId && (
-          <Button
-            onClick={handleConfirmVote}
-            disabled={!selectedVideo}
-            className="w-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed h-12"
-          >
-            <ThumbsUp className="w-5 h-5 mr-2" />
-            Confirmer mon vote
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {!activePoll && canManagePoll && (
+            <Button
+              onClick={onStartPoll}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Lancer le vote (5 min)
+            </Button>
+          )}
 
-        {votedVideoId && (
-          <div className="text-center">
-            <p className="text-green-500 flex items-center justify-center gap-2">
-              <ThumbsUp className="w-5 h-5" />
-              Vote enregistré avec succès
-            </p>
-          </div>
-        )}
+          {!activePoll && !canManagePoll && (
+            <div className="flex-1 text-center text-sm text-gray-400 py-2">
+              En attente du lancement par la régie.
+            </div>
+          )}
 
-        <div className="mt-4 pt-4 border-t border-zinc-800">
-          <p className="text-sm text-gray-300 mb-2">
-            Resultats du vote ({totalVotes})
-          </p>
-          {sortedResults.length === 0 ? (
-            <p className="text-xs text-gray-500">Aucune video a voter</p>
-          ) : (
-            <div className="space-y-2">
-              {sortedResults.map((result, index) => {
-                const percentage = totalVotes > 0 ? Math.round((result.currentVotes / totalVotes) * 100) : 0;
-                return (
-                  <div key={result.id} className="text-xs text-gray-300">
-                    <div className="flex items-center justify-between">
-                      <span className="truncate pr-2">
-                        {index + 1}. {result.title}
-                      </span>
-                      <span>
-                        {result.currentVotes} vote{result.currentVotes > 1 ? "s" : ""} ({percentage}%)
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-zinc-800 rounded mt-1">
-                      <div
-                        className="h-1.5 bg-red-600 rounded"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+          {activePoll && userVotedVideoId && (
+            <div className="flex-1 text-center text-sm text-green-400 py-2">
+              Vote enregistré. Résultat automatique à la fin du timer.
+            </div>
+          )}
+
+          {activePoll && !userVotedVideoId && !canVote && (
+            <div className="flex-1 text-center text-sm text-gray-400 py-2">
+              Les sondages sont désactivés pour votre compte.
+            </div>
+          )}
+
+          {activePoll && !userVotedVideoId && canVote && (
+            <div className="flex-1 text-center text-sm text-gray-300 py-2">
+              Cliquez sur une vidéo pour voter.
             </div>
           )}
         </div>

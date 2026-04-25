@@ -2,3 +2,4 @@
 .vscode/
 node_modules/
 realtime/node_modules/
+client/.env
