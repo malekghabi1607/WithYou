@@ -21,6 +21,18 @@ export interface ParticipantApi {
 
 export type SalonRole = "admin" | "regie" | "member";
 
+function createClientUuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 function normalizeParticipantRole(role: unknown): SalonRole {
   if (role === "admin" || role === "regie") return role;
   return "member";
@@ -211,7 +223,7 @@ export async function connectToSalon(roomId: string) {
   ({ error: insertError } = await supabase
     .from('salon_member')
     .insert({
-      id_salon_member: crypto.randomUUID(),
+      id_salon_member: createClientUuid(),
       salon_id: salonId,
       user_id: userId,
       role: "member",
@@ -223,7 +235,7 @@ export async function connectToSalon(roomId: string) {
     ({ error: insertError } = await supabase
       .from('salon_member')
       .insert({
-        id_salon_member: crypto.randomUUID(),
+        id_salon_member: createClientUuid(),
         salon_id: salonId,
         user_id: userId,
         is_active: true,
