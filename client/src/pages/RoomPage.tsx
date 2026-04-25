@@ -76,6 +76,7 @@ import { VideoManagementPanel } from "../components/room/VideoManagementPanel";
 import { VideoHistoryPanel } from "../components/room/VideoHistoryPanel";
 import { ComprehensionBarometerPanel } from "../components/room/ComprehensionBarometerPanel";
 import { RegieActionHistoryPanel, type RegieActionEntry } from "../components/room/RegieActionHistoryPanel";
+import { RegieProgramPanel, type RegieProgramStep, type RegieProgramStepDraft } from "../components/room/RegieProgramPanel";
 import { ShareRoomDialog } from "../components/room/ShareRoomDialog";
 import { RegieAnnouncementDialog } from "../components/room/RegieAnnouncementDialog";
 import { SessionLockPanel, type SessionLockState } from "../components/room/SessionLockPanel";
@@ -211,6 +212,7 @@ interface LiveVideoVotePoll {
 }
 
 type VideoTransitionType = "cut" | "fade_black" | "slide_lateral" | "flash_white";
+type RegieProgramStatus = "idle" | "running" | "paused";
 
 const VIDEO_TRANSITIONS: Array<{ value: VideoTransitionType; label: string }> = [
   { value: "cut", label: "â¬› Cut brutal" },
@@ -218,6 +220,8 @@ const VIDEO_TRANSITIONS: Array<{ value: VideoTransitionType; label: string }> = 
   { value: "slide_lateral", label: "â†”ï¸ Glissement latÃ©ral" },
   { value: "flash_white", label: "âšª Flash blanc" },
 ];
+const REGIE_PROGRAM_ANNOUNCEMENT_ADVANCE_MS = 2500;
+const REGIE_PROGRAM_STEP_BUFFER_MS = 450;
 
 const sortSpeakingRequests = (entries: SpeakingRequestEntry[]) =>
   [...entries].sort((a, b) => a.requestedAt - b.requestedAt);
@@ -471,6 +475,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [showSpeakingRequests, setShowSpeakingRequests] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showRegieHistory, setShowRegieHistory] = useState(false);
+  const [showRegieProgramPanel, setShowRegieProgramPanel] = useState(false);
   const [showAnnouncementPanel, setShowAnnouncementPanel] = useState(false);
   const [showPostVideoQuestionPanel, setShowPostVideoQuestionPanel] = useState(false);
   const [showPostVideoQuestion, setShowPostVideoQuestion] = useState(false);
@@ -507,6 +512,10 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [videoVoteNow, setVideoVoteNow] = useState<number>(Date.now());
   const [selectedVideoTransition, setSelectedVideoTransition] = useState<VideoTransitionType>("cut");
   const [activeVideoTransition, setActiveVideoTransition] = useState<{ type: VideoTransitionType; key: number } | null>(null);
+  const [regieProgramSteps, setRegieProgramSteps] = useState<RegieProgramStep[]>([]);
+  const [regieProgramStatus, setRegieProgramStatus] = useState<RegieProgramStatus>("idle");
+  const [regieProgramCurrentStepIndex, setRegieProgramCurrentStepIndex] = useState<number | null>(null);
+  const [regieProgramWaitingForVideoEnd, setRegieProgramWaitingForVideoEnd] = useState(false);
 
   // â”€â”€ RÃ©gie : Compte Ã  rebours partagÃ© (feature 68) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [activeCountdown, setActiveCountdown] = useState<{ seconds: number; key: number; reason?: "manual" | "startup" } | null>(null);
@@ -542,12 +551,19 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const lastRealtimeSyncAtRef = useRef<number>(0);
   const lastViewerCorrectionAtRef = useRef<number>(0);
   const canControlVideoRef = useRef<boolean>(false);
+  const playlistRef = useRef<VideoInPlaylist[]>(playlist);
   const lastCurrentVideoIdRef = useRef<string | null>(null);
   const announcementTimeoutRef = useRef<number | null>(null);
   const hoverPreviewTimeoutRef = useRef<number | null>(null);
   const videoVoteFinalizingRef = useRef<boolean>(false);
   const startupCountdownTriggeredRef = useRef<boolean>(false);
   const videoTransitionTimeoutRef = useRef<number | null>(null);
+  const regieProgramAdvanceTimeoutRef = useRef<number | null>(null);
+  const regieProgramStatusRef = useRef<RegieProgramStatus>("idle");
+  const regieProgramCurrentStepIndexRef = useRef<number | null>(null);
+  const regieProgramWaitingForVideoEndRef = useRef<boolean>(false);
+  const regieProgramStepsRef = useRef<RegieProgramStep[]>([]);
+  const executeRegieProgramStepRef = useRef<((stepIndex: number) => Promise<void>) | null>(null);
   const messagePollingDisabledLoggedRef = useRef<boolean>(false);
   const messagePollingErrorCountRef = useRef<number>(0);
   const lastNetworkWarningAtRef = useRef<number>(0);
@@ -639,6 +655,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [playlist]);
   // Keep a ref updated so Supabase Realtime closures always see the current value
   canControlVideoRef.current = canControlVideo;
+  playlistRef.current = playlist;
+  regieProgramStatusRef.current = regieProgramStatus;
+  regieProgramCurrentStepIndexRef.current = regieProgramCurrentStepIndex;
+  regieProgramWaitingForVideoEndRef.current = regieProgramWaitingForVideoEnd;
+  regieProgramStepsRef.current = regieProgramSteps;
   // Stable refs for participants/permissions so the Realtime channel doesn't need to reinitialize on every render
   const participantsRef = useRef<Participant[]>(participants);
   participantsRef.current = participants;
@@ -1776,6 +1797,25 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       )
       .on(
         'broadcast',
+        { event: 'room_post_video_question_show' },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+
+          const question = typeof data.question === "string" ? data.question : "";
+          const videoId = data.videoId ? String(data.videoId) : null;
+          if (!question) return;
+
+          setPostVideoQuestion(question);
+          setPostVideoQuestionDraft(question);
+          setPostVideoQuestionVideoId(videoId);
+          setShowPostVideoQuestion(true);
+
+          toast.info("Question de fin de vidÃ©o affichÃ©e");
+        }
+      )
+      .on(
+        'broadcast',
         { event: 'room_video_vote_poll' },
         (payload) => {
           const data = payload?.payload || {};
@@ -2833,6 +2873,21 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
+  const broadcastShowPostVideoQuestion = async (question: string, videoId: string | null) => {
+    if (!roomChannelRef.current || !question) return;
+
+    await roomChannelRef.current.send({
+      type: "broadcast",
+      event: "room_post_video_question_show",
+      payload: {
+        by: currentUser.id,
+        at: Date.now(),
+        question,
+        videoId,
+      },
+    });
+  };
+
   const handleSavePostVideoQuestion = async () => {
     if (!canControlVideo) {
       toast.error("Seuls l'admin ou la rÃ©gie vidÃ©o peuvent prÃ©parer une question");
@@ -2869,6 +2924,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
     try {
       await broadcastPostVideoQuestion("", null);
+      continueRegieProgramAfterPostVideoQuestion();
       addRegieAction("Question aprÃ¨s vidÃ©o", "Question retirÃ©e");
       toast.success("Question retirÃ©e");
     } catch (error) {
@@ -2877,15 +2933,32 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }
   };
 
-  const handleMainVideoEnded = useCallback(() => {
-    if (showPostVideoQuestion) return;
-    const question = postVideoQuestion.trim();
-    if (!question) return;
-    if (postVideoQuestionVideoId && currentVideo?.id && postVideoQuestionVideoId !== currentVideo.id) return;
+  const handleClosePostVideoQuestion = () => {
+    setShowPostVideoQuestion(false);
+    continueRegieProgramAfterPostVideoQuestion();
+  };
 
-    setShowPostVideoQuestion(true);
-    toast.info("Question de fin de vidÃ©o affichÃ©e");
-  }, [currentVideo?.id, postVideoQuestion, postVideoQuestionVideoId, showPostVideoQuestion]);
+  const handleMainVideoEnded = useCallback(() => {
+    const question = postVideoQuestion.trim();
+    const canShowPostVideoQuestion =
+      !showPostVideoQuestion &&
+      !!question &&
+      (!postVideoQuestionVideoId || !currentVideo?.id || postVideoQuestionVideoId === currentVideo.id);
+
+    if (canShowPostVideoQuestion) {
+      setShowPostVideoQuestion(true);
+      if (canControlVideo) {
+        void broadcastShowPostVideoQuestion(question, currentVideo?.id || postVideoQuestionVideoId || null);
+      }
+      toast.info("Question de fin de vidÃ©o affichÃ©e");
+    }
+
+    if (!regieProgramWaitingForVideoEndRef.current) return;
+
+    if (canShowPostVideoQuestion) return;
+
+    continueRegieProgramAfterPostVideoQuestion();
+  }, [broadcastShowPostVideoQuestion, canControlVideo, currentVideo?.id, postVideoQuestion, postVideoQuestionVideoId, showPostVideoQuestion]);
 
   const handlePlayPause = async () => {
   if (!canControlVideo) {
@@ -4060,6 +4133,10 @@ const handleToggleFavorite = async (videoId: string) => {
         window.clearTimeout(permissionFlushTimeoutRef.current);
         permissionFlushTimeoutRef.current = null;
       }
+      if (regieProgramAdvanceTimeoutRef.current !== null) {
+        window.clearTimeout(regieProgramAdvanceTimeoutRef.current);
+        regieProgramAdvanceTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -4149,6 +4226,194 @@ const handleToggleFavorite = async (videoId: string) => {
     } catch (err) {
       console.error("Erreur broadcast countdown", err);
     }
+  };
+
+  const clearRegieProgramAdvanceTimeout = () => {
+    if (regieProgramAdvanceTimeoutRef.current !== null) {
+      window.clearTimeout(regieProgramAdvanceTimeoutRef.current);
+      regieProgramAdvanceTimeoutRef.current = null;
+    }
+  };
+
+  const completeRegieProgram = () => {
+    clearRegieProgramAdvanceTimeout();
+    regieProgramStatusRef.current = "idle";
+    regieProgramCurrentStepIndexRef.current = null;
+    regieProgramWaitingForVideoEndRef.current = false;
+    setRegieProgramStatus("idle");
+    setRegieProgramCurrentStepIndex(null);
+    setRegieProgramWaitingForVideoEnd(false);
+    addRegieAction("Programme regie", "Programme termine");
+    toast.success("Programme regie termine");
+  };
+
+  const stopRegieProgram = (details = "Programme arrete") => {
+    clearRegieProgramAdvanceTimeout();
+    regieProgramStatusRef.current = "idle";
+    regieProgramCurrentStepIndexRef.current = null;
+    regieProgramWaitingForVideoEndRef.current = false;
+    setRegieProgramStatus("idle");
+    setRegieProgramCurrentStepIndex(null);
+    setRegieProgramWaitingForVideoEnd(false);
+    addRegieAction("Programme regie", details);
+  };
+
+  const scheduleRegieProgramContinuation = (nextIndex: number, delayMs: number) => {
+    clearRegieProgramAdvanceTimeout();
+    regieProgramAdvanceTimeoutRef.current = window.setTimeout(() => {
+      if (regieProgramStatusRef.current !== "running") return;
+      if (nextIndex >= regieProgramStepsRef.current.length) {
+        completeRegieProgram();
+        return;
+      }
+      void executeRegieProgramStepRef.current?.(nextIndex);
+    }, Math.max(0, delayMs));
+  };
+
+  const continueRegieProgramAfterPostVideoQuestion = () => {
+    if (!regieProgramWaitingForVideoEndRef.current) return;
+
+    regieProgramWaitingForVideoEndRef.current = false;
+    setRegieProgramWaitingForVideoEnd(false);
+
+    if (regieProgramStatusRef.current !== "running") return;
+
+    const nextIndex = (regieProgramCurrentStepIndexRef.current ?? -1) + 1;
+    if (nextIndex >= regieProgramStepsRef.current.length) {
+      completeRegieProgram();
+      return;
+    }
+
+    scheduleRegieProgramContinuation(nextIndex, REGIE_PROGRAM_STEP_BUFFER_MS);
+  };
+
+  const executeRegieProgramStep = useCallback(async (stepIndex: number) => {
+    if (regieProgramStatusRef.current !== "running") return;
+
+    const steps = regieProgramStepsRef.current;
+    if (stepIndex < 0 || stepIndex >= steps.length) {
+      completeRegieProgram();
+      return;
+    }
+
+    const step = steps[stepIndex];
+    regieProgramCurrentStepIndexRef.current = stepIndex;
+    regieProgramWaitingForVideoEndRef.current = false;
+    setRegieProgramCurrentStepIndex(stepIndex);
+    setRegieProgramWaitingForVideoEnd(false);
+
+    if (step.type === "announcement") {
+      await broadcastAnnouncement(step.message);
+      addRegieAction("Programme regie", `Etape ${stepIndex + 1} : annonce diffusee`);
+      scheduleRegieProgramContinuation(stepIndex + 1, REGIE_PROGRAM_ANNOUNCEMENT_ADVANCE_MS);
+      return;
+    }
+
+    if (step.type === "countdown") {
+      await handleLaunchCountdown(step.seconds, "manual");
+      addRegieAction("Programme regie", `Etape ${stepIndex + 1} : compte a rebours ${step.seconds}s`);
+      scheduleRegieProgramContinuation(stepIndex + 1, step.seconds * 1000 + REGIE_PROGRAM_STEP_BUFFER_MS);
+      return;
+    }
+
+    const video = playlistRef.current.find((entry) => entry.id === step.videoId);
+    if (!video) {
+      toast.error("Une video du programme est introuvable dans la playlist");
+      addRegieAction("Programme regie", `Etape ${stepIndex + 1} ignoree : video introuvable`);
+      scheduleRegieProgramContinuation(stepIndex + 1, REGIE_PROGRAM_STEP_BUFFER_MS);
+      return;
+    }
+
+    regieProgramWaitingForVideoEndRef.current = true;
+    setRegieProgramWaitingForVideoEnd(true);
+    addRegieAction("Programme regie", `Etape ${stepIndex + 1} : video ${video.title}`);
+    await handlePlayVideo(video);
+  }, [broadcastAnnouncement, handleLaunchCountdown, handlePlayVideo]);
+
+  executeRegieProgramStepRef.current = executeRegieProgramStep;
+
+  const handleAddRegieProgramStep = (draft: RegieProgramStepDraft) => {
+    const nextStep: RegieProgramStep =
+      draft.type === "announcement"
+        ? { id: createClientUuid(), type: "announcement", message: draft.message }
+        : draft.type === "countdown"
+          ? { id: createClientUuid(), type: "countdown", seconds: draft.seconds }
+          : { id: createClientUuid(), type: "video", videoId: draft.videoId };
+
+    setRegieProgramSteps((prev) => [...prev, nextStep]);
+  };
+
+  const handleRemoveRegieProgramStep = (stepId: string) => {
+    setRegieProgramSteps((prev) => prev.filter((step) => step.id !== stepId));
+  };
+
+  const handleMoveRegieProgramStep = (stepId: string, direction: "up" | "down") => {
+    setRegieProgramSteps((prev) => {
+      const index = prev.findIndex((step) => step.id === stepId);
+      if (index === -1) return prev;
+
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleStartRegieProgram = () => {
+    if (!canControlVideo) {
+      toast.error("Seuls l'admin ou la regie video peuvent lancer le programme");
+      return;
+    }
+    if (regieProgramStepsRef.current.length === 0) {
+      toast.error("Ajoute au moins une etape au programme");
+      return;
+    }
+
+    clearRegieProgramAdvanceTimeout();
+    regieProgramStatusRef.current = "running";
+    regieProgramCurrentStepIndexRef.current = null;
+    regieProgramWaitingForVideoEndRef.current = false;
+    setRegieProgramStatus("running");
+    setRegieProgramCurrentStepIndex(null);
+    setRegieProgramWaitingForVideoEnd(false);
+    addRegieAction("Programme regie", "Programme lance");
+    void executeRegieProgramStep(0);
+  };
+
+  const handlePauseRegieProgram = () => {
+    if (regieProgramStatusRef.current !== "running") return;
+    clearRegieProgramAdvanceTimeout();
+    regieProgramStatusRef.current = "paused";
+    setRegieProgramStatus("paused");
+    addRegieAction("Programme regie", "Programme mis en pause");
+    toast.info("Programme regie en pause");
+  };
+
+  const handleResumeRegieProgram = () => {
+    if (regieProgramStatusRef.current !== "paused") return;
+
+    regieProgramStatusRef.current = "running";
+    setRegieProgramStatus("running");
+    addRegieAction("Programme regie", "Programme repris");
+
+    if (regieProgramWaitingForVideoEndRef.current) {
+      toast.info("Programme regie repris");
+      return;
+    }
+
+    const currentIndex = regieProgramCurrentStepIndexRef.current;
+    const nextIndex = currentIndex === null ? 0 : currentIndex + 1;
+    scheduleRegieProgramContinuation(nextIndex, REGIE_PROGRAM_STEP_BUFFER_MS);
+    toast.info("Programme regie repris");
+  };
+
+  const handleStopRegieProgram = () => {
+    if (regieProgramStatusRef.current === "idle" && regieProgramCurrentStepIndexRef.current === null) return;
+    stopRegieProgram("Programme arrete manuellement");
+    toast.info("Programme regie arrete");
   };
 
   useEffect(() => {
@@ -4687,7 +4952,7 @@ const handleToggleFavorite = async (videoId: string) => {
                       )}
                       <Button
                         type="button"
-                        onClick={() => setShowPostVideoQuestion(false)}
+                        onClick={handleClosePostVideoQuestion}
                         className="bg-red-600 hover:bg-red-700 text-white"
                       >
                         Fermer
@@ -5508,6 +5773,20 @@ const handleToggleFavorite = async (videoId: string) => {
               </Button>
             )}
 
+            {(isAdmin || effectiveRole === "regie") && (
+              <Button
+                onClick={() => {
+                  setShowRegieProgramPanel(true);
+                  setShowMenu(false);
+                }}
+                variant="ghost"
+                className={`justify-start ${theme === 'dark' ? 'text-white hover:bg-zinc-700' : 'text-black hover:bg-gray-100'}`}
+              >
+                <LayoutList className="w-4 h-4 mr-2" />
+                Programme regie
+              </Button>
+            )}
+
             {isAdmin && (
               <>
                 <div className={`border-t my-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-gray-300'}`}></div>
@@ -5858,6 +6137,26 @@ const handleToggleFavorite = async (videoId: string) => {
             </div>
           </div>
         </div>
+      )}
+
+      {showRegieProgramPanel && canControlVideo && (
+        <RegieProgramPanel
+          isOpen={showRegieProgramPanel}
+          steps={regieProgramSteps}
+          playlist={playlist.map((video) => ({ id: video.id, title: video.title }))}
+          status={regieProgramStatus}
+          currentStepIndex={regieProgramCurrentStepIndex}
+          waitingForVideoEnd={regieProgramWaitingForVideoEnd}
+          onAddStep={handleAddRegieProgramStep}
+          onRemoveStep={handleRemoveRegieProgramStep}
+          onMoveStep={handleMoveRegieProgramStep}
+          onStart={handleStartRegieProgram}
+          onPause={handlePauseRegieProgram}
+          onResume={handleResumeRegieProgram}
+          onStop={handleStopRegieProgram}
+          onClose={() => setShowRegieProgramPanel(false)}
+          theme={theme}
+        />
       )}
 
       {showRegieHistory && (
