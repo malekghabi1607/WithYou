@@ -8,6 +8,7 @@ import {
   Pause,
   Play,
   Plus,
+  Sparkles,
   Square,
   Trash2,
   Video,
@@ -16,12 +17,14 @@ import {
 import { Button } from "../ui/Button";
 
 export type RegieProgramStep =
-  | { id: string; type: "announcement"; message: string }
+  | { id: string; type: "announcement"; message: string; durationSeconds: number }
+  | { id: string; type: "pause"; message: string; durationSeconds: number }
   | { id: string; type: "countdown"; seconds: number }
   | { id: string; type: "video"; videoId: string };
 
 export type RegieProgramStepDraft =
-  | { type: "announcement"; message: string }
+  | { type: "announcement"; message: string; durationSeconds: number }
+  | { type: "pause"; message: string; durationSeconds: number }
   | { type: "countdown"; seconds: number }
   | { type: "video"; videoId: string };
 
@@ -49,11 +52,32 @@ interface RegieProgramPanelProps {
 }
 
 const COUNTDOWN_PRESETS = [3, 5, 10];
+const ANNOUNCEMENT_PRESETS = [10, 20, 30];
+const PAUSE_PRESETS = [30, 60, 300, 600];
+
+const formatProgramDuration = (seconds: number) => {
+  const total = Math.max(1, Math.floor(seconds));
+
+  if (total < 60) {
+    return `${total}s`;
+  }
+
+  const minutes = Math.floor(total / 60);
+  const remainingSeconds = total % 60;
+
+  if (remainingSeconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${remainingSeconds}s`;
+};
 
 const getStepIcon = (type: RegieProgramStep["type"]) => {
   switch (type) {
     case "announcement":
       return Megaphone;
+    case "pause":
+      return Sparkles;
     case "countdown":
       return Clock3;
     case "video":
@@ -82,6 +106,9 @@ export function RegieProgramPanel({
 }: RegieProgramPanelProps) {
   const [draftType, setDraftType] = useState<RegieProgramStep["type"]>("announcement");
   const [announcementText, setAnnouncementText] = useState("");
+  const [announcementDurationSeconds, setAnnouncementDurationSeconds] = useState(20);
+  const [pauseText, setPauseText] = useState("");
+  const [pauseDurationSeconds, setPauseDurationSeconds] = useState(300);
   const [countdownSeconds, setCountdownSeconds] = useState(3);
   const [selectedVideoId, setSelectedVideoId] = useState("");
 
@@ -98,6 +125,9 @@ export function RegieProgramPanel({
     if (!isOpen) {
       setDraftType("announcement");
       setAnnouncementText("");
+      setAnnouncementDurationSeconds(20);
+      setPauseText("");
+      setPauseDurationSeconds(300);
       setCountdownSeconds(3);
       setSelectedVideoId((current) => current || playlist[0]?.id || "");
     }
@@ -127,7 +157,9 @@ export function RegieProgramPanel({
   const getStepSummary = (step: RegieProgramStep) => {
     switch (step.type) {
       case "announcement":
-        return step.message;
+        return `${step.message} (${formatProgramDuration(step.durationSeconds)})`;
+      case "pause":
+        return `${step.message || "Pause en cours - reprise tres bientot"} (${formatProgramDuration(step.durationSeconds)})`;
       case "countdown":
         return `${step.seconds}s`;
       case "video":
@@ -141,8 +173,24 @@ export function RegieProgramPanel({
     if (draftType === "announcement") {
       const message = announcementText.trim();
       if (!message) return;
-      onAddStep({ type: "announcement", message });
+      onAddStep({
+        type: "announcement",
+        message,
+        durationSeconds: Math.max(1, announcementDurationSeconds),
+      });
       setAnnouncementText("");
+      setAnnouncementDurationSeconds(20);
+      return;
+    }
+
+    if (draftType === "pause") {
+      onAddStep({
+        type: "pause",
+        message: pauseText.trim() || "Pause en cours - reprise tres bientot",
+        durationSeconds: Math.max(1, pauseDurationSeconds),
+      });
+      setPauseText("");
+      setPauseDurationSeconds(300);
       return;
     }
 
@@ -267,7 +315,7 @@ export function RegieProgramPanel({
               </div>
 
               <p className={`mt-3 text-sm ${dark ? "text-gray-400" : "text-gray-600"}`}>
-                Une etape video attend la fin de la video avant de passer a la suite.
+                Une annonce bloque pendant sa duree. Une pause affiche un interlude pendant tout le temps prevu.
               </p>
             </div>
 
@@ -286,66 +334,10 @@ export function RegieProgramPanel({
                   }`}
                 >
                   <option value="announcement">Annonce</option>
+                  <option value="pause">Pause / interlude</option>
                   <option value="countdown">Compte a rebours</option>
                   <option value="video">Video</option>
                 </select>
-
-                {draftType === "announcement" && (
-                  <input
-                    value={announcementText}
-                    onChange={(e) => setAnnouncementText(e.target.value.slice(0, 140))}
-                    disabled={isLocked}
-                    placeholder="Ex: La seance commence dans quelques secondes"
-                    className={`h-10 flex-1 rounded-xl border px-3 text-sm outline-none ${
-                      dark
-                        ? "border-zinc-700 bg-zinc-950 text-white placeholder:text-gray-500"
-                        : "border-gray-300 bg-white text-black placeholder:text-gray-400"
-                    }`}
-                  />
-                )}
-
-                {draftType === "countdown" && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {COUNTDOWN_PRESETS.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        disabled={isLocked}
-                        onClick={() => setCountdownSeconds(value)}
-                        className={`rounded-xl border px-3 py-2 text-sm transition ${
-                          countdownSeconds === value
-                            ? "border-red-500 bg-red-600 text-white"
-                            : dark
-                              ? "border-zinc-700 bg-zinc-950 text-gray-300"
-                              : "border-gray-300 bg-white text-gray-700"
-                        }`}
-                      >
-                        {value}s
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {draftType === "video" && (
-                  <select
-                    value={selectedVideoId}
-                    onChange={(e) => setSelectedVideoId(e.target.value)}
-                    disabled={isLocked || playlist.length === 0}
-                    className={`h-10 min-w-[16rem] flex-1 rounded-xl border px-3 text-sm outline-none ${
-                      dark ? "border-zinc-700 bg-zinc-950 text-white" : "border-gray-300 bg-white text-black"
-                    }`}
-                  >
-                    {playlist.length === 0 ? (
-                      <option value="">Aucune video disponible</option>
-                    ) : (
-                      playlist.map((video) => (
-                        <option key={video.id} value={video.id}>
-                          {video.title}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                )}
 
                 <Button
                   type="button"
@@ -361,6 +353,149 @@ export function RegieProgramPanel({
                   Ajouter
                 </Button>
               </div>
+
+              {draftType === "announcement" && (
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={announcementText}
+                    onChange={(e) => setAnnouncementText(e.target.value.slice(0, 140))}
+                    disabled={isLocked}
+                    placeholder="Ex: Prenez des notes pendant l'annonce"
+                    className={`h-10 w-full rounded-xl border px-3 text-sm outline-none ${
+                      dark
+                        ? "border-zinc-700 bg-zinc-950 text-white placeholder:text-gray-500"
+                        : "border-gray-300 bg-white text-black placeholder:text-gray-400"
+                    }`}
+                  />
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {ANNOUNCEMENT_PRESETS.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => setAnnouncementDurationSeconds(value)}
+                        className={`rounded-xl border px-3 py-2 text-sm transition ${
+                          announcementDurationSeconds === value
+                            ? "border-red-500 bg-red-600 text-white"
+                            : dark
+                              ? "border-zinc-700 bg-zinc-950 text-gray-300"
+                              : "border-gray-300 bg-white text-gray-700"
+                        }`}
+                      >
+                        {value}s
+                      </button>
+                    ))}
+
+                    <input
+                      type="number"
+                      min={1}
+                      max={600}
+                      value={announcementDurationSeconds}
+                      onChange={(e) => setAnnouncementDurationSeconds(Number(e.target.value) || 1)}
+                      disabled={isLocked}
+                      className={`h-10 w-28 rounded-xl border px-3 text-sm outline-none ${
+                        dark ? "border-zinc-700 bg-zinc-950 text-white" : "border-gray-300 bg-white text-black"
+                      }`}
+                    />
+                    <span className={`text-sm ${dark ? "text-gray-400" : "text-gray-600"}`}>secondes</span>
+                  </div>
+                </div>
+              )}
+
+              {draftType === "pause" && (
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={pauseText}
+                    onChange={(e) => setPauseText(e.target.value.slice(0, 140))}
+                    disabled={isLocked}
+                    placeholder="Ex: Pause en cours - reprise dans 10 minutes"
+                    className={`h-10 w-full rounded-xl border px-3 text-sm outline-none ${
+                      dark
+                        ? "border-zinc-700 bg-zinc-950 text-white placeholder:text-gray-500"
+                        : "border-gray-300 bg-white text-black placeholder:text-gray-400"
+                    }`}
+                  />
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {PAUSE_PRESETS.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => setPauseDurationSeconds(value)}
+                        className={`rounded-xl border px-3 py-2 text-sm transition ${
+                          pauseDurationSeconds === value
+                            ? "border-red-500 bg-red-600 text-white"
+                            : dark
+                              ? "border-zinc-700 bg-zinc-950 text-gray-300"
+                              : "border-gray-300 bg-white text-gray-700"
+                        }`}
+                      >
+                        {formatProgramDuration(value)}
+                      </button>
+                    ))}
+
+                    <input
+                      type="number"
+                      min={1}
+                      max={7200}
+                      value={pauseDurationSeconds}
+                      onChange={(e) => setPauseDurationSeconds(Number(e.target.value) || 1)}
+                      disabled={isLocked}
+                      className={`h-10 w-28 rounded-xl border px-3 text-sm outline-none ${
+                        dark ? "border-zinc-700 bg-zinc-950 text-white" : "border-gray-300 bg-white text-black"
+                      }`}
+                    />
+                    <span className={`text-sm ${dark ? "text-gray-400" : "text-gray-600"}`}>secondes</span>
+                  </div>
+                </div>
+              )}
+
+              {draftType === "countdown" && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {COUNTDOWN_PRESETS.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => setCountdownSeconds(value)}
+                      className={`rounded-xl border px-3 py-2 text-sm transition ${
+                        countdownSeconds === value
+                          ? "border-red-500 bg-red-600 text-white"
+                          : dark
+                            ? "border-zinc-700 bg-zinc-950 text-gray-300"
+                            : "border-gray-300 bg-white text-gray-700"
+                      }`}
+                    >
+                      {value}s
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {draftType === "video" && (
+                <div className="mt-4">
+                  <select
+                    value={selectedVideoId}
+                    onChange={(e) => setSelectedVideoId(e.target.value)}
+                    disabled={isLocked || playlist.length === 0}
+                    className={`h-10 w-full rounded-xl border px-3 text-sm outline-none ${
+                      dark ? "border-zinc-700 bg-zinc-950 text-white" : "border-gray-300 bg-white text-black"
+                    }`}
+                  >
+                    {playlist.length === 0 ? (
+                      <option value="">Aucune video disponible</option>
+                    ) : (
+                      playlist.map((video) => (
+                        <option key={video.id} value={video.id}>
+                          {video.title}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -372,7 +507,7 @@ export function RegieProgramPanel({
                 >
                   <List className="mx-auto mb-3 h-8 w-8 opacity-50" />
                   <p className="text-sm">Aucune etape pour le moment.</p>
-                  <p className="mt-1 text-xs">Ajoute une annonce, un compte a rebours ou une video.</p>
+                  <p className="mt-1 text-xs">Ajoute une annonce, une pause, un compte a rebours ou une video.</p>
                 </div>
               ) : (
                 steps.map((step, index) => {
@@ -410,9 +545,11 @@ export function RegieProgramPanel({
                               <span className={`ml-2 text-xs font-normal ${dark ? "text-gray-400" : "text-gray-600"}`}>
                                 {step.type === "announcement"
                                   ? "Annonce"
-                                  : step.type === "countdown"
-                                    ? "Compte a rebours"
-                                    : "Video"}
+                                  : step.type === "pause"
+                                    ? "Pause"
+                                    : step.type === "countdown"
+                                      ? "Compte a rebours"
+                                      : "Video"}
                               </span>
                             </p>
                             <p className={`mt-1 text-sm ${dark ? "text-gray-300" : "text-gray-700"}`}>
@@ -471,10 +608,10 @@ export function RegieProgramPanel({
                 Exemple d'usage
               </p>
               <div className={`mt-4 space-y-3 text-sm ${dark ? "text-gray-300" : "text-gray-700"}`}>
-                <p>1. Annonce : "La seance commence"</p>
+                <p>1. Annonce : "Prenez des notes" pendant 20 secondes</p>
                 <p>2. Compte a rebours : 3 secondes</p>
                 <p>3. Video : Video 1</p>
-                <p>4. Annonce : "Pause rapide"</p>
+                <p>4. Pause : "Reprise dans 10 minutes"</p>
                 <p>5. Video : Video 2</p>
               </div>
             </div>
@@ -488,7 +625,8 @@ export function RegieProgramPanel({
                 Comportement
               </p>
               <div className={`mt-4 space-y-2 text-sm ${dark ? "text-gray-300" : "text-gray-700"}`}>
-                <p>Les annonces sont diffusees a tous les participants.</p>
+                <p>Les annonces restent visibles pendant la duree choisie.</p>
+                <p>La pause affiche un interlude pour tous les participants pendant toute sa duree.</p>
                 <p>Le compte a rebours est partage avec tous les participants.</p>
                 <p>Une video attend sa fin avant de passer a l'etape suivante.</p>
                 <p>Pendant l'execution, l'edition des etapes est verrouillee.</p>

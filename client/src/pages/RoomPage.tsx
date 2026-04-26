@@ -214,14 +214,20 @@ interface LiveVideoVotePoll {
 type VideoTransitionType = "cut" | "fade_black" | "slide_lateral" | "flash_white";
 type RegieProgramStatus = "idle" | "running" | "paused";
 
+interface InterludeApplyOptions {
+  persist?: boolean;
+  quiet?: boolean;
+  trackHistory?: boolean;
+}
+
 const VIDEO_TRANSITIONS: Array<{ value: VideoTransitionType; label: string }> = [
   { value: "cut", label: "â¬› Cut brutal" },
   { value: "fade_black", label: "ðŸŒ«ï¸ Fondu au noir" },
   { value: "slide_lateral", label: "â†”ï¸ Glissement latÃ©ral" },
   { value: "flash_white", label: "âšª Flash blanc" },
 ];
-const REGIE_PROGRAM_ANNOUNCEMENT_ADVANCE_MS = 2500;
 const REGIE_PROGRAM_STEP_BUFFER_MS = 450;
+const REGIE_PROGRAM_COMPLETION_MESSAGE = "Merci pour votre ecoute, la seance est terminee.";
 
 const sortSpeakingRequests = (entries: SpeakingRequestEntry[]) =>
   [...entries].sort((a, b) => a.requestedAt - b.requestedAt);
@@ -497,6 +503,13 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [videoVoteCounts, setVideoVoteCounts] = useState<Record<string, number>>({});
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const [announcementDraft, setAnnouncementDraft] = useState("");
+  const [regieProgramCompletionScreen, setRegieProgramCompletionScreen] = useState<{
+    visible: boolean;
+    message: string;
+  }>({
+    visible: false,
+    message: REGIE_PROGRAM_COMPLETION_MESSAGE,
+  });
   const [postVideoQuestion, setPostVideoQuestion] = useState("");
   const [postVideoQuestionDraft, setPostVideoQuestionDraft] = useState("");
   const [postVideoQuestionVideoId, setPostVideoQuestionVideoId] = useState<string | null>(null);
@@ -1816,6 +1829,22 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       )
       .on(
         'broadcast',
+        { event: 'room_regie_program_completion' },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+
+          setRegieProgramCompletionScreen({
+            visible: Boolean(data.visible),
+            message:
+              typeof data.message === "string" && data.message.trim()
+                ? data.message
+                : REGIE_PROGRAM_COMPLETION_MESSAGE,
+          });
+        }
+      )
+      .on(
+        'broadcast',
         { event: 'room_video_vote_poll' },
         (payload) => {
           const data = payload?.payload || {};
@@ -2796,8 +2825,8 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     toast.info("Prise de parole terminee");
   };
 
-  const broadcastAnnouncement = async (message: string) => {
-    showAnnouncementForDuration(message);
+  const broadcastAnnouncement = async (message: string, durationMs = ANNOUNCEMENT_DURATION_MS) => {
+    showAnnouncementForDuration(message, durationMs);
 
     if (roomChannelRef.current) {
       await roomChannelRef.current.send({
@@ -2807,7 +2836,30 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
           by: currentUser.id,
           at: Date.now(),
           message,
-          durationMs: ANNOUNCEMENT_DURATION_MS,
+          durationMs,
+        },
+      });
+    }
+  };
+
+  const broadcastRegieProgramCompletionScreen = async (
+    visible: boolean,
+    message = REGIE_PROGRAM_COMPLETION_MESSAGE
+  ) => {
+    setRegieProgramCompletionScreen({
+      visible,
+      message: message || REGIE_PROGRAM_COMPLETION_MESSAGE,
+    });
+
+    if (roomChannelRef.current) {
+      await roomChannelRef.current.send({
+        type: "broadcast",
+        event: "room_regie_program_completion",
+        payload: {
+          by: currentUser.id,
+          at: Date.now(),
+          visible,
+          message,
         },
       });
     }
@@ -3183,7 +3235,10 @@ const handleToggleFavorite = async (videoId: string) => {
     }
   };
 
-  const handleApplyInterlude = async (draft: SessionInterludeDraft) => {
+  const handleApplyInterlude = async (
+    draft: SessionInterludeDraft,
+    options: InterludeApplyOptions = {}
+  ) => {
     if (!canControlVideo) {
       toast.error("Seuls l'admin ou la regie video peuvent controler l'interlude");
       return;
@@ -3192,6 +3247,8 @@ const handleToggleFavorite = async (videoId: string) => {
       toast.error("Salon introuvable pour activer l'interlude");
       return;
     }
+
+    const { persist = true, quiet = false, trackHistory = true } = options;
 
     const nowIso = new Date().toISOString();
     const trimmedMessage = draft.message.trim();
@@ -3208,15 +3265,17 @@ const handleToggleFavorite = async (videoId: string) => {
 
     let persistedState = nextState;
 
-    try {
-      persistedState = await upsertSessionInterlude(backendSalonId, nextState);
-    } catch (error: any) {
-      console.error("Erreur sauvegarde interlude en base", error);
-      toast.error("Mode interlude non enregistre dans Supabase", {
-        description: error?.message || "Verifie la table session_interludes et ses policies.",
-        duration: 5000,
-      });
-      throw error;
+    if (persist) {
+      try {
+        persistedState = await upsertSessionInterlude(backendSalonId, nextState);
+      } catch (error: any) {
+        console.error("Erreur sauvegarde interlude en base", error);
+        toast.error("Mode interlude non enregistre dans Supabase", {
+          description: error?.message || "Verifie la table session_interludes et ses policies.",
+          duration: 5000,
+        });
+        throw error;
+      }
     }
 
     setSessionInterlude(persistedState);
@@ -3272,14 +3331,18 @@ const handleToggleFavorite = async (videoId: string) => {
       }
     }
 
-    toast.success(persistedState.enabled ? "Mode interlude active" : "Mode interlude desactive");
-    void broadcastRegieAction(
-      "interlude",
-      persistedState.enabled ? "Mode interlude active" : "Mode interlude desactive",
-      persistedState.enabled
-        ? persistedState.message
-        : "Le salon revient a l'affichage video classique"
-    );
+    if (!quiet) {
+      toast.success(persistedState.enabled ? "Mode interlude active" : "Mode interlude desactive");
+    }
+    if (trackHistory) {
+      void broadcastRegieAction(
+        "interlude",
+        persistedState.enabled ? "Mode interlude active" : "Mode interlude desactive",
+        persistedState.enabled
+          ? persistedState.message
+          : "Le salon revient a l'affichage video classique"
+      );
+    }
   };
 
   const handleSubmitComprehensionSignal = async (status: ComprehensionSignalStatus) => {
@@ -3865,6 +3928,7 @@ const handleToggleFavorite = async (videoId: string) => {
       setPlaylist(prev => prev.map(v =>
         v.id === video.id ? { ...v, isCurrent: true } : { ...v, isCurrent: false }
       ));
+      void broadcastRegieProgramCompletionScreen(false);
       setShowPostVideoQuestion(false);
       setCurrentTime(0);
       setIsPlaying(true);
@@ -4243,6 +4307,7 @@ const handleToggleFavorite = async (videoId: string) => {
     setRegieProgramStatus("idle");
     setRegieProgramCurrentStepIndex(null);
     setRegieProgramWaitingForVideoEnd(false);
+    void broadcastRegieProgramCompletionScreen(true, REGIE_PROGRAM_COMPLETION_MESSAGE);
     addRegieAction("Programme regie", "Programme termine");
     toast.success("Programme regie termine");
   };
@@ -4258,10 +4323,27 @@ const handleToggleFavorite = async (videoId: string) => {
     addRegieAction("Programme regie", details);
   };
 
-  const scheduleRegieProgramContinuation = (nextIndex: number, delayMs: number) => {
+  const scheduleRegieProgramContinuation = (
+    nextIndex: number,
+    delayMs: number,
+    beforeContinue?: () => Promise<void> | void
+  ) => {
     clearRegieProgramAdvanceTimeout();
-    regieProgramAdvanceTimeoutRef.current = window.setTimeout(() => {
+    regieProgramAdvanceTimeoutRef.current = window.setTimeout(async () => {
       if (regieProgramStatusRef.current !== "running") return;
+
+      if (beforeContinue) {
+        try {
+          await beforeContinue();
+        } catch (error) {
+          console.error("Erreur lors de la continuation du programme regie", error);
+          stopRegieProgram("Programme interrompu apres une erreur");
+          toast.error("Le programme regie a rencontre une erreur");
+          return;
+        }
+        if (regieProgramStatusRef.current !== "running") return;
+      }
+
       if (nextIndex >= regieProgramStepsRef.current.length) {
         completeRegieProgram();
         return;
@@ -4303,9 +4385,39 @@ const handleToggleFavorite = async (videoId: string) => {
     setRegieProgramWaitingForVideoEnd(false);
 
     if (step.type === "announcement") {
-      await broadcastAnnouncement(step.message);
-      addRegieAction("Programme regie", `Etape ${stepIndex + 1} : annonce diffusee`);
-      scheduleRegieProgramContinuation(stepIndex + 1, REGIE_PROGRAM_ANNOUNCEMENT_ADVANCE_MS);
+      const announcementDurationMs = Math.max(1, step.durationSeconds) * 1000;
+      await broadcastAnnouncement(step.message, announcementDurationMs);
+      addRegieAction("Programme regie", `Etape ${stepIndex + 1} : annonce diffusee (${step.durationSeconds}s)`);
+      scheduleRegieProgramContinuation(stepIndex + 1, announcementDurationMs + REGIE_PROGRAM_STEP_BUFFER_MS);
+      return;
+    }
+
+    if (step.type === "pause") {
+      await handleApplyInterlude({
+        enabled: true,
+        message: step.message,
+        durationMinutes: Math.max(1, step.durationSeconds) / 60,
+      }, {
+        persist: false,
+        quiet: true,
+        trackHistory: false,
+      });
+      addRegieAction("Programme regie", `Etape ${stepIndex + 1} : pause ${formatVideoTimeLabel(step.durationSeconds)}`);
+      scheduleRegieProgramContinuation(
+        stepIndex + 1,
+        step.durationSeconds * 1000 + REGIE_PROGRAM_STEP_BUFFER_MS,
+        async () => {
+          await handleApplyInterlude({
+            enabled: false,
+            message: step.message,
+            durationMinutes: 0,
+          }, {
+            persist: false,
+            quiet: true,
+            trackHistory: false,
+          });
+        }
+      );
       return;
     }
 
@@ -4328,14 +4440,26 @@ const handleToggleFavorite = async (videoId: string) => {
     setRegieProgramWaitingForVideoEnd(true);
     addRegieAction("Programme regie", `Etape ${stepIndex + 1} : video ${video.title}`);
     await handlePlayVideo(video);
-  }, [broadcastAnnouncement, handleLaunchCountdown, handlePlayVideo]);
+  }, [broadcastAnnouncement, handleApplyInterlude, handleLaunchCountdown, handlePlayVideo]);
 
   executeRegieProgramStepRef.current = executeRegieProgramStep;
 
   const handleAddRegieProgramStep = (draft: RegieProgramStepDraft) => {
     const nextStep: RegieProgramStep =
       draft.type === "announcement"
-        ? { id: createClientUuid(), type: "announcement", message: draft.message }
+        ? {
+            id: createClientUuid(),
+            type: "announcement",
+            message: draft.message,
+            durationSeconds: Math.max(1, draft.durationSeconds),
+          }
+        : draft.type === "pause"
+          ? {
+              id: createClientUuid(),
+              type: "pause",
+              message: draft.message,
+              durationSeconds: Math.max(1, draft.durationSeconds),
+            }
         : draft.type === "countdown"
           ? { id: createClientUuid(), type: "countdown", seconds: draft.seconds }
           : { id: createClientUuid(), type: "video", videoId: draft.videoId };
@@ -4379,6 +4503,7 @@ const handleToggleFavorite = async (videoId: string) => {
     setRegieProgramStatus("running");
     setRegieProgramCurrentStepIndex(null);
     setRegieProgramWaitingForVideoEnd(false);
+    void broadcastRegieProgramCompletionScreen(false);
     addRegieAction("Programme regie", "Programme lance");
     void executeRegieProgramStep(0);
   };
@@ -4412,6 +4537,24 @@ const handleToggleFavorite = async (videoId: string) => {
 
   const handleStopRegieProgram = () => {
     if (regieProgramStatusRef.current === "idle" && regieProgramCurrentStepIndexRef.current === null) return;
+
+    const currentStep =
+      regieProgramCurrentStepIndexRef.current !== null
+        ? regieProgramStepsRef.current[regieProgramCurrentStepIndexRef.current] || null
+        : null;
+
+    if (currentStep?.type === "pause" && sessionInterlude.enabled) {
+      void handleApplyInterlude({
+        enabled: false,
+        message: sessionInterlude.message || currentStep.message,
+        durationMinutes: 0,
+      }, {
+        persist: false,
+        quiet: true,
+        trackHistory: false,
+      });
+    }
+
     stopRegieProgram("Programme arrete manuellement");
     toast.info("Programme regie arrete");
   };
@@ -4957,6 +5100,29 @@ const handleToggleFavorite = async (videoId: string) => {
                       >
                         Fermer
                       </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {regieProgramCompletionScreen.visible && (
+                <div className="absolute inset-0 z-40 overflow-hidden rounded-xl">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(239,68,68,0.22),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(251,191,36,0.16),transparent_28%)]" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-black/95 via-zinc-950/95 to-red-950/75 backdrop-blur-sm" />
+                  <div className="absolute -left-10 top-8 h-32 w-32 rounded-full bg-red-500/15 blur-3xl" />
+                  <div className="absolute right-0 top-0 h-36 w-36 rounded-full bg-amber-300/10 blur-3xl" />
+
+                  <div className="relative flex h-full items-center justify-center p-6 sm:p-10">
+                    <div className="max-w-3xl text-center">
+                      <Badge className="bg-red-600 text-white hover:bg-red-600">
+                        <Sparkles className="mr-1 h-3 w-3" />
+                        Seance terminee
+                      </Badge>
+                      <p className="mt-6 text-3xl font-semibold tracking-tight text-white sm:text-5xl">
+                        {regieProgramCompletionScreen.message || REGIE_PROGRAM_COMPLETION_MESSAGE}
+                      </p>
+                      <p className="mx-auto mt-4 max-w-2xl text-sm text-gray-300 sm:text-base">
+                        Merci pour votre attention. Vous pouvez quitter le salon ou attendre la prochaine diffusion.
+                      </p>
                     </div>
                   </div>
                 </div>
