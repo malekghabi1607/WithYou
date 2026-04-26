@@ -2794,6 +2794,11 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     const nextQueue = speakingQueue.filter((entry) => entry.participantId !== participantId);
     setSpeakingRequests(mapSpeakingRequestsById(nextQueue));
     setActiveSpeakerRequest(request);
+
+    if (isPlayingRef.current) {
+      await handlePlayPause();
+    }
+
     addRegieAction("Parole", `Prise de parole accordee a ${request.participantName}`);
 
     await broadcastSpeakingRequests("approve", nextQueue, request, request);
