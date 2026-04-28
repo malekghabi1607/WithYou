@@ -1980,9 +1980,9 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
 
             if (!nextPermissions.chat || nextPermissions.muted) {
               setNewMessage("");
-              toast.error("Le chat vient d'Ãªtre dÃ©sactivÃ© pour vous");
+              toast.error("Le chat vient d'être désactivé pour vous");
             } else {
-              toast.success("Le chat est activÃ© pour vous");
+              toast.success("Le chat est activé pour vous");
             }
           }
         }
@@ -3656,7 +3656,7 @@ const handleToggleFavorite = async (videoId: string) => {
     permissionFlushInFlightRef.current = true;
 
     let saveFailures = 0;
-    const effectiveUpdates: Array<{
+    const savedUpdates: Array<{
       participantId: string;
       nextPermissions: MemberPermissions;
     }> = [];
@@ -3668,11 +3668,9 @@ const handleToggleFavorite = async (videoId: string) => {
           participantId,
           nextPermissions
         );
-        effectiveUpdates.push({ participantId, nextPermissions });
+        savedUpdates.push({ participantId, nextPermissions });
       } catch (error: any) {
         saveFailures += 1;
-        // Keep real-time behavior even if persistence fails.
-        effectiveUpdates.push({ participantId, nextPermissions });
         const msg = String(error?.message || "");
         if (msg.toLowerCase().includes("permission denied") || msg.toLowerCase().includes("row-level security")) {
           toast.error("Supabase RLS bloque la mise Ã  jour des permissions.");
@@ -3682,30 +3680,12 @@ const handleToggleFavorite = async (videoId: string) => {
       }
     }
 
-    if (roomChannelRef.current && effectiveUpdates.length > 0) {
-      try {
-        await roomChannelRef.current.send({
-          type: "broadcast",
-          event: "room_permissions_update",
-          payload: {
-            by: currentUser.id,
-            updates: effectiveUpdates,
-          },
-        });
-      } catch (error) {
-        console.error("Erreur broadcast permissions", error);
-      }
-    }
+    await loadParticipantsSnapshot();
 
-    // Avoid overriding optimistic updates when DB write failed.
-    if (saveFailures === 0) {
-      await loadParticipantsSnapshot();
-    }
-
-    if (effectiveUpdates.length > 0 && saveFailures === 0) {
-      toast.success("Permissions mises Ã  jour");
-    } else if (effectiveUpdates.length > 0) {
-      toast.warning("Permissions appliquÃ©es en direct, mais non persistÃ©es cÃ´tÃ© serveur.");
+    if (savedUpdates.length > 0 && saveFailures === 0) {
+      toast.success("Permissions mises à jour");
+    } else if (savedUpdates.length > 0 && saveFailures > 0) {
+      toast.warning("Permissions partiellement mises à jour.");
     }
 
     permissionFlushInFlightRef.current = false;
