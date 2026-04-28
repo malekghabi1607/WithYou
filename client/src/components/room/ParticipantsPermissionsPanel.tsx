@@ -189,7 +189,7 @@ export function ParticipantsPermissionsPanel({
           p.id === id
             ? {
                 ...p,
-                role: makeRegie ? "regie" : "member",
+                role: (makeRegie ? "regie" : "member") as typeof p.role,
                 // Keep the user's explicit per-permission choices unchanged.
                 permissions: { ...p.permissions },
               }

@@ -2,11 +2,11 @@
  * Projet : WithYou
  * Fichier : components/room/YoutubePlayer.tsx
  *
- * Lecteur YouTube sécurisé :
- * - iframe simple (pas d’API JS)
+ * Lecteur YouTube securise :
+ * - iframe simple (pas d'API JS)
  * - youtube-nocookie
  * - origin obligatoire
- * - évite les blocages "trafic exceptionnel"
+ * - evite les blocages "trafic exceptionnel"
  */
 import { useState, useEffect, useRef } from "react";
 import { Badge } from "../ui/badge";
@@ -17,9 +17,14 @@ interface YouTubePlayerProps {
   isPlaying: boolean;
   onPlayPause: () => void;
   canControl?: boolean;
+  showRegieSeekControls?: boolean;
+  disableRegieSeekControls?: boolean;
+  onSeekBackward?: () => void;
+  onSeekForward?: () => void;
   syncTime?: number;
   syncNonce?: number;
   onTimeUpdate?: (seconds: number) => void;
+  onDurationChange?: (seconds: number) => void;
   onPlaybackStateChange?: (isPlaying: boolean) => void;
   onEnded?: () => void;
   theme?: "light" | "dark";
@@ -34,9 +39,14 @@ export function YouTubePlayer({
   isPlaying,
   onPlayPause,
   canControl = true,
+  showRegieSeekControls = false,
+  disableRegieSeekControls = false,
+  onSeekBackward,
+  onSeekForward,
   syncTime,
   syncNonce,
   onTimeUpdate,
+  onDurationChange,
   onPlaybackStateChange,
   onEnded,
   theme = "dark",
@@ -46,11 +56,14 @@ export function YouTubePlayer({
   showBadge = true,
 }: YouTubePlayerProps) {
   const [playerReady, setPlayerReady] = useState(false);
+  const [showSeekControls, setShowSeekControls] = useState(false);
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const tickIntervalRef = useRef<number | null>(null);
+  const seekControlsTimeoutRef = useRef<number | null>(null);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   const onPlaybackStateChangeRef = useRef(onPlaybackStateChange);
+  const onDurationChangeRef = useRef(onDurationChange);
   const onEndedRef = useRef(onEnded);
 
   useEffect(() => {
@@ -62,23 +75,44 @@ export function YouTubePlayer({
   }, [onPlaybackStateChange]);
 
   useEffect(() => {
+    onDurationChangeRef.current = onDurationChange;
+  }, [onDurationChange]);
+
+  useEffect(() => {
     onEndedRef.current = onEnded;
   }, [onEnded]);
 
+  const revealSeekControls = () => {
+    if (!showRegieSeekControls) return;
+    setShowSeekControls(true);
+    if (seekControlsTimeoutRef.current !== null) {
+      window.clearTimeout(seekControlsTimeoutRef.current);
+    }
+    seekControlsTimeoutRef.current = window.setTimeout(() => {
+      setShowSeekControls(false);
+      seekControlsTimeoutRef.current = null;
+    }, 2200);
+  };
+
+  const emitDuration = () => {
+    if (typeof playerRef.current?.getDuration !== "function") return;
+    const duration = Number(playerRef.current.getDuration());
+    if (Number.isFinite(duration) && duration > 0) {
+      onDurationChangeRef.current?.(duration);
+    }
+  };
+
   useEffect(() => {
-    // Vérifier si l'API YouTube est déjà chargée
     if ((window as any).YT && (window as any).YT.Player) {
       initPlayer();
     } else {
-      // Charger l'API YouTube IFrame si pas encore chargée
       if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-        const tag = document.createElement('script');
+        const tag = document.createElement("script");
         tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName('script')[0];
+        const firstScriptTag = document.getElementsByTagName("script")[0];
         firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
       }
 
-      // Fonction appelée quand l'API est prête
       (window as any).onYouTubeIframeAPIReady = () => {
         initPlayer();
       };
@@ -87,7 +121,7 @@ export function YouTubePlayer({
     function initPlayer() {
       if (containerRef.current && !playerRef.current) {
         playerRef.current = new (window as any).YT.Player(containerRef.current, {
-          videoId: videoId,
+          videoId,
           playerVars: {
             autoplay: isPlaying ? 1 : 0,
             controls: showPlayButton ? 1 : 0,
@@ -99,7 +133,6 @@ export function YouTubePlayer({
           },
           events: {
             onReady: (event: any) => {
-              // Always keep the concrete YT player instance from the ready event.
               if (event?.target) {
                 playerRef.current = event.target;
               }
@@ -107,6 +140,7 @@ export function YouTubePlayer({
               if (muted && typeof event?.target?.mute === "function") {
                 event.target.mute();
               }
+              emitDuration();
               if (
                 typeof syncTime === "number" &&
                 syncTime > 0 &&
@@ -121,6 +155,7 @@ export function YouTubePlayer({
 
               if (event.data === yt.PlayerState.PLAYING) {
                 onPlaybackStateChangeRef.current?.(true);
+                emitDuration();
                 if (tickIntervalRef.current) {
                   window.clearInterval(tickIntervalRef.current);
                 }
@@ -130,24 +165,16 @@ export function YouTubePlayer({
                   onTimeUpdateRef.current?.(t);
                 }, 1000);
               } else if (event.data === yt.PlayerState.BUFFERING) {
-                // Seek from scrub often goes through BUFFERING first.
                 if (playerRef.current?.getCurrentTime) {
                   const t = Number(playerRef.current.getCurrentTime().toFixed(2));
                   onTimeUpdateRef.current?.(t);
                 }
-              } else if (event.data === yt.PlayerState.ENDED) {
+              } else if (event.data === yt.PlayerState.PAUSED || event.data === yt.PlayerState.ENDED) {
                 onPlaybackStateChangeRef.current?.(false);
-                onEndedRef.current?.();
-                if (playerRef.current?.getCurrentTime) {
-                  const t = Number(playerRef.current.getCurrentTime().toFixed(2));
-                  onTimeUpdateRef.current?.(t);
+                emitDuration();
+                if (event.data === yt.PlayerState.ENDED) {
+                  onEndedRef.current?.();
                 }
-                if (tickIntervalRef.current) {
-                  window.clearInterval(tickIntervalRef.current);
-                  tickIntervalRef.current = null;
-                }
-              } else if (event.data === yt.PlayerState.PAUSED) {
-                onPlaybackStateChangeRef.current?.(false);
                 if (playerRef.current?.getCurrentTime) {
                   const t = Number(playerRef.current.getCurrentTime().toFixed(2));
                   onTimeUpdateRef.current?.(t);
@@ -168,7 +195,6 @@ export function YouTubePlayer({
         window.clearInterval(tickIntervalRef.current);
         tickIntervalRef.current = null;
       }
-      // Cleanup
       if (playerRef.current && playerRef.current.destroy) {
         playerRef.current.destroy();
         playerRef.current = null;
@@ -211,20 +237,73 @@ export function YouTubePlayer({
     playerRef.current.seekTo(Math.max(0, syncTime), true);
   }, [syncNonce, syncTime, playerReady]);
 
+  useEffect(() => {
+    if (!showRegieSeekControls) {
+      setShowSeekControls(false);
+      if (seekControlsTimeoutRef.current !== null) {
+        window.clearTimeout(seekControlsTimeoutRef.current);
+        seekControlsTimeoutRef.current = null;
+      }
+    }
+
+    return () => {
+      if (seekControlsTimeoutRef.current !== null) {
+        window.clearTimeout(seekControlsTimeoutRef.current);
+        seekControlsTimeoutRef.current = null;
+      }
+    };
+  }, [showRegieSeekControls]);
+
   return (
-    <div className={`relative ${theme === 'dark' ? 'bg-gradient-to-br from-slate-800 to-slate-900' : 'bg-gradient-to-br from-gray-200 to-gray-300'} rounded-xl overflow-hidden`}>
+    <div className={`relative ${theme === "dark" ? "bg-gradient-to-br from-slate-800 to-slate-900" : "bg-gradient-to-br from-gray-200 to-gray-300"} rounded-xl overflow-hidden`}>
       {showBadge && (
         <Badge className="absolute top-4 left-4 bg-red-600 text-white text-xs px-2 py-1 z-10">
           {label}
         </Badge>
       )}
-      
-      <div className="relative w-full aspect-video">
+
+      <div
+        className="relative w-full aspect-video"
+        onMouseMove={revealSeekControls}
+        onMouseEnter={revealSeekControls}
+        onClick={revealSeekControls}
+        onTouchStart={revealSeekControls}
+      >
         <div ref={containerRef} className="w-full h-full" />
         {!canControl && <div className="absolute inset-0 z-10" />}
       </div>
-      
-      {/* Contrôle overlay (optionnel) */}
+
+      {showRegieSeekControls && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              revealSeekControls();
+              onSeekBackward?.();
+            }}
+            disabled={disableRegieSeekControls}
+            className={`absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/45 px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition-all hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-40 ${
+              showSeekControls ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          >
+            -10s
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              revealSeekControls();
+              onSeekForward?.();
+            }}
+            disabled={disableRegieSeekControls}
+            className={`absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/45 px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition-all hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-40 ${
+              showSeekControls ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          >
+            +10s
+          </button>
+        </>
+      )}
+
       {showPlayButton && (
         <div className="absolute bottom-4 right-4 z-10">
           <button

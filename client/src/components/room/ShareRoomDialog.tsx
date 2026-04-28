@@ -25,6 +25,10 @@ interface ShareRoomDialogProps {
   onClose: () => void;
   roomCode: string;
   roomName: string;
+  showRegieSeekControls?: boolean;
+  disableRegieSeekControls?: boolean;
+  onSeekBackward?: () => void;
+  onSeekForward?: () => void;
   theme?: "light" | "dark";
 }
 
@@ -33,6 +37,10 @@ export function ShareRoomDialog({
   onClose, 
   roomCode, 
   roomName,
+  showRegieSeekControls = false,
+  disableRegieSeekControls = false,
+  onSeekBackward,
+  onSeekForward,
   theme = "dark" 
 }: ShareRoomDialogProps) {
   const [copiedCode, setCopiedCode] = useState(false);
@@ -179,10 +187,44 @@ export function ShareRoomDialog({
           </div>
 
           {/* Bouton de partage natif */}
-          <div className="pt-2">
+          <div className="pt-2 flex flex-wrap items-center gap-2">
+            {showRegieSeekControls && (
+              <>
+                <Button
+                  type="button"
+                  onClick={onSeekBackward}
+                  disabled={disableRegieSeekControls}
+                  variant="ghost"
+                  className={`h-11 ${
+                    theme === "dark"
+                      ? "text-gray-300 hover:text-white hover:bg-zinc-800"
+                      : "text-gray-700 hover:text-black hover:bg-gray-100"
+                  }`}
+                >
+                  ⏪ -10s
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={onSeekForward}
+                  disabled={disableRegieSeekControls}
+                  variant="ghost"
+                  className={`h-11 ${
+                    theme === "dark"
+                      ? "text-gray-300 hover:text-white hover:bg-zinc-800"
+                      : "text-gray-700 hover:text-black hover:bg-gray-100"
+                  }`}
+                >
+                  ⏩ +10s
+                </Button>
+              </>
+            )}
+
             <Button
               onClick={handleShare}
-              className="w-full bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white h-11"
+              className={`bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white h-11 ${
+                showRegieSeekControls ? "flex-1 min-w-[220px]" : "w-full"
+              }`}
             >
               <Share2 className="w-4 h-4 mr-2" />
               Partager l'invitation

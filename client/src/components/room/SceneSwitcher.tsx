@@ -100,7 +100,7 @@ export function SceneSwitcher({
       <button
         onClick={() => setOpen((v) => !v)}
         className={`
-          flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium
+          flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium
           border transition-all duration-200 select-none
           ${
             theme === "dark"
@@ -112,7 +112,6 @@ export function SceneSwitcher({
         title="Changer de scène"
       >
         <span className={activeScene.color}>{activeScene.icon}</span>
-        <span>{activeScene.label}</span>
         <ChevronDown
           className={`w-3 h-3 transition-transform duration-200 ${
             open ? "rotate-180" : ""

@@ -293,6 +293,8 @@ function AppContent() {
   const [pendingEmail, setPendingEmail] = useState<string>('');
 
   useEffect(() => {
+    let isMounted = true;
+
     // Charger le thème depuis le localStorage
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (savedTheme) {
@@ -312,10 +314,9 @@ function AppContent() {
     if (savedUser && token) {
       me(token)
         .then((data: any) => {
+          if (!isMounted) return;
           if (data?.email) {
             const rawDate = data.created_at || data.email_verified_at;
-            // toast.info(`Debug Date: ${rawDate}`); // Visual Debug
-
             const memberSince = rawDate
               ? new Date(rawDate).toLocaleDateString("fr-FR")
               : undefined;
@@ -335,13 +336,11 @@ function AppContent() {
           }
         })
         .catch((error: any) => {
-          // Broad check for AbortError
-          if (error.name === 'AbortError' || error.message?.includes('aborted') || error.message?.includes('AbortError')) {
-            return;
-          }
+          if (!isMounted) return;
+          const msg = String(error?.message || "");
+          if (error?.name === 'AbortError' || msg.includes('AbortError') || msg.includes('aborted')) return;
 
           console.error("Session invalide", error);
-          const msg = error?.message || "";
           if (msg.includes("Aucun utilisateur") || msg.includes("Auth session missing")) {
             localStorage.removeItem('currentUser');
             localStorage.removeItem('token');
@@ -354,7 +353,7 @@ function AppContent() {
     }
 
     // Écouter les changements d'état Supabase (ex: lien magic link, password recovery)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, _session) => {
       if (event === "PASSWORD_RECOVERY") {
         navigate("/reset-password");
       }
@@ -368,6 +367,7 @@ function AppContent() {
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -417,33 +417,33 @@ function AppContent() {
   };
 
   const handleSignIn = (email: string, name: string) => {
+    // Setter immédiatement pour que la navigation fonctionne sans attendre me()
+    const baseUser = { email, name, id: email };
+    setCurrentUser(baseUser);
+    localStorage.setItem('currentUser', JSON.stringify(baseUser));
+    localStorage.removeItem('pendingConfirmationEmail');
+    setPendingEmail('');
+
+    // Enrichir en arrière-plan avec le profil complet
     me()
       .then((data: any) => {
-        if (data?.email) {
-          const memberSince = (data.created_at || data.email_verified_at)
-            ? new Date(data.created_at || data.email_verified_at).toLocaleDateString("fr-FR")
-            : undefined;
-          const nextUser = {
-            email: data.email,
-            name: data.username || data.email.split('@')[0],
-            memberSince,
-            id: data.id_user || data.id || undefined,
-          };
-          setCurrentUser(nextUser);
-          localStorage.setItem('currentUser', JSON.stringify(nextUser));
-          localStorage.removeItem('pendingConfirmationEmail');
-          setPendingEmail('');
-        } else {
-          localStorage.removeItem('currentUser');
-          localStorage.removeItem('token');
-          setCurrentUser(null);
-        }
+        if (!data?.email) return;
+        const memberSince = (data.created_at || data.email_verified_at)
+          ? new Date(data.created_at || data.email_verified_at).toLocaleDateString("fr-FR")
+          : undefined;
+        const nextUser = {
+          email: data.email,
+          name: data.username || data.email.split('@')[0],
+          memberSince,
+          id: data.id_user || data.id || email,
+        };
+        setCurrentUser(nextUser);
+        localStorage.setItem('currentUser', JSON.stringify(nextUser));
       })
       .catch((error) => {
-        console.error("Session invalide", error);
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('token');
-        setCurrentUser(null);
+        const msg = String(error?.message || "");
+        if (error?.name === 'AbortError' || msg.includes('AbortError') || msg.includes('aborted')) return;
+        console.warn("Profil complet non récupéré, session de base conservée:", msg);
       });
   };
 

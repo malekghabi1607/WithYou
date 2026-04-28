@@ -79,7 +79,7 @@ export function AIVideoPreviewPanel({
   const summaryLines = data?.summary?.lines;
   const keywords     = data?.summary?.keywords || [];
   const isGemini   = data?.summary?.generatedBy === "gemini";
-  const isDesc     = data?.summary?.generatedBy === "description";
+  const isDesc     = (data?.summary?.generatedBy as string) === "description";
   const watchPartyNote = data?.summary?.watchPartySuitability || "";
 
   const catEmoji = CAT_EMOJI[category] || "📹";

@@ -68,7 +68,8 @@ async function syncPublicUser(user: any, role?: string, specialty?: string) {
     .upsert(payload, { onConflict: "id_user" });
 
   if (error) {
-    // Do not block auth for sync issues, but keep trace.
+    const msg = String(error.message || "");
+    if (msg.includes("AbortError") || msg.includes("aborted")) return;
     console.error("Public user sync error:", error);
   }
 }

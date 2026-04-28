@@ -29,7 +29,8 @@ export interface RegieActionEntry {
     | "video_add"
     | "video_remove"
     | "video_batch_add"
-    | "assign_regie";
+    | "assign_regie"
+    | "interlude";
   label: string;
   details?: string;
   byName: string;

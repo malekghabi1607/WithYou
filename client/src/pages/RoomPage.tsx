@@ -23,7 +23,6 @@ import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/Input";
 import { Logo } from "../components/ui/Logo";
-import { PollSection } from "../components/room/PollSection";
 import { SceneSwitcher, type SceneMode } from "../components/room/SceneSwitcher";
 import { InterludeScreen } from "../components/room/InterludeScreen";
 import { AIVideoPreviewPanel } from "../components/room/AIVideoPreviewPanel";
@@ -34,6 +33,7 @@ import { SharedCountdownOverlay } from "../components/room/SharedCountdownOverla
 import { TTSAnnouncementPanel, speakTTSMessage } from "../components/room/TTSAnnouncementPanel";
 import { useLiveTranscription } from "../hooks/useLiveTranscription";
 import { useYouTubeCaptions } from "../hooks/useYouTubeCaptions";
+import { useVideoAIPreview } from "../hooks/useVideoAIPreview";
 import { computeContentScore, generateDiscussionQuestions } from "../utils/videoContentScore";
 import {
   Play,
@@ -69,7 +69,7 @@ import {
 import { LeaveRoomDialog } from "./LeaveRoomDialog";
 import { RoomInfoPanel } from "../components/room/RoomInfoPanel";
 import { RoomRatingPanel } from "../components/room/RoomRatingPanel";
-import { VideoVotePanel } from "../components/room/VideoVotePanel";
+import { SessionPollPanel } from "../components/room/SessionPollPanel";
 import { ParticipantsPermissionsPanel } from "../components/room/ParticipantsPermissionsPanel";
 import { SpeakingRequestsPanel, type SpeakingRequestEntry } from "../components/room/SpeakingRequestsPanel";
 import { VideoManagementPanel } from "../components/room/VideoManagementPanel";
@@ -93,7 +93,7 @@ import {
 } from "../api/comprehensionSignals";
 import { createRegieHistoryEntry, fetchRegieHistory } from "../api/regieHistory";
 import { fetchSessionInterlude, upsertSessionInterlude, type SessionInterludeState as PersistedSessionInterludeState } from "../api/sessionInterlude";
-import { createVideoBookmark, fetchVideoBookmarks } from "../api/videoBookmarks";
+import { createVideoBookmark, fetchVideoBookmarks, type VideoBookmarkPayload as VideoBookmarkEntry } from "../api/videoBookmarks";
 import { addVideoToPlaylist, addVideosToPlaylistBatch, fetchPlaylist, fetchPlaylistById, removeVideoFromPlaylist, fetchSalonByCode } from "../api/rooms";
 import { fetchFavorites, addFavorite, removeFavorite } from "../api/favorites";
 import { fetchParticipants, connectToSalon, disconnectFromSalon, setParticipantPermissions as setParticipantPermissionsApi, setParticipantRole, type MemberPermissions, type SalonRole } from "../api/participants";
@@ -211,6 +211,43 @@ interface LiveVideoVotePoll {
   winnerVideoId?: string | null;
 }
 
+interface SessionPollOption {
+  id: string;
+  text: string;
+}
+
+interface LiveSessionPoll {
+  pollId: string;
+  question: string;
+  options: SessionPollOption[];
+  startedAt: number;
+  endsAt: number | null;
+  isActive: boolean;
+  startedBy: string;
+  votes: Record<string, number>;
+  voterChoices: Record<string, string>;
+  source: "manual" | "ai";
+}
+
+interface SessionPollDraftSuggestion {
+  question: string;
+  options: string[];
+  durationSeconds: number;
+  source: "manual" | "ai";
+}
+
+type DirectorTool = "freehand" | "arrow" | "rectangle" | "circle" | "eraser";
+
+interface DirectorStrokeSegment {
+  tool: DirectorTool;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  width: number;
+}
+
 type VideoTransitionType = "cut" | "fade_black" | "slide_lateral" | "flash_white";
 type RegieProgramStatus = "idle" | "running" | "paused";
 
@@ -250,6 +287,16 @@ const normalizeSpeakingRequestEntry = (raw: any): SpeakingRequestEntry | null =>
     requestedAt: Number(raw?.requestedAt) || Date.now(),
   };
 };
+
+const DIRECTOR_TOOLS: Array<{ value: DirectorTool; label: string }> = [
+  { value: "freehand", label: "Trace" },
+  { value: "arrow", label: "Fleche" },
+  { value: "rectangle", label: "Rectangle" },
+  { value: "circle", label: "Cercle" },
+  { value: "eraser", label: "Gomme" },
+];
+
+const DIRECTOR_COLORS = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#ffffff"];
 
 interface RoomPageProps {
   roomId: string;
@@ -457,6 +504,7 @@ const getRoleLabel = (role: SalonRole | null) => {
 export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigate, theme = "dark", onThemeToggle }: RoomPageProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [videoDurationSeconds, setVideoDurationSeconds] = useState<number | null>(null);
   const [syncNonce, setSyncNonce] = useState(0);
   const [currentScene, setCurrentScene] = useState<SceneMode>("split");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -523,12 +571,34 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const [speakingRequests, setSpeakingRequests] = useState<Record<string, SpeakingRequestEntry>>({});
   const [activeSpeakerRequest, setActiveSpeakerRequest] = useState<SpeakingRequestEntry | null>(null);
   const [videoVoteNow, setVideoVoteNow] = useState<number>(Date.now());
+  const [showSessionPollPanel, setShowSessionPollPanel] = useState(false);
+  const [liveSessionPoll, setLiveSessionPoll] = useState<LiveSessionPoll | null>(null);
+  const [sessionPollNow, setSessionPollNow] = useState<number>(Date.now());
+  const [isGeneratingSessionPoll, setIsGeneratingSessionPoll] = useState(false);
+  const [sessionPollAiSuggestions, setSessionPollAiSuggestions] = useState<SessionPollDraftSuggestion[]>([]);
+  const [selectedSessionPollSuggestionIndex, setSelectedSessionPollSuggestionIndex] = useState<number | null>(null);
+  const [sessionPollGenerationCount, setSessionPollGenerationCount] = useState(0);
+  const [sessionPollDraft, setSessionPollDraft] = useState<{
+    question: string;
+    options: string[];
+    durationSeconds: number;
+    source: "manual" | "ai";
+  }>({
+    question: "",
+    options: ["", "", ""],
+    durationSeconds: 60,
+    source: "manual",
+  });
   const [selectedVideoTransition, setSelectedVideoTransition] = useState<VideoTransitionType>("cut");
   const [activeVideoTransition, setActiveVideoTransition] = useState<{ type: VideoTransitionType; key: number } | null>(null);
   const [regieProgramSteps, setRegieProgramSteps] = useState<RegieProgramStep[]>([]);
   const [regieProgramStatus, setRegieProgramStatus] = useState<RegieProgramStatus>("idle");
   const [regieProgramCurrentStepIndex, setRegieProgramCurrentStepIndex] = useState<number | null>(null);
   const [regieProgramWaitingForVideoEnd, setRegieProgramWaitingForVideoEnd] = useState(false);
+  const [directorModeEnabled, setDirectorModeEnabled] = useState(false);
+  const [directorMenuOpen, setDirectorMenuOpen] = useState(false);
+  const [directorTool, setDirectorTool] = useState<DirectorTool>("freehand");
+  const [directorColor, setDirectorColor] = useState("#ef4444");
 
   // ── Régie : Compte à rebours partagé (feature 68) ──────────────────────
   const [activeCountdown, setActiveCountdown] = useState<{ seconds: number; key: number; reason?: "manual" | "startup" } | null>(null);
@@ -589,6 +659,12 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const remoteVoiceStreamRef = useRef<MediaStream | null>(null);
   const remoteVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceAutoplayWarnedRef = useRef<boolean>(false);
+  const directorCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const directorCanvasHostRef = useRef<HTMLDivElement | null>(null);
+  const directorIsDrawingRef = useRef<boolean>(false);
+  const directorLastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const directorDraftRef = useRef<DirectorStrokeSegment | null>(null);
+  const directorSegmentsRef = useRef<DirectorStrokeSegment[]>([]);
   const syncAnchorRef = useRef<{ time: number; at: number; playing: boolean; videoId?: string | null }>({
     time: 0,
     at: Date.now(),
@@ -648,11 +724,18 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   const currentSpeakingRequestPosition = speakingQueue.findIndex(
     (entry) => entry.participantId === speakingRequestParticipantId
   );
+  const canUseDirectorMode = effectiveRole === "admin" || effectiveRole === "regie";
   const liveVoteRemainingMs =
     liveVideoVotePoll?.isActive && liveVideoVotePoll?.endsAt
       ? Math.max(0, liveVideoVotePoll.endsAt - videoVoteNow)
       : 0;
   const liveVoteRemainingSeconds = Math.ceil(liveVoteRemainingMs / 1000);
+  const canManageSessionPoll = effectiveRole === "admin" || effectiveRole === "regie";
+  const sessionPollRemainingMs =
+    liveSessionPoll?.isActive && liveSessionPoll?.endsAt
+      ? Math.max(0, liveSessionPoll.endsAt - sessionPollNow)
+      : 0;
+  const sessionPollRemainingSeconds = Math.ceil(sessionPollRemainingMs / 1000);
 
   const pickWinningVideoId = useCallback((poll: LiveVideoVotePoll) => {
     const playlistOrder = playlist.map((video) => video.id);
@@ -666,6 +749,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     });
     return entries[0][0];
   }, [playlist]);
+
   // Keep a ref updated so Supabase Realtime closures always see the current value
   canControlVideoRef.current = canControlVideo;
   playlistRef.current = playlist;
@@ -845,6 +929,391 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   );
 
   useEffect(() => () => clearAnnouncementTimeout(), [clearAnnouncementTimeout]);
+
+  const sessionPollVideoPreview = useVideoAIPreview(
+    currentVideo?.youtubeId,
+    currentVideo?.title || "",
+    currentVideo?.duration || "0:00"
+  );
+  const buildSessionPollDraftsFromCurrentVideo = useCallback((variantSeed = sessionPollGenerationCount): SessionPollDraftSuggestion[] => {
+    const baseTitle = currentVideo?.title?.trim() || "cette video";
+    const prompts = (discussionQuestions || []).map((item) => item.trim()).filter(Boolean);
+    const aiSummary = sessionPollVideoPreview.data?.summary;
+    const summaryLines = aiSummary?.lines || [];
+    const keywords = (aiSummary?.keywords || []).filter(Boolean).slice(0, 8);
+    const generatedByGemini = aiSummary?.generatedBy === "gemini";
+
+    const rotate = <T,>(items: T[], amount: number): T[] => {
+      if (!items.length) return items;
+      const offset = ((amount % items.length) + items.length) % items.length;
+      return [...items.slice(offset), ...items.slice(0, offset)];
+    };
+
+    const compactText = (value: string | undefined, fallback: string) => {
+      const next = (value || "").trim().replace(/\s+/g, " ");
+      if (!next) return fallback;
+      return next.length > 96 ? `${next.slice(0, 93)}...` : next;
+    };
+
+    const keywordPool = rotate(
+      [
+        ...keywords,
+        "idee principale",
+        "angle du createur",
+        "detail marquant",
+        "point de discussion",
+        "emotion",
+        "question ouverte",
+      ].filter(Boolean),
+      variantSeed
+    ).filter((value, index, array) => array.indexOf(value) === index);
+
+    const promptPool = rotate(
+      [
+        ...summaryLines.map((line) => compactText(line, "")),
+        ...prompts.map((line) => compactText(line, "")),
+      ].filter(Boolean),
+      variantSeed
+    );
+
+    const insightA = promptPool[0] || `Le message principal autour de ${keywordPool[0] || "la video"}`;
+    const insightB = promptPool[1] || `La facon dont ${keywordPool[1] || "le createur"} presente son point de vue`;
+    const insightC = promptPool[2] || `Le detail qui change la lecture de ${baseTitle}`;
+    const topicA = keywordPool[0] || "idee principale";
+    const topicB = keywordPool[1] || "angle du createur";
+    const topicC = keywordPool[2] || "detail marquant";
+    const topicD = keywordPool[3] || "point de discussion";
+    const topicE = keywordPool[4] || "emotion";
+    const topicF = keywordPool[5] || "question ouverte";
+
+    const questionGroups = [
+      [
+        generatedByGemini
+          ? `Dans cette video, quel aspect de "${baseTitle}" ressort le plus autour de ${topicA} ?`
+          : `Quel est le message principal de "${baseTitle}" ?`,
+        `Quelle piste de discussion sur "${baseTitle}" merite d'etre ouverte en priorite ?`,
+        `Apres ce passage, quel debat faut-il lancer en premier ?`,
+      ],
+      [
+        `Quel element de "${baseTitle}" vous semble le plus marquant apres visionnage ?`,
+        `Quel angle d'analyse sur "${baseTitle}" serait le plus utile pour la salle ?`,
+        `Quelle question reste la plus ouverte a la fin de cette video ?`,
+      ],
+      [
+        `Si vous deviez resumer "${baseTitle}" en un seul point cle, lequel choisiriez-vous ?`,
+        `Quel sujet de "${baseTitle}" donnerait la meilleure discussion de groupe ?`,
+        `Quel detail merite d'etre verifie ou nuance apres ce visionnage ?`,
+      ],
+      [
+        `Parmi les idees de cette video, laquelle devrait etre retenue en premier ?`,
+        `Quel point de vue sur "${baseTitle}" est le plus discutable ?`,
+        `Quelle reaction du groupe faut-il explorer apres ce passage ?`,
+      ],
+      [
+        `Quel moment de "${baseTitle}" change le plus votre interpretation de la video ?`,
+        `Quel enjeu autour de ${topicB} vous parait le plus important a debattre ?`,
+        `Quelle suite de discussion serait la plus interessante apres ce contenu ?`,
+      ],
+      [
+        `Quel aspect de "${baseTitle}" devrait servir de point de depart a la discussion ?`,
+        `Quel message sous-jacent sur ${topicC} vous semble le plus fort ?`,
+        `Quelle question permettrait le mieux de tester la comprehension du groupe ?`,
+      ],
+    ] as const;
+
+    const optionGroups = [
+      [
+        [`Le theme autour de ${topicA}`, `Le point de vue sur ${topicB}`, `Le fait marquant lie a ${topicC}`, "L'emotion dominante du passage"],
+        [insightB, `Les consequences de ${topicD}`, `Le choix de mise en avant sur ${topicE}`, "Le ressenti provoque chez les participants"],
+        [`Que veut montrer la video sur ${topicA} ?`, `Quel detail sur ${topicC} change notre interpretation ?`, `Qu'est-ce qui manque pour mieux comprendre ${topicB} ?`, "Le point avec lequel le groupe est le plus d'accord"],
+      ],
+      [
+        [`Le moment lie a ${topicC}`, `La reflexion autour de ${topicD}`, `L'information sur ${topicA}`, `L'angle retenu sur ${topicE}`],
+        ["Le sujet le plus concret", "Le choix narratif du createur", "Les implications pour le groupe", "La reaction emotionnelle"],
+        [`La question de fond sur ${topicA}`, `Le detail a verifier sur ${topicF}`, "Le point de vue a nuancer", "Le desaccord possible"],
+      ],
+      [
+        ["La these principale", "Le meilleur exemple donne", "Le ton de la video", "La consequence la plus forte"],
+        ["L'idee la plus discutable", "L'argument le plus convaincant", "Le point le plus ambigu", "Le lien avec notre experience"],
+        [`Le sujet a approfondir`, `Le mot-cle ${topicB}`, "Le contre-argument possible", "Le point le plus memorable"],
+      ],
+      [
+        [insightA, `Le passage axe sur ${topicA}`, `Le contraste avec ${topicB}`, "Le moment le plus clair pour tous"],
+        [insightC, `La lecture autour de ${topicD}`, `L'intention du createur sur ${topicE}`, "La question qui reste sans reponse"],
+        [`Le detail qui interpelle le plus`, `L'idee a challenger sur ${topicF}`, "Le point qui demande des exemples", "La conclusion qui rassemble le groupe"],
+      ],
+      [
+        [`Le meilleur resume de la video`, `Le point qui cree le plus de debat`, `L'idee la plus concrete`, `Le detail qui surprend`],
+        [`Le message sur ${topicA}`, `Le regard porte sur ${topicC}`, `L'effet produit sur le groupe`, `La consequence la plus immediate`],
+        [`Le sujet a revoir`, `Le passage qui manque de clarte`, `Le point a debattre ensuite`, `L'interpretation la plus forte`],
+      ],
+      [
+        [`Le fil conducteur`, `Le passage sur ${topicD}`, `Le point de rupture`, `Le ressenti final`],
+        [`L'angle le plus utile pour apprendre`, `L'idee a retenir en equipe`, `Le moment a commenter en direct`, `Le sujet a confronter au vecu du groupe`],
+        [`La question la plus ouverte`, `L'argument a remettre en cause`, `Le detail le plus concret`, `Le point a approfondir avec Gemini`],
+      ],
+    ] as const;
+
+    const questionSet = questionGroups[variantSeed % questionGroups.length];
+    const optionSet = optionGroups[variantSeed % optionGroups.length];
+    const durations = rotate([45, 60, 75, 90], variantSeed);
+
+    return questionSet.map((question, index) => ({
+      question,
+      options: rotate([...optionSet[index]], variantSeed + index).slice(0, 4) as string[],
+      durationSeconds: durations[index] || 60,
+      source: "ai" as const,
+    }));
+  }, [currentVideo?.title, discussionQuestions, sessionPollGenerationCount, sessionPollVideoPreview.data]);
+  useEffect(() => {
+    setVideoDurationSeconds(null);
+  }, [currentVideo?.id]);
+  useEffect(() => {
+    setSessionPollAiSuggestions([]);
+    setSelectedSessionPollSuggestionIndex(null);
+    setSessionPollGenerationCount(0);
+    setSessionPollDraft((prev) => ({
+      question: prev.source === "manual" ? prev.question : "",
+      options: prev.source === "manual" ? prev.options : ["", "", ""],
+      durationSeconds: prev.durationSeconds || 60,
+      source: "manual",
+    }));
+  }, [currentVideo?.id]);
+
+  const clearDirectorCanvasLocal = useCallback(() => {
+    directorSegmentsRef.current = [];
+    directorIsDrawingRef.current = false;
+    directorLastPointRef.current = null;
+    directorDraftRef.current = null;
+    const canvas = directorCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }, []);
+
+  const drawDirectorArrow = useCallback((
+    ctx: CanvasRenderingContext2D,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    size: number
+  ) => {
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - size * Math.cos(angle - Math.PI / 6), toY - size * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - size * Math.cos(angle + Math.PI / 6), toY - size * Math.sin(angle + Math.PI / 6));
+  }, []);
+
+  const drawDirectorSegmentLocal = useCallback((segment: DirectorStrokeSegment) => {
+    const canvas = directorCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    const rect = canvas?.getBoundingClientRect();
+    if (!canvas || !ctx || !rect || rect.width <= 0 || rect.height <= 0) return;
+
+    const x1 = segment.x1 * rect.width;
+    const y1 = segment.y1 * rect.height;
+    const x2 = segment.x2 * rect.width;
+    const y2 = segment.y2 * rect.height;
+
+    ctx.save();
+    ctx.globalCompositeOperation = segment.tool === "eraser" ? "destination-out" : "source-over";
+    ctx.strokeStyle = segment.tool === "eraser" ? "rgba(0,0,0,1)" : segment.color;
+    ctx.lineWidth = segment.width;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+
+    if (segment.tool === "rectangle") {
+      ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+    } else if (segment.tool === "circle") {
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
+      ctx.ellipse(centerX, centerY, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (segment.tool === "arrow") {
+      drawDirectorArrow(ctx, x1, y1, x2, y2, Math.max(10, segment.width * 3));
+      ctx.stroke();
+    } else {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }, [drawDirectorArrow]);
+
+  const redrawDirectorCanvas = useCallback(() => {
+    const canvas = directorCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const segment of directorSegmentsRef.current) {
+      drawDirectorSegmentLocal(segment);
+    }
+    if (directorDraftRef.current) {
+      drawDirectorSegmentLocal(directorDraftRef.current);
+    }
+  }, [drawDirectorSegmentLocal]);
+
+  const resizeDirectorCanvas = useCallback(() => {
+    const host = directorCanvasHostRef.current;
+    const canvas = directorCanvasRef.current;
+    if (!host || !canvas) return;
+
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redrawDirectorCanvas();
+  }, [redrawDirectorCanvas]);
+
+  const broadcastDirectorEvent = useCallback(async (payload: Record<string, any>) => {
+    if (!roomChannelRef.current) return;
+    try {
+      await roomChannelRef.current.send({
+        type: "broadcast",
+        event: "room_director_annotation",
+        payload: {
+          ...payload,
+          by: currentUser.id,
+          videoId: currentVideo?.id || null,
+          at: Date.now(),
+        }
+      });
+    } catch (error) {
+      console.error("Erreur broadcast director", error);
+    }
+  }, [currentUser.id, currentVideo?.id]);
+
+  const handleDirectorToggle = useCallback(async () => {
+    if (!canUseDirectorMode) {
+      toast.error("Seule la regie peut utiliser le mode Director");
+      return;
+    }
+    const next = !directorModeEnabled;
+    setDirectorModeEnabled(next);
+    directorIsDrawingRef.current = false;
+    directorLastPointRef.current = null;
+    directorDraftRef.current = null;
+    redrawDirectorCanvas();
+    await broadcastDirectorEvent({ action: "toggle", enabled: next });
+  }, [broadcastDirectorEvent, canUseDirectorMode, directorModeEnabled, redrawDirectorCanvas]);
+
+  const handleDirectorMenuToggle = useCallback(() => {
+    if (!canUseDirectorMode) return;
+    setDirectorMenuOpen((prev) => !prev);
+  }, [canUseDirectorMode]);
+
+  const handleDirectorClear = useCallback(async () => {
+    if (!canUseDirectorMode) {
+      toast.error("Seule la regie peut effacer les annotations");
+      return;
+    }
+    clearDirectorCanvasLocal();
+    await broadcastDirectorEvent({ action: "clear" });
+  }, [broadcastDirectorEvent, canUseDirectorMode, clearDirectorCanvasLocal]);
+
+  const getDirectorPoint = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = directorCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+    };
+  }, []);
+
+  const handleDirectorPointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!canUseDirectorMode || !directorModeEnabled) return;
+    const point = getDirectorPoint(event);
+    if (!point) return;
+    directorIsDrawingRef.current = true;
+    directorLastPointRef.current = point;
+    directorDraftRef.current = null;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [canUseDirectorMode, directorModeEnabled, getDirectorPoint]);
+
+  const handleDirectorPointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!canUseDirectorMode || !directorModeEnabled || !directorIsDrawingRef.current) return;
+    const nextPoint = getDirectorPoint(event);
+    const previousPoint = directorLastPointRef.current;
+    if (!nextPoint || !previousPoint) return;
+
+    if (directorTool === "freehand" || directorTool === "eraser") {
+      const segment: DirectorStrokeSegment = {
+        tool: directorTool,
+        x1: previousPoint.x,
+        y1: previousPoint.y,
+        x2: nextPoint.x,
+        y2: nextPoint.y,
+        color: directorColor,
+        width: directorTool === "eraser" ? 18 : 3,
+      };
+
+      directorSegmentsRef.current.push(segment);
+      drawDirectorSegmentLocal(segment);
+      directorLastPointRef.current = nextPoint;
+      void broadcastDirectorEvent({ action: "segment", segment });
+      return;
+    }
+
+    directorDraftRef.current = {
+      tool: directorTool,
+      x1: previousPoint.x,
+      y1: previousPoint.y,
+      x2: nextPoint.x,
+      y2: nextPoint.y,
+      color: directorColor,
+      width: 3,
+    };
+    redrawDirectorCanvas();
+  }, [
+    broadcastDirectorEvent,
+    canUseDirectorMode,
+    directorColor,
+    directorModeEnabled,
+    directorTool,
+    drawDirectorSegmentLocal,
+    getDirectorPoint,
+    redrawDirectorCanvas,
+  ]);
+
+  const stopDirectorDrawing = useCallback(() => {
+    if (
+      directorIsDrawingRef.current &&
+      directorDraftRef.current &&
+      directorDraftRef.current.tool !== "freehand" &&
+      directorDraftRef.current.tool !== "eraser"
+    ) {
+      const draft = directorDraftRef.current;
+      const movedEnough =
+        Math.abs(draft.x2 - draft.x1) > 0.003 ||
+        Math.abs(draft.y2 - draft.y1) > 0.003;
+
+      if (movedEnough) {
+        directorSegmentsRef.current.push(draft);
+        void broadcastDirectorEvent({ action: "segment", segment: draft });
+      }
+    }
+    directorIsDrawingRef.current = false;
+    directorLastPointRef.current = null;
+    directorDraftRef.current = null;
+    redrawDirectorCanvas();
+  }, [broadcastDirectorEvent, redrawDirectorCanvas]);
 
   const applyViewerSyncState = useCallback((payload: { time?: number; isPlaying?: boolean; videoId?: string | null }) => {
     const baseTime = Number(payload.time ?? 0);
@@ -1756,6 +2225,37 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       )
       .on(
+        "broadcast",
+        { event: "room_director_annotation" },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+          if (
+            data?.videoId &&
+            currentVideo?.id &&
+            String(data.videoId) !== String(currentVideo.id)
+          ) {
+            return;
+          }
+
+          if (data?.action === "toggle") {
+            setDirectorModeEnabled(Boolean(data.enabled));
+            return;
+          }
+
+          if (data?.action === "clear") {
+            clearDirectorCanvasLocal();
+            return;
+          }
+
+          if (data?.action === "segment" && data.segment) {
+            const segment = data.segment as DirectorStrokeSegment;
+            directorSegmentsRef.current.push(segment);
+            drawDirectorSegmentLocal(segment);
+          }
+        }
+      )
+      .on(
         'broadcast',
         { event: 'room_announcement' },
         (payload) => {
@@ -1918,6 +2418,26 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         }
       )
       .on(
+        "broadcast",
+        { event: "room_session_poll" },
+        (payload) => {
+          const data = payload?.payload || {};
+          if (data?.by === currentUser.id) return;
+          if (!data?.poll || typeof data.poll !== "object") return;
+
+          const poll = data.poll as LiveSessionPoll;
+          setLiveSessionPoll(poll);
+          setSessionPollNow(Date.now());
+          setShowSessionPollPanel(true);
+
+          if (data.action === "start") {
+            toast.info(`Sondage lancé : ${poll.question}`);
+          } else if (data.action === "finish") {
+            toast.info("Sondage terminé");
+          }
+        }
+      )
+      .on(
         'broadcast',
         { event: 'room_countdown' },
         (payload) => {
@@ -2067,7 +2587,33 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
       });
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, backendSalonId, applyViewerSyncState, playVideoTransition, handleVoiceSignal, authUserId, currentUser.id, reportError, showAnnouncementForDuration, loadRoomSnapshot, loadParticipantsSnapshot, currentUser.email, canControlVideo, participants, participantPermissions, appendRegieAction, appendVideoBookmark, describeSessionLockState, persistSessionLockState, loadComprehensionSignals, canManageSpeakingRequests, speakingRequestParticipantId]);
+  }, [
+    roomId,
+    backendSalonId,
+    applyViewerSyncState,
+    playVideoTransition,
+    handleVoiceSignal,
+    authUserId,
+    currentUser.id,
+    currentUser.email,
+    currentVideo?.id,
+    showAnnouncementForDuration,
+    loadRoomSnapshot,
+    loadParticipantsSnapshot,
+    canControlVideo,
+    participants,
+    participantPermissions,
+    appendRegieAction,
+    appendVideoBookmark,
+    describeSessionLockState,
+    persistSessionLockState,
+    loadComprehensionSignals,
+    canManageSpeakingRequests,
+    speakingRequestParticipantId,
+    clearDirectorCanvasLocal,
+    drawDirectorSegmentLocal,
+    reportError
+  ]);
 
   useEffect(() => {
     if (!backendSalonId || !UUID_REGEX.test(backendSalonId)) return;
@@ -2124,7 +2670,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
         const remoteEntries = await fetchRegieHistory(backendSalonId);
         if (!isMounted) return;
 
-        const merged = mergeRegieHistoryEntries(remoteEntries, localEntries);
+        const merged = mergeRegieHistoryEntries(remoteEntries as RegieActionEntry[], localEntries);
         setRegieActionHistory(merged);
         persistRegieHistory(merged);
       } catch (error) {
@@ -2408,6 +2954,29 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   }, [isPlaying]);
 
   useEffect(() => {
+    resizeDirectorCanvas();
+  }, [resizeDirectorCanvas, currentVideo?.id, currentScene]);
+
+  useEffect(() => {
+    const onResize = () => {
+      resizeDirectorCanvas();
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [resizeDirectorCanvas]);
+
+  useEffect(() => {
+    clearDirectorCanvasLocal();
+    setDirectorModeEnabled(false);
+    setDirectorMenuOpen(false);
+  }, [clearDirectorCanvasLocal, currentVideo?.id]);
+
+  useEffect(() => {
+    if (currentVideo?.youtubeId) return;
+    setDirectorMenuOpen(false);
+  }, [currentVideo?.youtubeId]);
+
+  useEffect(() => {
     if (!liveVideoVotePoll?.isActive) return;
     setVideoVoteNow(Date.now());
     const interval = window.setInterval(() => {
@@ -2415,6 +2984,15 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
     }, 250);
     return () => window.clearInterval(interval);
   }, [liveVideoVotePoll?.pollId, liveVideoVotePoll?.isActive]);
+
+  useEffect(() => {
+    if (!liveSessionPoll?.isActive) return;
+    setSessionPollNow(Date.now());
+    const interval = window.setInterval(() => {
+      setSessionPollNow(Date.now());
+    }, 250);
+    return () => window.clearInterval(interval);
+  }, [liveSessionPoll?.pollId, liveSessionPoll?.isActive]);
 
   useEffect(() => {
     try {
@@ -2698,7 +3276,7 @@ export function RoomPage({ roomId, roomName, roomCreator, currentUser, onNavigat
   };
 
   const addRegieAction = (action: string, details: string) => {
-    const newAction: RegieActionEntry = {
+    const newAction: LegacyRegieActionEntry = {
       id: Date.now().toString(),
       action,
       details,
@@ -3467,6 +4045,7 @@ const handleToggleFavorite = async (videoId: string) => {
 
     const draftEntry: VideoBookmarkEntry = {
       id: createClientUuid(),
+      salonId: backendSalonId,
       videoId: currentVideo.id,
       videoTitle: currentVideo.title,
       time: currentTimeRef.current,
@@ -3582,6 +4161,89 @@ const handleToggleFavorite = async (videoId: string) => {
       `${bookmark.label} • ${formatVideoTimeLabel(nextTime)}`
     );
   };
+  const logRegieAction = useCallback(async (label: string, details?: string) => {
+    await broadcastRegieAction("sync", label, details);
+  }, [broadcastRegieAction]);
+
+  const handleRegieSeek = useCallback(async (deltaSeconds: number) => {
+    if (!(isAdmin || effectiveRole === "regie")) {
+      toast.error("Seuls l'admin ou la regie video peuvent avancer ou reculer");
+      return;
+    }
+    if (!currentVideo?.youtubeId) {
+      toast.error("Aucune video active");
+      return;
+    }
+
+    const now = Date.now();
+    const durationCap =
+      typeof videoDurationSeconds === "number" && Number.isFinite(videoDurationSeconds)
+        ? Math.max(0, videoDurationSeconds)
+        : Number.POSITIVE_INFINITY;
+    const baseTime = Math.max(0, currentTimeRef.current);
+    const nextTime = Math.max(0, Math.min(durationCap, baseTime + deltaSeconds));
+
+    setCurrentTime(nextTime);
+    currentTimeRef.current = nextTime;
+    setSyncNonce(now);
+    lastAdminPlayerTimeRef.current = nextTime;
+    lastSeekBroadcastAtRef.current = now;
+    syncAnchorRef.current = {
+      time: nextTime,
+      at: now,
+      playing: isPlayingRef.current,
+      videoId: currentVideo.id,
+    };
+
+    if (backendSalonId) {
+      const { error } = await updateSalonState({
+        video_time: nextTime,
+        video_status: isPlayingRef.current ? "playing" : "paused",
+        current_video_id: currentVideo.id,
+      });
+
+      if (error) {
+        toast.error(getErrorMessage(error, "Impossible de synchroniser le seek"));
+        return;
+      }
+    }
+    if (roomChannelRef.current) {
+      try {
+        await roomChannelRef.current.send({
+          type: "broadcast",
+          event: "room_force_sync",
+          payload: {
+            by: currentUser.id,
+            at: now,
+            time: nextTime,
+            videoId: currentVideo.id,
+            isPlaying: isPlayingRef.current,
+            seek: true,
+            forceSeek: true,
+            forceReload: false,
+          }
+        });
+      } catch (error) {
+        toast.error("Impossible de diffuser le seek a la salle");
+        return;
+      }
+    }
+
+    if (deltaSeconds < 0) {
+      await logRegieAction("Regie a recule de 10 secondes", `${currentVideo.title} a ${Math.round(nextTime)}s`);
+    } else {
+      await logRegieAction("Regie a avance de 10 secondes", `${currentVideo.title} a ${Math.round(nextTime)}s`);
+    }
+  }, [
+    backendSalonId,
+    currentUser.id,
+    currentVideo,
+    effectiveRole,
+    isAdmin,
+    logRegieAction,
+    updateSalonState,
+    videoDurationSeconds,
+  ]);
 
   const handleAddVideo = async (url: string, title: string) => {
     if (!canManagePlaylist) {
@@ -3775,6 +4437,248 @@ const handleToggleFavorite = async (videoId: string) => {
       console.error("Erreur broadcast vote vidéo", error);
     }
   };
+
+  const broadcastSessionPoll = async (
+    action: "start" | "vote" | "finish",
+    poll: LiveSessionPoll
+  ) => {
+    if (!roomChannelRef.current) return;
+    try {
+      await roomChannelRef.current.send({
+        type: "broadcast",
+        event: "room_session_poll",
+        payload: {
+          by: currentUser.id,
+          action,
+          poll,
+        }
+      });
+    } catch (error) {
+      console.error("Erreur broadcast sondage regie", error);
+    }
+  };
+
+  const handleGenerateSessionPoll = useCallback(async () => {
+    if (!canManageSessionPoll) {
+      toast.error("Seule la regie peut générer un sondage");
+      return;
+    }
+    if (!currentVideo?.title) {
+      toast.error("Aucune vidéo active pour générer un sondage");
+      return;
+    }
+
+    setIsGeneratingSessionPoll(true);
+    try {
+      const nextSeed = sessionPollGenerationCount + 1;
+      setSessionPollGenerationCount(nextSeed);
+      const nextSuggestions = buildSessionPollDraftsFromCurrentVideo(nextSeed);
+      const generatorLabel =
+        sessionPollVideoPreview.data?.summary?.generatedBy === "gemini"
+          ? "Gemini"
+          : "fallback local";
+      setSessionPollAiSuggestions(nextSuggestions);
+      setSelectedSessionPollSuggestionIndex(0);
+      setSessionPollDraft(nextSuggestions[0]);
+      await logRegieAction("Sondage genere par IA", `${nextSuggestions.length} propositions (${generatorLabel})`);
+      toast.success(`${nextSuggestions.length} sondages IA sont prêts à être relus (${generatorLabel})`);
+    } finally {
+      setIsGeneratingSessionPoll(false);
+    }
+  }, [
+    buildSessionPollDraftsFromCurrentVideo,
+    canManageSessionPoll,
+    currentVideo?.title,
+    logRegieAction,
+    sessionPollGenerationCount,
+    sessionPollVideoPreview.data?.summary?.generatedBy,
+  ]);
+
+  const handleRegenerateSessionPoll = useCallback(async () => {
+    if (!canManageSessionPoll) {
+      toast.error("Seule la regie peut regenerer un sondage");
+      return;
+    }
+    if (!currentVideo?.title) {
+      toast.error("Aucune video active pour regenerer un sondage");
+      return;
+    }
+
+    setIsGeneratingSessionPoll(true);
+    try {
+      const nextSeed = sessionPollGenerationCount + 1;
+      setSessionPollGenerationCount(nextSeed);
+      const nextSuggestions = buildSessionPollDraftsFromCurrentVideo(nextSeed);
+      const generatorLabel =
+        sessionPollVideoPreview.data?.summary?.generatedBy === "gemini"
+          ? "Gemini"
+          : "fallback local";
+      setSessionPollAiSuggestions(nextSuggestions);
+      setSelectedSessionPollSuggestionIndex(0);
+      setSessionPollDraft(nextSuggestions[0]);
+      toast.success(`3 nouveaux sondages IA ont ete regeneres (${generatorLabel})`);
+    } finally {
+      setIsGeneratingSessionPoll(false);
+    }
+  }, [
+    buildSessionPollDraftsFromCurrentVideo,
+    canManageSessionPoll,
+    currentVideo?.title,
+    sessionPollGenerationCount,
+    sessionPollVideoPreview.data?.summary?.generatedBy,
+  ]);
+
+  const handleLaunchSessionPoll = useCallback(async () => {
+    if (!canManageSessionPoll) {
+      toast.error("Seule la regie peut lancer un sondage");
+      return;
+    }
+    if (liveSessionPoll?.isActive) {
+      toast.error("Un sondage régie est déjà actif");
+      return;
+    }
+
+    const question = sessionPollDraft.question.trim();
+    const options = sessionPollDraft.options
+      .map((text, index) => ({ id: `option-${index + 1}`, text: text.trim() }))
+      .filter((option) => option.text.length > 0)
+      .slice(0, 4);
+
+    if (!question) {
+      toast.error("Ajoutez une question");
+      return;
+    }
+    if (options.length < 2) {
+      toast.error("Ajoutez au moins 2 réponses");
+      return;
+    }
+
+    const votes: Record<string, number> = {};
+    for (const option of options) votes[option.id] = 0;
+
+    const durationSeconds = Math.min(600, Math.max(15, Math.round(sessionPollDraft.durationSeconds || 60)));
+    const poll: LiveSessionPoll = {
+      pollId: `session-poll-${Date.now()}`,
+      question,
+      options,
+      startedAt: Date.now(),
+      endsAt: Date.now() + durationSeconds * 1000,
+      isActive: true,
+      startedBy: currentUser.id,
+      votes,
+      voterChoices: {},
+      source: sessionPollDraft.source,
+    };
+
+    setLiveSessionPoll(poll);
+    setSessionPollNow(Date.now());
+    setShowSessionPollPanel(true);
+    await broadcastSessionPoll("start", poll);
+    await logRegieAction(`Sondage lance : ${question}`);
+    toast.success("Sondage régie lancé");
+  }, [
+    canManageSessionPoll,
+    currentUser.id,
+    liveSessionPoll?.isActive,
+    logRegieAction,
+    sessionPollDraft.durationSeconds,
+    sessionPollDraft.options,
+    sessionPollDraft.question,
+    sessionPollDraft.source,
+  ]);
+
+  const handleVoteSessionPoll = useCallback(async (optionId: string) => {
+    if (!liveSessionPoll?.isActive || !liveSessionPoll?.endsAt) {
+      toast.error("Le sondage n'est pas actif");
+      return;
+    }
+    if (Date.now() >= liveSessionPoll.endsAt) {
+      toast.error("Le sondage est terminé");
+      return;
+    }
+    if (!canUsePolls) {
+      toast.error("Les sondages sont désactivés pour vous");
+      return;
+    }
+
+    let nextPoll: LiveSessionPoll | null = null;
+    setLiveSessionPoll((prev) => {
+      if (!prev?.isActive) return prev;
+      if (!prev.options.some((option) => option.id === optionId)) return prev;
+      if (prev.voterChoices[voteUserKey]) return prev;
+
+      nextPoll = {
+        ...prev,
+        votes: {
+          ...prev.votes,
+          [optionId]: (prev.votes[optionId] || 0) + 1,
+        },
+        voterChoices: {
+          ...prev.voterChoices,
+          [voteUserKey]: optionId,
+        },
+      };
+      return nextPoll;
+    });
+
+    if (!nextPoll) {
+      toast.error("Vous avez déjà voté");
+      return;
+    }
+
+    const resolvedPoll = nextPoll as LiveSessionPoll;
+    const votedOption = resolvedPoll.options.find((option: SessionPollOption) => option.id === optionId);
+    await broadcastSessionPoll("vote", nextPoll);
+    if (votedOption) {
+      await logRegieAction(`Vote recu pour : ${votedOption.text}`);
+    }
+    toast.success("Vote enregistré");
+  }, [canUsePolls, liveSessionPoll?.endsAt, liveSessionPoll?.isActive, logRegieAction, voteUserKey]);
+
+  const handleFinishSessionPoll = useCallback(async (pollOverride?: LiveSessionPoll) => {
+    const sourcePoll = pollOverride || liveSessionPoll;
+    if (!sourcePoll?.isActive) return;
+
+    const finishedPoll: LiveSessionPoll = {
+      ...sourcePoll,
+      isActive: false,
+      endsAt: null,
+    };
+
+    setLiveSessionPoll(finishedPoll);
+    await broadcastSessionPoll("finish", finishedPoll);
+    await logRegieAction("Sondage termine");
+  }, [broadcastSessionPoll, liveSessionPoll, logRegieAction]);
+
+  const handleSessionPollDraftOptionChange = useCallback((index: number, value: string) => {
+    setSessionPollDraft((prev) => {
+      const nextOptions = [...prev.options];
+      nextOptions[index] = value;
+      return { ...prev, options: nextOptions };
+    });
+  }, []);
+
+  const handleAddSessionPollDraftOption = useCallback(() => {
+    setSessionPollDraft((prev) => (
+      prev.options.length >= 4 ? prev : { ...prev, options: [...prev.options, ""] }
+    ));
+  }, []);
+
+  const handleRemoveSessionPollDraftOption = useCallback((index: number) => {
+    setSessionPollDraft((prev) => (
+      prev.options.length <= 2
+        ? prev
+        : { ...prev, options: prev.options.filter((_, optionIndex) => optionIndex !== index) }
+    ));
+  }, []);
+
+  const handleSelectSessionPollSuggestion = useCallback((index: number) => {
+    setSelectedSessionPollSuggestionIndex(index);
+    setSessionPollDraft((prev) => {
+      const suggestion = sessionPollAiSuggestions[index];
+      return suggestion ? { ...suggestion } : prev;
+    });
+  }, [sessionPollAiSuggestions]);
 
   const handleStartVideoVotePoll = async () => {
     if (!canManageVideoVotePoll) {
@@ -4028,6 +4932,14 @@ const handleToggleFavorite = async (videoId: string) => {
     pickWinningVideoId,
     playlist,
   ]);
+
+  useEffect(() => {
+    if (!liveSessionPoll?.isActive || !liveSessionPoll.endsAt) return;
+    if (sessionPollRemainingMs > 0) return;
+    if (!canManageSessionPoll) return;
+
+    void handleFinishSessionPoll(liveSessionPoll);
+  }, [canManageSessionPoll, handleFinishSessionPoll, liveSessionPoll, sessionPollRemainingMs]);
 
   const handleAddVideosBatch = async (items: Array<{ url: string; title: string }>) => {
     if (!canManagePlaylist) {
@@ -4658,16 +5570,18 @@ const handleToggleFavorite = async (videoId: string) => {
     <div className={`min-h-screen flex flex-col ${theme === 'dark' ? 'bg-black' : 'bg-white'}`}>
       <audio ref={remoteVoiceAudioRef} autoPlay playsInline className="hidden" />
       {/* Header Fixed - ne scroll pas */}
-      <header className={`sticky top-0 z-30 ${theme === 'dark' ? 'bg-black border-zinc-800' : 'bg-white border-gray-200'} border-b px-6 py-3 flex items-center justify-between`}>
-        <div className="flex items-center gap-6">
+      <header className={`sticky top-0 z-30 ${theme === 'dark' ? 'bg-black border-zinc-800' : 'bg-white border-gray-200'} border-b px-4 md:px-6 py-3 flex items-center justify-between gap-3 overflow-visible`}>
+        <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-nowrap">
           <Logo size="sm" theme={theme} showText={true} />
 
-          <div className="flex items-center gap-3">
-            <h1 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-base font-semibold`}>
+          <div className={`flex items-center gap-2 rounded-xl px-3 py-2 ${
+            theme === 'dark' ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-gray-50 border border-gray-200'
+          }`}>
+            <h1 className={`${theme === 'dark' ? 'text-white' : 'text-black'} text-base font-semibold max-w-[180px] truncate`}>
               {roomName}
             </h1>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-full px-2 py-1 bg-black/5 dark:bg-white/5">
               <Users className={`w-4 h-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
               <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} text-sm`}>
                 {participantCount}
@@ -4815,8 +5729,8 @@ const handleToggleFavorite = async (videoId: string) => {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "0.35rem",
-                  padding: "0.35rem 0.65rem",
+                  gap: "0",
+                  padding: "0.35rem",
                   borderRadius: "0.5rem",
                   border: voiceCommentaryEnabled
                     ? "1px solid #ef4444"
@@ -4838,7 +5752,6 @@ const handleToggleFavorite = async (videoId: string) => {
                 ) : (
                   <Mic style={{ width: 14, height: 14 }} />
                 )}
-                {voiceCommentaryEnabled ? "Voix ON" : "Voix"}
               </button>
             )}
 
@@ -4850,8 +5763,8 @@ const handleToggleFavorite = async (videoId: string) => {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "0.35rem",
-                  padding: "0.35rem 0.65rem",
+                  gap: "0",
+                  padding: "0.35rem",
                   borderRadius: "0.5rem",
                   border: showTTSPanel
                     ? "1px solid #8b5cf6"
@@ -4868,8 +5781,143 @@ const handleToggleFavorite = async (videoId: string) => {
                 }}
               >
                 <Volume2 style={{ width: 14, height: 14 }} />
-                TTS
               </button>
+            )}
+
+            {(isAdmin || effectiveRole === "regie") && (
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={handleDirectorMenuToggle}
+                  title="Menu Director"
+                  disabled={!currentVideo?.youtubeId}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0",
+                    padding: "0.35rem",
+                    borderRadius: "0.5rem",
+                    border: directorModeEnabled
+                      ? "1px solid #ef4444"
+                      : theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                    background: directorMenuOpen || directorModeEnabled
+                      ? "rgba(239,68,68,0.15)"
+                      : theme === "dark" ? "rgba(39,39,42,0.8)" : "rgba(255,255,255,0.8)",
+                    color: directorModeEnabled ? "#fca5a5" : theme === "dark" ? "#e4e4e7" : "#374151",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    cursor: !currentVideo?.youtubeId ? "not-allowed" : "pointer",
+                    opacity: !currentVideo?.youtubeId ? 0.55 : 1,
+                    backdropFilter: "blur(4px)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <Clapperboard style={{ width: 14, height: 14 }} />
+                </button>
+
+                {directorMenuOpen && currentVideo?.youtubeId && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      left: 0,
+                      minWidth: 240,
+                      padding: "0.65rem",
+                      borderRadius: "0.75rem",
+                      border: theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                      background: theme === "dark" ? "rgba(24,24,27,0.96)" : "rgba(255,255,255,0.96)",
+                      backdropFilter: "blur(10px)",
+                      boxShadow: "0 14px 40px rgba(0,0,0,0.28)",
+                      zIndex: 60,
+                      display: "grid",
+                      gap: "0.55rem",
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        void handleDirectorToggle();
+                      }}
+                      style={{
+                        padding: "0.5rem 0.65rem",
+                        borderRadius: "0.55rem",
+                        border: directorModeEnabled ? "1px solid #ef4444" : "1px solid transparent",
+                        background: directorModeEnabled ? "rgba(239,68,68,0.14)" : "transparent",
+                        color: theme === "dark" ? "#f4f4f5" : "#18181b",
+                        textAlign: "left",
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Mode Director : {directorModeEnabled ? "ON" : "OFF"}
+                    </button>
+
+                    <div style={{ display: "grid", gap: "0.35rem" }}>
+                      <div style={{ fontSize: "0.74rem", opacity: 0.78, color: theme === "dark" ? "#d4d4d8" : "#52525b" }}>
+                        Outil
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                        {DIRECTOR_TOOLS.map((item) => (
+                          <button
+                            key={item.value}
+                            onClick={() => setDirectorTool(item.value)}
+                            style={{
+                              padding: "0.38rem 0.55rem",
+                              borderRadius: "999px",
+                              border: directorTool === item.value ? "1px solid #ef4444" : theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                              background: directorTool === item.value ? "rgba(239,68,68,0.12)" : "transparent",
+                              color: theme === "dark" ? "#f4f4f5" : "#18181b",
+                              fontSize: "0.76rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gap: "0.35rem" }}>
+                      <div style={{ fontSize: "0.74rem", opacity: 0.78, color: theme === "dark" ? "#d4d4d8" : "#52525b" }}>
+                        Couleur
+                      </div>
+                      <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
+                        {DIRECTOR_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => setDirectorColor(color)}
+                            title={color}
+                            style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: "999px",
+                              border: directorColor === color ? "2px solid #f43f5e" : theme === "dark" ? "1px solid #52525b" : "1px solid #d4d4d8",
+                              background: color,
+                              boxShadow: color === "#ffffff" ? "inset 0 0 0 1px rgba(0,0,0,0.16)" : "none",
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        void handleDirectorClear();
+                      }}
+                      style={{
+                        padding: "0.5rem 0.65rem",
+                        borderRadius: "0.55rem",
+                        border: theme === "dark" ? "1px solid #3f3f46" : "1px solid #d4d4d8",
+                        background: theme === "dark" ? "rgba(39,39,42,0.8)" : "rgba(244,244,245,0.85)",
+                        color: theme === "dark" ? "#f4f4f5" : "#18181b",
+                        textAlign: "left",
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Effacer les annotations
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             {!canManageVoiceCommentary && voiceCommentaryEnabled && (
@@ -4880,7 +5928,9 @@ const handleToggleFavorite = async (videoId: string) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center justify-end gap-2 rounded-xl px-3 py-2 flex-nowrap ${
+          theme === 'dark' ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-gray-50 border border-gray-200'
+        }`}>
           {canManagePlaylist && (
             <Button
               type="button"
@@ -4890,10 +5940,10 @@ const handleToggleFavorite = async (videoId: string) => {
                 setShowVideoManagement(true);
               }}
               size="sm"
-              className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs"
+              title="Ajouter une video"
+              className="bg-red-600 hover:bg-red-700 text-white h-9 w-9 p-0"
             >
-              <Plus className="w-3 h-3 mr-1.5" />
-              Ajouter
+              <Plus className="w-4 h-4" />
             </Button>
           )}
 
@@ -4907,18 +5957,13 @@ const handleToggleFavorite = async (videoId: string) => {
             variant="ghost"
             size="sm"
             disabled={!canControlVideo}
-            className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} text-sm h-9`}
+            title={isPlaying ? "Pause" : "Lecture"}
+            className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} h-9 w-9 p-0`}
           >
             {isPlaying ? (
-              <>
-                <Pause className="w-4 h-4 mr-1.5" />
-                Pause
-              </>
+              <Pause className="w-4 h-4" />
             ) : (
-              <>
-                <Play className="w-4 h-4 mr-1.5" />
-                Lecture
-              </>
+              <Play className="w-4 h-4" />
             )}
           </Button>
 
@@ -4932,10 +5977,10 @@ const handleToggleFavorite = async (videoId: string) => {
             variant="ghost"
             size="sm"
             disabled={!canControlVideo}
-            className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} text-sm h-9`}
+            title="Synchroniser"
+            className={`${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'} h-9 w-9 p-0`}
           >
-            <RotateCcw className="w-4 h-4 mr-1.5" />
-            Sync
+            <RotateCcw className="w-4 h-4" />
           </Button>
 
           {/* Bouton Contenu du Salon — résumés IA de toutes les vidéos */}
@@ -4948,15 +5993,14 @@ const handleToggleFavorite = async (videoId: string) => {
             }}
             variant="ghost"
             size="sm"
-            className={`text-sm h-9 transition-all ${
+            className={`h-9 w-9 p-0 transition-all ${
               showContentPanel
                 ? "text-purple-400 bg-purple-600/15 hover:bg-purple-600/25"
                 : theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-zinc-800' : 'text-gray-600 hover:text-black hover:bg-gray-100'
             }`}
             title="Contenu du Salon — Résumés IA de toutes les vidéos"
           >
-            <LayoutList className="w-4 h-4 mr-1.5" />
-            <span className="hidden sm:inline">Contenu</span>
+            <LayoutList className="w-4 h-4" />
           </Button>
           {isInterludeVisible && (
             <Badge className="bg-amber-400 text-black hover:bg-amber-400">
@@ -4997,10 +6041,10 @@ const handleToggleFavorite = async (videoId: string) => {
             }}
             variant="ghost"
             size="sm"
-            className="text-red-400 hover:text-red-300 hover:bg-red-100/10 text-sm h-9"
+            title="Quitter"
+            className="text-red-400 hover:text-red-300 hover:bg-red-100/10 h-9 w-9 p-0"
           >
-            <LogOut className="w-4 h-4 mr-1.5" />
-            Quitter
+            <LogOut className="w-4 h-4" />
           </Button>
         </div>
       </header>
@@ -5021,20 +6065,43 @@ const handleToggleFavorite = async (videoId: string) => {
           {currentScene === "interlude" ? (
             <InterludeScreen roomName={roomName} theme={theme} />
           ) : currentVideo && currentVideo.youtubeId ? (
-            <div className="relative">
+            <div ref={directorCanvasHostRef} className="relative">
               <YouTubePlayer
                 videoId={currentVideo.youtubeId}
                 isPlaying={isPlaying}
                 onPlayPause={handlePlayPause}
                 canControl={canControlVideo}
+                showRegieSeekControls={isAdmin || effectiveRole === "regie"}
+                disableRegieSeekControls={!currentVideo?.youtubeId}
+                onSeekBackward={() => {
+                  void handleRegieSeek(-10);
+                }}
+                onSeekForward={() => {
+                  void handleRegieSeek(10);
+                }}
                 syncTime={currentTime}
                 syncNonce={syncNonce}
                 onTimeUpdate={handlePlayerTimeUpdate}
+                onDurationChange={setVideoDurationSeconds}
                 onPlaybackStateChange={handleAdminPlaybackStateChange}
                 onEnded={handleMainVideoEnded}
                 theme={theme}
               />
+              {/* Feature F â€” Overlay de sous-titres (YouTube captions + micro fallback) */}
               {/* Feature F — Overlay de sous-titres (YouTube captions + micro fallback) */}
+              <canvas
+                ref={directorCanvasRef}
+                className="absolute inset-0 z-20 h-full w-full"
+                style={{
+                  pointerEvents: canUseDirectorMode && directorModeEnabled ? "auto" : "none",
+                  touchAction: "none",
+                }}
+                onPointerDown={handleDirectorPointerDown}
+                onPointerMove={handleDirectorPointerMove}
+                onPointerUp={stopDirectorDrawing}
+                onPointerCancel={stopDirectorDrawing}
+                onPointerLeave={stopDirectorDrawing}
+              />
               <LiveTranscriptionOverlay
                 isActive={transcription.isActive}
                 captionLine={ytCaptions.currentCaption}
@@ -5429,36 +6496,47 @@ const handleToggleFavorite = async (videoId: string) => {
           <div className={`flex border-b ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-300'}`}>
             <button
               onClick={() => setActiveTab("chat")}
-              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "chat"
+              title="Chat"
+              className={`flex-1 min-w-0 px-2 py-3 transition-colors flex items-center justify-center ${activeTab === "chat"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
-              <MessageCircle className="w-4 h-4" />
-              <span className="truncate">Chat</span>
+              <MessageCircle className="w-5 h-5" />
             </button>
             <button
               onClick={() => setActiveTab("participants")}
-              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "participants"
+              title={`Participants (${participantCount})`}
+              className={`flex-1 min-w-0 px-2 py-3 transition-colors flex items-center justify-center relative ${activeTab === "participants"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
-              <Users className="w-4 h-4" />
-              <span className="truncate">Participants ({participantCount})</span>
+              <div className="relative">
+                <Users className="w-5 h-5" />
+                {participantCount > 0 && (
+                  <span className={`absolute -top-1.5 -right-2 text-[9px] font-bold px-1 rounded-full leading-tight ${activeTab === "participants" ? "bg-white text-red-600" : "bg-red-600 text-white"}`}>
+                    {participantCount}
+                  </span>
+                )}
+              </div>
             </button>
             <button
               onClick={() => setActiveTab("barometer")}
-              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "barometer"
+              title="Baromètre de compréhension"
+              className={`flex-1 min-w-0 px-2 py-3 transition-colors flex items-center justify-center relative ${activeTab === "barometer"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
-              <Gauge className="w-4 h-4" />
-              <span className="truncate">
-                Baro
-                {canControlVideo && lostComprehensionCount > 0 ? ` (${lostComprehensionCount})` : ""}
-              </span>
+              <div className="relative">
+                <Gauge className="w-5 h-5" />
+                {canControlVideo && lostComprehensionCount > 0 && (
+                  <span className={`absolute -top-1.5 -right-2 text-[9px] font-bold px-1 rounded-full leading-tight ${activeTab === "barometer" ? "bg-white text-red-600" : "bg-red-600 text-white"}`}>
+                    {lostComprehensionCount}
+                  </span>
+                )}
+              </div>
             </button>
             <button
               onClick={() => {
@@ -5468,13 +6546,13 @@ const handleToggleFavorite = async (videoId: string) => {
                 }
                 setActiveTab("polls");
               }}
-              className={`flex-1 min-w-0 px-3 py-3 text-xs transition-colors flex items-center justify-center gap-2 ${activeTab === "polls"
+              title="Sondages"
+              className={`flex-1 min-w-0 px-2 py-3 transition-colors flex items-center justify-center ${activeTab === "polls"
                 ? "bg-red-600 text-white"
                 : theme === 'dark' ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-black"
                 }`}
             >
-              <BarChart3 className="w-4 h-4" />
-              <span className="truncate">Sondages</span>
+              <BarChart3 className="w-5 h-5" />
             </button>
           </div>
 
@@ -5753,18 +6831,35 @@ const handleToggleFavorite = async (videoId: string) => {
                 </p>
                 <Button
                   size="sm"
-                  onClick={() => setShowVideoVote(true)}
-                  className="h-7 bg-red-600 hover:bg-red-700 text-white text-xs"
+                  onClick={() => setShowSessionPollPanel(true)}
+                  className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white"
                 >
                   Ouvrir le vote vidéo
                 </Button>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <PollSection
-                  salonId={backendSalonId}
-                  isAdmin={isAdmin}
-                  currentUser={currentUser.name}
-                />
+              <div className="mt-4">
+                {liveSessionPoll ? (
+                  <div className={`rounded-xl border px-4 py-3 ${
+                    theme === "dark" ? "border-fuchsia-500/30 bg-fuchsia-500/10" : "border-fuchsia-200 bg-fuchsia-50"
+                  }`}>
+                    <p className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-black"}`}>
+                      {liveSessionPoll.question}
+                    </p>
+                    <p className={`mt-1 text-xs ${theme === "dark" ? "text-zinc-300" : "text-gray-600"}`}>
+                      {liveSessionPoll.isActive
+                        ? `Sondage en cours • ${sessionPollRemainingSeconds}s restantes`
+                        : "Dernier sondage terminé"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className={`rounded-xl border border-dashed px-4 py-6 text-sm ${
+                    theme === "dark" ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"
+                  }`}>
+                    {canManageSessionPoll
+                      ? "Aucun sondage régie actif. Ouvre le panneau pour en créer un."
+                      : "Aucun sondage régie n'est actif pour le moment."}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -5777,8 +6872,6 @@ const handleToggleFavorite = async (videoId: string) => {
           )}
         </div>
         )}
-      </div>
-
       {/* Mobile Menu - popup au-dessus des boutons */}
       {showMenu && (
         <>
@@ -6021,7 +7114,7 @@ const handleToggleFavorite = async (videoId: string) => {
       {showContentPanel && (
         <RoomContentPanel
           playlist={playlist}
-          roomName={roomName}
+          roomName={roomName ?? ""}
           theme={theme}
           onClose={() => setShowContentPanel(false)}
         />
@@ -6067,23 +7160,57 @@ const handleToggleFavorite = async (videoId: string) => {
         />
       )}
 
-      {showVideoVote && (
-        <VideoVotePanel
-          videos={playlist.map(v => ({
-            id: v.id,
-            title: v.title,
-            thumbnail: v.thumbnail,
-            votes: v.votes || 0
-          }))}
-          poll={liveVideoVotePoll}
-          remainingSeconds={liveVoteRemainingSeconds}
-          canManagePoll={canManageVideoVotePoll}
-          canVote={canVoteVideoPoll}
+      {showSessionPollPanel && (
+        <SessionPollPanel
+          isOpen={showSessionPollPanel}
+          poll={liveSessionPoll}
+          canManagePoll={canManageSessionPoll}
+          canVote={canUsePolls}
           currentUserVoteKey={voteUserKey}
-          onStartPoll={handleStartVideoVotePoll}
-          onClose={() => setShowVideoVote(false)}
-          onVote={handleVoteVideo}
-          theme={theme}
+          draftQuestion={sessionPollDraft.question}
+          draftOptions={sessionPollDraft.options}
+          draftDurationSeconds={sessionPollDraft.durationSeconds}
+          aiSuggestions={sessionPollAiSuggestions}
+          selectedSuggestionIndex={selectedSessionPollSuggestionIndex}
+          isGeneratingPoll={isGeneratingSessionPoll}
+          onClose={() => setShowSessionPollPanel(false)}
+          onDraftQuestionChange={(value) => {
+            setSessionPollDraft((prev) => ({ ...prev, question: value, source: "manual" }));
+          }}
+          onDraftOptionChange={handleSessionPollDraftOptionChange}
+          onDraftDurationChange={(value) => {
+            setSessionPollDraft((prev) => ({ ...prev, durationSeconds: value }));
+          }}
+          onAddDraftOption={handleAddSessionPollDraftOption}
+          onRemoveDraftOption={handleRemoveSessionPollDraftOption}
+          onResetDraft={() => {
+            setSessionPollAiSuggestions([]);
+            setSelectedSessionPollSuggestionIndex(null);
+            setSessionPollGenerationCount(0);
+            setSessionPollDraft({
+              question: "",
+              options: ["", "", ""],
+              durationSeconds: 60,
+              source: "manual",
+            });
+          }}
+          onGenerateAiPoll={() => {
+            void handleGenerateSessionPoll();
+          }}
+          onRegenerateAiPoll={() => {
+            void handleRegenerateSessionPoll();
+          }}
+          onSelectSuggestion={handleSelectSessionPollSuggestion}
+          onLaunchPoll={() => {
+            void handleLaunchSessionPoll();
+          }}
+          onFinishPoll={() => {
+            void handleFinishSessionPoll();
+          }}
+          onVote={(optionId) => {
+            void handleVoteSessionPoll(optionId);
+          }}
+          remainingSeconds={sessionPollRemainingSeconds}
         />
       )}
 
@@ -6480,6 +7607,7 @@ const handleToggleFavorite = async (videoId: string) => {
           theme={theme}
         />
       )}
+      </div>
     </div>
   );
 }
