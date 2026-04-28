@@ -1,0 +1,63 @@
+ID;WBS;Phase;Sous-phase;Tâche détaillée;Responsable;Début;Fin;Durée(j);Dépendances;Livrable;Piste;Statut
+1;1.1;Cycle 1;Pilotage;Réunion de lancement et définition des objectifs S6;Groupe complet;2026-02-01;2026-02-01;1;;CR réunion de lancement;Pilotage;Fait
+2;1.2;Cycle 1;Pilotage;Répartition en sous-groupes et plan de travail;Groupe complet;2026-02-02;2026-02-02;1;1;Plan d’organisation;Pilotage;Fait
+3;1.3;Cycle 1;Analyse;Audit du MVP existant (front/back/realtime);Groupe complet;2026-02-03;2026-02-04;2;2;Diagnostic MVP;Analyse;Fait
+4;1.4;Cycle 1;Analyse;Identification des contraintes techniques et UX;Groupe complet;2026-02-05;2026-02-05;1;3;Liste contraintes;Analyse;Fait
+5;1.5;Cycle 1;Piste 1;Étude Mode Cours interactif (objectifs et scénario);Sous-groupe 1;2026-02-06;2026-02-07;2;4;Scénario piste 1;Piste 1;Fait
+6;1.6;Cycle 1;Piste 1;Analyse des risques piste 1 (stratégique/technique/fonctionnel);Sous-groupe 1;2026-02-08;2026-02-09;2;5;Matrice risques piste 1;Piste 1;Fait
+7;1.7;Cycle 1;Piste 2;Étude Régie Vidéo avancée (cas d’usage);Sous-groupe 2;2026-02-06;2026-02-07;2;4;Scénario piste régie;Piste Régie;Fait
+8;1.8;Cycle 1;Piste 2;Analyse des risques piste régie;Sous-groupe 2;2026-02-08;2026-02-09;2;7;Matrice risques régie;Piste Régie;Fait
+9;1.9;Cycle 1;Piste 3;Étude plateforme sécurisée (vision + cibles);Sous-groupe 3;2026-02-06;2026-02-07;2;4;Scénario piste 3;Piste 3;Fait
+10;1.10;Cycle 1;Piste 3;Analyse des risques piste 3;Sous-groupe 3;2026-02-08;2026-02-09;2;9;Matrice risques piste 3;Piste 3;Fait
+11;1.11;Cycle 1;Arbitrage;Comparaison globale des 3 pistes;Groupe complet;2026-02-10;2026-02-10;1;6,8,10;Tableau comparatif;Pilotage;Fait
+12;1.12;Cycle 1;Arbitrage;Décision finale: piste régie principale + piste secondaire partielle;Groupe complet;2026-02-11;2026-02-11;1;11;Décision validée;Pilotage;Fait
+13;1.13;Cycle 1;Documentation;Rédaction rapport cycle 1 (chapitres + figures);Groupe complet;2026-02-12;2026-02-15;4;12;Rapport-S6_cycle1 draft;Documentation;Fait
+14;1.14;Cycle 1;Documentation;Relecture, corrections et dépôt rapport cycle 1;Groupe complet;2026-02-16;2026-02-16;1;13;Rapport-S6_cycle1 final;Documentation;Fait
+15;2.1;Cycle 2;Spécification;Définition architecture prototype cycle 2;Groupe complet;2026-02-17;2026-02-18;2;14;Architecture v2;Pilotage;Fait
+16;2.2;Cycle 2;Spécification;Spécification flux realtime vidéo;Dev Realtime;2026-02-19;2026-02-19;1;15;Spécif sync;Piste Régie;Fait
+17;2.3;Cycle 2;Dév Régie;Implémentation contrôle régie de base (play/pause);Dev Front;2026-02-20;2026-02-21;2;16;Contrôle régie v1;Piste Régie;Fait
+18;2.4;Cycle 2;Dév Régie;Implémentation seek/changement vidéo;Dev Front;2026-02-22;2026-02-23;2;17;Navigation vidéo v1;Piste Régie;Fait
+19;2.5;Cycle 2;Dév Realtime;Broadcast état vidéo (temps/statut/videoId);Dev Realtime;2026-02-22;2026-02-24;3;16;Canal sync opérationnel;Piste Régie;Fait
+20;2.6;Cycle 2;Dév Realtime;Recalage clients spectateurs + corrections drift;Dev Realtime;2026-02-25;2026-02-27;3;19;Sync stable v1;Piste Régie;Fait
+21;2.7;Cycle 2;Dév Playlist;CRUD playlist (ajout/suppression/changement courant);Dev Front+API;2026-02-24;2026-02-28;5;18;Playlist v1;Piste Régie;Fait
+22;2.8;Cycle 2;Dév Auth;Intégration auth Supabase (login/register/session);Dev Auth;2026-02-25;2026-02-28;4;15;Auth v1;Piste secondaire;Fait
+23;2.9;Cycle 2;Dév Auth;Gestion rôles initiaux (admin/régie/membre);Dev Auth+API;2026-03-01;2026-03-02;2;22;Rôles v1;Piste secondaire;Fait
+24;2.10;Cycle 2;Dév Permissions;Permissions de base chat/vidéo;Dev Front+API;2026-03-01;2026-03-04;4;20,23;Permissions v1;Piste secondaire;Fait
+25;2.11;Cycle 2;UI/UX;Refonte partielle interface régie;Dev UI;2026-03-03;2026-03-06;4;21;UI régie v2;Piste Régie;Fait
+26;2.12;Cycle 2;QA;Tests techniques du prototype;Groupe complet;2026-03-07;2026-03-10;4;20,21,24,25;Rapport tests v1;QA;Fait
+27;2.13;Cycle 2;QA;Corrections issues critiques prototype;Groupe complet;2026-03-11;2026-03-13;3;26;Prototype stabilisé;QA;Fait
+28;2.14;Cycle 2;Documentation;Rédaction rapport cycle 2;Groupe complet;2026-03-14;2026-03-17;4;27;Rapport-S6_cycle2 draft;Documentation;Fait
+29;2.15;Cycle 2;Documentation;Finalisation et dépôt rapport cycle 2;Groupe complet;2026-03-18;2026-03-18;1;28;Rapport-S6_cycle2 final;Documentation;Fait
+30;3.1;Cycle 3;Régie Avancée;Vote vidéo realtime (création, timer, votes invités);Dev Régie;2026-03-19;2026-03-22;4;29;Vote vidéo v1;Piste Régie;Fait
+31;3.2;Cycle 3;Régie Avancée;Sélection auto de la vidéo gagnante;Dev Régie;2026-03-23;2026-03-24;2;30;Vote vidéo final;Piste Régie;Fait
+32;3.3;Cycle 3;Régie Avancée;Transitions vidéo (cut/fade/slide/flash);Dev Front;2026-03-21;2026-03-25;5;29;Transitions live;Piste Régie;Fait
+33;3.4;Cycle 3;Régie Avancée;Countdown partagé 3-2-1-GO;Dev Front;2026-03-23;2026-03-25;3;29;Countdown final;Piste Régie;Fait
+34;3.5;Cycle 3;Régie Avancée;Annonce régie live (overlay / commande admin-régie);Dev Régie;2026-03-24;2026-03-27;4;29;Annonce live;Piste Régie;Fait
+35;3.6;Cycle 3;Régie Avancée;Historique des actions régie;Dev Régie+API;2026-03-25;2026-03-30;6;29;Historique régie;Piste Régie;Fait
+36;3.7;Cycle 3;Régie Avancée;Prévisualisation privée avant diffusion;Dev Régie;2026-03-26;2026-03-31;6;29;Preview régie;Piste Régie;Fait
+37;3.8;Cycle 3;Régie Avancée;Marque-pages vidéo (repères temporels);Dev Régie+API;2026-03-27;2026-04-01;6;29;Bookmarks vidéo;Piste Régie;Fait
+38;3.9;Cycle 3;Régie Avancée;Contrôle rapide -10s/+10s synchronisé;Dev Régie;2026-03-30;2026-04-02;4;29;Jump control;Piste Régie;Fait
+39;3.10;Cycle 3;Régie Avancée;Voix live régie (WebRTC);Dev Realtime;2026-03-28;2026-04-03;7;29;Voix live v1;Piste Régie;Fait
+40;3.11;Cycle 3;Régie Avancée;Stabilisation WebRTC (SDP/ICE/reco);Dev Realtime;2026-04-04;2026-04-06;3;39;Voix live stable;Piste Régie;Fait
+41;3.12;Cycle 3;Régie Avancée;Mode Director (annotations live);Dev Front+Realtime;2026-04-01;2026-04-07;7;29;Director mode;Piste Régie;Fait
+42;3.13;Cycle 3;Régie Avancée;Zoom intelligent partagé;Dev Front+Realtime;2026-04-03;2026-04-08;6;29;Zoom partagé;Piste Régie;Fait
+43;3.14;Cycle 3;Régie Avancée;Sondage intelligent (manuel + IA);Dev IA+Front;2026-04-04;2026-04-10;7;30;Sondage intelligent;Piste Régie;Fait
+44;3.15;Cycle 3;IA;Panneau preview IA vidéo;Dev IA+Front;2026-04-05;2026-04-08;4;29;Aperçu IA;Piste Régie;Fait
+45;3.16;Cycle 3;IA;Questions de discussion IA;Dev IA+Front;2026-04-09;2026-04-11;3;44;Questions IA;Piste Régie;Fait
+46;3.17;Cycle 3;IA;Panneau contenu du salon;Dev IA+Front;2026-04-09;2026-04-12;4;44;Contenu salon IA;Piste Régie;Fait
+47;3.18;Cycle 3;Piste secondaire;Permissions granulaires finales (chat/video/playlist/polls/pin/mute);Dev Front+API;2026-04-10;2026-04-15;6;24,35;Permissions v2;Piste secondaire;Fait
+48;3.19;Cycle 3;Piste secondaire;Stabilisation des droits et propagation en temps réel;Dev Front+API;2026-04-16;2026-04-18;3;47;Permissions stables;Piste secondaire;Fait
+49;3.20;Cycle 3;Fiabilité;Gestion erreurs réseau (Load failed) et bruit console;Dev Realtime;2026-04-12;2026-04-16;5;39,47;Robustesse réseau;Stabilisation;Fait
+50;3.21;Cycle 3;Fiabilité;Gestion erreurs messages 400/polling fallback;Dev Realtime;2026-04-14;2026-04-18;5;49;Fallback messages;Stabilisation;Fait
+51;3.22;Cycle 3;Fiabilité;Résolution conflits intégration Git et réintégration features;Groupe complet;2026-04-19;2026-04-21;3;48,50;Branche stable;Stabilisation;Fait
+52;3.23;Cycle 3;QA;Tests intégration bout-en-bout;Groupe complet;2026-04-22;2026-04-25;4;51;PV tests E2E;QA;En cours
+53;3.24;Cycle 3;QA;Correction non-régressions finales;Groupe complet;2026-04-26;2026-04-28;3;52;Build stable;QA;En cours
+54;3.25;Cycle 3;Documentation;Mise à jour README + docs techniques + SQL;Groupe complet;2026-04-24;2026-04-30;7;53;Documentation finale;Documentation;En cours
+55;3.26;Cycle 3;Rendu;Préparation soutenance (slides + démo + script);Groupe complet;2026-04-26;2026-04-28;3;54;Pack soutenance;Rendu;En cours
+56;3.27;Cycle 3;Rendu;Répétition générale + validation scénario;Groupe complet;2026-04-29;2026-04-29;1;55;Demo validée;Rendu;À faire
+57;3.28;Cycle 3;Rendu;Rendu final S6 + bilan équipe;Groupe complet;2026-04-30;2026-04-30;1;56;Livraison finale;Rendu;À faire
+58;3.29;Cycle 3;Régie Avancée;Verrouillage de session (lock room + chat off + mode focus);Dev Régie+Front;2026-03-24;2026-03-28;5;29;SessionLockPanel opérationnel;Piste Régie;Fait
+59;3.30;Cycle 3;Régie Avancée;Question après vidéo (préparation régie + affichage auto fin lecture);Dev Régie+Front;2026-04-09;2026-04-12;4;44,45;Question post-vidéo automatique;Piste Régie;Fait
+60;3.31;Cycle 3;Régie Avancée;Lever la main / demandes de parole (gestion file d’attente régie);Dev Front+Realtime;2026-04-12;2026-04-16;5;35;Demandes de parole visibles;Piste Régie;Partiel
+61;3.32;Cycle 3;Régie Avancée;Prise de parole audio complète liée aux demandes;Dev Realtime;2026-04-16;2026-04-18;3;60;Intervention audio participant;Piste Régie;À faire
+62;3.33;Cycle 3;Régie Avancée;Programme régie (enchaînement annonce -> countdown -> lecture);Dev Régie+Front;2026-04-18;2026-04-23;6;34,33;Orchestration de séance;Piste Régie;En cours

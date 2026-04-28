@@ -1,0 +1,391 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage[table]{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{lastpage}
+\usepackage[hidelinks]{hyperref}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{placeins}
+
+\geometry{margin=2.5cm}
+\definecolor{orangeil}{RGB}{230,120,20}
+\definecolor{tablehead}{RGB}{245, 226, 204}
+\definecolor{tablerow}{RGB}{252, 246, 239}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\renewcommand{\arraystretch}{1.3}
+
+% Header / Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\textcolor{orangeil}{Recul Méthodologique -- Projet IL S6}}
+\fancyfoot[C]{\thepage\ /\ \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyhead[C]{\textcolor{orangeil}{Recul Méthodologique -- Projet IL S6}}
+  \fancyfoot[C]{\thepage\ /\ \pageref{LastPage}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+\setlength{\headheight}{15pt}
+
+% Titres
+\titleformat{\chapter}[block]{\Huge\bfseries\color{orangeil}}{\thechapter.}{10pt}{}
+\titleformat{\section}{\Large\bfseries\color{orangeil}}{\thesection}{8pt}{}
+\titleformat{\subsection}{\large\bfseries\color{orangeil}}{\thesubsection}{6pt}{}
+\titlespacing*{\chapter}{0pt}{0pt}{18pt}
+\titlespacing*{\section}{0pt}{10pt}{8pt}
+\titlespacing*{\subsection}{0pt}{8pt}{6pt}
+
+% Sommaire
+\renewcommand{\contentsname}{\textcolor{orangeil}{Sommaire}}
+\renewcommand{\cftchapfont}{\color{orangeil}\bfseries}
+\renewcommand{\cftchappagefont}{\color{orangeil}\bfseries}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftsecfont}{\color{orangeil}}
+\renewcommand{\cftsecpagefont}{\color{orangeil}}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforechapskip}{8pt}
+\setlength{\cftbeforesecskip}{4pt}
+
+\begin{document}
+
+% Page de garde
+\begin{titlepage}
+\begin{center}
+\vspace*{1cm}
+\includegraphics[width=5cm]{logo-avignon.jpg}
+
+\vspace{1.5cm}
+
+{\Huge \bfseries Prise de recul méthodologique \par}
+\vspace{0.3cm}
+{\Large Projet IL 2025--2026 \par}
+\vspace{0.8cm}
+
+{\LARGE \textbf{Plateforme collaborative de visionnage vidéo} \par}
+\vspace{0.3cm}
+{\LARGE \textbf{WithYou -- Cascade / MVP (S5) vs Spirale (S6)} \par}
+
+\vspace{1.5cm}
+
+{\large Université d'Avignon \par}
+{\large \today \par}
+
+\vspace{2cm}
+
+\begin{tabular}{p{6cm} p{6cm}}
+\textbf{Prestataires :} & \textbf{Clients :} \\
+Takdjerad Meriem & KESSLER Rémy \\
+Ghabi Malek & BONNEFOY Ludovic \\
+Taleb Wissame & \\
+Taleb Lamia & \\
+Laftimi Yanis & \\
+\end{tabular}
+
+\vfill
+{\small UFR Sciences, Technologies, Santé --- CERI}
+\end{center}
+\end{titlepage}
+
+\setcounter{page}{1}
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\chapter{Introduction}
+
+Ce document constitue une prise de recul sur les deux semestres du projet \textit{WithYou}, une plateforme collaborative de visionnage vidéo développée par une équipe de cinq étudiants (Meriem Takdjerad, Malek Ghabi, Wissame Taleb, Lamia Taleb, Yanis Laftimi) pour les clients Rémy KESSLER et Ludovic BONNEFOY.
+
+Le projet s'est déroulé en deux phases distinctes : un semestre S5 (septembre 2025 -- janvier 2026) conduit selon une approche cascade adaptée visant la livraison d'un MVP, puis un semestre S6 (janvier -- avril 2026) structuré autour de la méthode en spirale en trois cycles.
+
+L'objectif de ce document n'est pas de porter un jugement de valeur sur l'une ou l'autre approche, mais d'analyser concrètement ce que chacune a apporté, ses limites, et ce que le passage de l'une à l'autre a changé dans notre façon de travailler, de décider et de produire.
+
+\section*{Pourquoi ce document ?}
+
+Le professeur nous a demandé de produire, en complément du rapport de cycle 3, un document de recul méthodologique comparant les deux approches suivies. Cette demande est pertinente car les deux semestres ne sont pas indépendants : le S6 n'aurait pas pu fonctionner sans ce que le S5 avait construit, et l'approche choisie à chaque semestre n'était pas arbitraire. Ce document cherche donc à répondre à deux questions essentielles :
+
+\begin{itemize}
+    \item \textbf{Pourquoi la cascade en S5 et la spirale en S6 ?} Quels éléments de contexte ont justifié ces choix ?
+    \item \textbf{Qu'est-ce que chaque méthode a réellement produit ?} En termes de qualité du code, de cohérence d'équipe, de robustesse du produit et de confort de travail.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\chapter{S5 -- Méthodologie cascade orientée MVP}
+
+\section{Pourquoi la cascade en S5 ?}
+
+Le choix d'une approche en cascade pour le S5 n'était pas accidentel. Plusieurs raisons concrètes le justifiaient à ce stade du projet.
+
+\textbf{L'équipe partait de zéro sur un domaine inconnu.} Aucun membre n'avait d'expérience préalable avec la synchronisation vidéo multi-clients, les WebSockets en production, ou la combinaison React + Laravel + Supabase. Avant de pouvoir identifier des risques, il fallait d'abord comprendre le domaine. La cascade impose une phase d'analyse longue et structurée (cahier des charges, diagrammes UML, maquettes Figma) qui a permis à l'équipe de se mettre au même niveau de compréhension avant de coder.
+
+\textbf{L'objectif était de prouver qu'une idée était réalisable.} Le projet \textit{WithYou} devait, à la fin du S5, exister en tant que produit fonctionnel. Pas nécessairement parfait, mais démontrable. La cascade, avec ses phases séquentielles claires et son horizon de livraison fixé dès le début (soutenance en semaine 16), convient bien à cet objectif. Elle force à livrer, là où des méthodes plus itératives peuvent conduire à reporter indéfiniment des fonctionnalités.
+
+\textbf{Les contraintes académiques favorisaient une structure linéaire.} Avec un cahier des charges imposé par le module, des jalons fixes (rendu du CDC, soutenance) et une durée de 16 semaines non négociable, le cadre ressemblait naturellement à celui d'un projet en cascade. S'en éloigner trop fortement aurait créé une dissonance entre la méthode et le cadre d'évaluation.
+
+\textbf{La cascade convenait à la taille et à la complexité initiale du projet.} En S5, le périmètre fonctionnel était relativement bien borné dès le départ : authentification, salons, lecteur synchronisé, chat, playlist. Il n'y avait pas encore de fonctionnalités à fort risque d'orientation. On ne cherchait pas encore à choisir entre plusieurs visions produit --- on cherchait à construire la première version d'une vision déjà définie.
+
+\section{Principes et organisation}
+
+Le S5 a suivi un modèle en cascade adapté aux contraintes académiques, structuré en cinq phases séquentielles sur 16 semaines :
+
+\begin{enumerate}
+    \item \textbf{Analyse et cadrage} (semaines 1--4) : rédaction du cahier des charges, définition du périmètre fonctionnel, élaboration du diagramme de Gantt.
+    \item \textbf{Conception et architecture} (semaines 5--7) : choix technologiques, diagrammes UML (cas d'usage, classes), schéma de base de données, maquettes Figma.
+    \item \textbf{Mise en place technique} (semaine 8) : initialisation du dépôt GitHub, création des projets Laravel et React, scripts de migration.
+    \item \textbf{Développement MVP} (semaines 9--12) : développement front-end et back-end en parallèle, intégration progressive.
+    \item \textbf{Tests, corrections et soutenance} (semaines 13--16) : tests manuels, correction de bugs, documentation et présentation finale.
+\end{enumerate}
+
+La coordination reposait sur Jira pour la gestion des sprints, Notion pour la documentation partagée, GitHub pour le versionnement, et Discord/WhatsApp pour les échanges quotidiens.
+
+\section{Stack technique retenu et justification des choix}
+
+Les choix techniques du S5 ont été effectués lors de la phase de conception, après une analyse comparative des alternatives disponibles. Chaque décision répondait à un besoin identifié et à des contraintes de faisabilité réelles.
+
+\begin{itemize}
+    \item \textbf{React.js + TypeScript + Tailwind CSS + Vite (Frontend).}
+    React a été retenu pour sa gestion d'état par composants, idéale pour une interface dynamique avec de nombreux éléments interactifs (lecteur vidéo, chat, playlist, panneau participants). TypeScript a été ajouté dès le départ pour réduire les erreurs de contrat entre front-end et back-end --- un choix qui s'est avéré déterminant lors des intégrations. Tailwind CSS a permis un développement UI rapide sans écrire de feuilles de style personnalisées volumineuses. Vite a remplacé Create React App pour sa rapidité de compilation, particulièrement sensible lors du développement en équipe.
+
+    \item \textbf{Laravel (PHP) + Eloquent ORM (Backend).}
+    Laravel a été choisi pour sa structure MVC claire, son système de routage expressif et ses outils d'authentification intégrés. L'Eloquent ORM a réduit la quantité de SQL manuel à écrire, ce qui était important pour une équipe dont certains membres avaient peu d'expérience back-end. Laravel propose également Laravel Reverb pour les WebSockets, ce qui permettait de garder l'ensemble du back-end dans un seul écosystème cohérent.
+
+    \item \textbf{PostgreSQL via Supabase (Base de données).}
+    Le cahier des charges initial mentionnait MySQL, mais l'équipe a migré vers PostgreSQL via Supabase en cours de développement. Cette décision a été prise pour trois raisons : PostgreSQL gère mieux les UUID (utilisés comme clés primaires), Supabase ajoute une couche d'authentification prête à l'emploi, et la plateforme propose un module Realtime natif qui s'est révélé central en S6. Ce changement en cours de développement est typique d'une approche cascade où les décisions d'architecture ne sont pas toujours définitives --- c'est l'un de ses points faibles.
+
+    \item \textbf{Laravel Reverb puis Supabase Realtime (Temps réel).}
+    La synchronisation multi-clients était la brique la plus risquée techniquement. Laravel Reverb (WebSockets natif Laravel) a été utilisé en premier, mais sa configuration a posé des problèmes persistants (protocole Pusher, CORS, gestion des canaux). En S6, la migration vers Supabase Realtime (broadcast) a simplifié l'architecture temps réel en la séparant du back-end Laravel, réduisant ainsi les points de défaillance.
+
+    \item \textbf{YouTube IFrame API (Lecteur vidéo).}
+    Héberger des vidéos en propre aurait exigé une infrastructure de stockage, un encodage et une gestion des droits incompatibles avec les délais du projet. L'IFrame API de YouTube offre un lecteur complet, contrôlable par JavaScript, avec une documentation officielle solide. Le principal inconvénient --- la dépendance à une API externe --- a été accepté comme un risque secondaire.
+
+    \item \textbf{JWT (Authentification).}
+    JSON Web Tokens ont été choisis pour leur caractère sans état (stateless) : le back-end n'a pas à maintenir de sessions serveur, ce qui simplifie la scalabilité. JWT s'intègre naturellement dans une API REST et permet une validation côté front-end sans appel réseau supplémentaire.
+\end{itemize}
+
+\section{Périmètre fonctionnel livré}
+
+Le cahier des charges définissait trois niveaux de priorité (VIT, IMP, MIN). En fin de S5, les fonctionnalités \textbf{vitales} suivantes étaient opérationnelles :
+
+\rowcolors{2}{tablerow}{white}
+\begin{longtable}{L{0.55\textwidth} C{0.20\textwidth}}
+\toprule
+\rowcolor{tablehead}
+\textbf{Fonctionnalité} & \textbf{Statut S5} \\
+\midrule
+Inscription et vérification email & Fait \\
+Connexion sécurisée (JWT) & Fait \\
+Création de salon (public / privé + code) & Fait \\
+Accès via code d'invitation & Fait \\
+Lecture vidéo YouTube synchronisée & Fait (partiel) \\
+Chat en temps réel & Fait \\
+Gestion de playlist (ajout / suppression / sélection) & Fait \\
+Permissions d'administration du salon & Fait \\
+Système de vote / sondage & Fait \\
+Notation des vidéos (5 étoiles) & Fait \\
+Historique de visionnage & Fait \\
+\bottomrule
+\end{longtable}
+
+\section{Problèmes rencontrés et solutions apportées}
+
+La conduite en cascade a permis de livrer le MVP, mais plusieurs problèmes majeurs ont été identifiés en cours de développement, sans cadre formel pour les anticiper :
+
+\rowcolors{2}{tablerow}{white}
+\begin{longtable}{L{0.38\textwidth} L{0.55\textwidth}}
+\toprule
+\rowcolor{tablehead}
+\textbf{Problème} & \textbf{Solution appliquée} \\
+\midrule
+Connectivité WebSocket (Reverb) & Configuration manuelle du protocole Pusher, débogage réseau \\
+Désynchronisation vidéo entre clients & Signaux de recalibration périodiques, snapshots d'état \\
+Blocage CORS (port 5173 / 8000) & Configuration explicite du middleware \texttt{cors.php} \\
+Échecs d'envoi d'emails & Configuration SMTP via Mailtrap, alternative Supabase Auth \\
+Incompatibilités UUID / timestamps PostgreSQL & Typage strict des colonnes, désactivation des auto-timestamps \\
+Désaccords de contrat de données front/back & Interfaces TypeScript, documentation des API \\
+Conflits Git répétés & Branches par fonctionnalité, revues de PR, rebase \\
+\bottomrule
+\end{longtable}
+
+\section{Bilan du S5}
+
+Le S5 a rempli son objectif premier : livrer un MVP fonctionnel. L'équipe avait à la fin du semestre une architecture validée (React + Laravel + Supabase), une connaissance réelle des technologies utilisées, et une base déployable. En revanche, plusieurs points restaient ouverts : la synchronisation temps réel n'était que partiellement stabilisée, la couverture de tests était faible (tests manuels uniquement), et certains modules (playlist, permissions avancées) présentaient des cas limites non traités.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\chapter{S6 -- Méthode en spirale}
+
+\section{Pourquoi la spirale en S6 ?}
+
+Le passage à la méthode en spirale en S6 n'était pas simplement une consigne pédagogique à appliquer. Il correspondait à un changement réel de la nature du projet, qui rendait la cascade inadaptée.
+
+\textbf{Le projet était entré dans une phase à risques multiples et mal définis.} À la fin du S5, le MVP existait, mais son évolution possible n'était pas évidente. Trois directions radicalement différentes étaient envisageables (cours interactif, régie vidéo avancée, plateforme sécurisée), chacune avec des implications techniques et fonctionnelles très différentes. Choisir sans analyse aurait risqué d'engager l'équipe pendant plusieurs semaines dans la mauvaise direction. La spirale, par sa phase d'exploration initiale obligatoire, force à traiter ce risque d'orientation avant de coder.
+
+\textbf{Les risques techniques étaient maintenant connus et spécifiques.} Grâce au S5, l'équipe savait exactement quels problèmes restaient ouverts : synchronisation temps réel instable, permissions sans propagation live, absence de traçabilité des actions régie. Ces risques précis appelaient une méthode qui permettait de les adresser un par un, par ordre de priorité, plutôt que de tout implémenter en parallèle comme en cascade.
+
+\textbf{La complexité fonctionnelle avait fortement augmenté.} Ajouter du vote temps réel, du WebRTC, de l'IA de contenu et des permissions granulaires sur une base existante impliquait des risques de régression importants. La spirale, avec ses cycles courts et ses points de décision explicites, permettait de valider chaque brique avant d'en construire la suivante --- là où la cascade aurait accumulé les fonctionnalités jusqu'à la soutenance sans filet de sécurité intermédiaire.
+
+\textbf{L'équipe était mûre pour une méthode plus exigeante.} En S5, tout était nouveau : les technologies, les outils, la coordination. En S6, l'équipe connaissait le code, l'architecture et les limites du système. Elle était en mesure d'identifier des risques de manière informée et de conduire des expérimentations ciblées. La spirale requiert cette maturité pour fonctionner.
+
+\section{Principes de la méthode et adaptation au projet}
+
+La méthode en spirale organise le développement en cycles successifs, chacun guidé par la réduction des risques plutôt que par la simple accumulation de fonctionnalités. Chaque cycle suit quatre phases :
+
+\begin{enumerate}
+    \item \textbf{Définition des objectifs} du cycle et délimitation du périmètre ;
+    \item \textbf{Identification et priorisation des risques} (techniques, fonctionnels, UX, organisationnels) ;
+    \item \textbf{Expérimentation et implémentation} ciblées pour lever les risques prioritaires ;
+    \item \textbf{Analyse et décision} : valider, ajuster ou reporter.
+\end{enumerate}
+
+\section{Les trois cycles du S6}
+
+\subsection{Cycle 1 -- Exploration stratégique}
+
+L'objectif du cycle 1 était d'éviter un \textbf{risque d'orientation} : investir des semaines de développement dans une direction inadaptée. Trois pistes ont été étudiées et comparées via une matrice de risques :
+
+\begin{itemize}
+    \item \textbf{Piste 1 -- Mode Cours interactif :} forte valeur pédagogique (quiz, évaluation en direct, tableau blanc), mais complexité fonctionnelle très élevée et périmètre difficilement bornable en un semestre.
+    \item \textbf{Piste 2 -- Régie Vidéo avancée :} centrée sur le pilotage de séance en temps réel (annonces, votes, synchronisation, supervision). Meilleur équilibre entre valeur d'usage, faisabilité progressive et potentiel d'enrichissement collaboratif.
+    \item \textbf{Piste 3 -- Plateforme de formation sécurisée :} orientée gestion d'accès et cadrage académique (droits fins, audit, authentification institutionnelle). Pertinente mais moins différenciante que la piste 2.
+\end{itemize}
+
+\textbf{Pourquoi la piste Régie Vidéo ?} Trois arguments ont emporté la décision :
+\begin{enumerate}
+    \item Elle s'appuyait directement sur ce que le MVP S5 avait déjà construit (synchronisation, permissions de base, rôles), réduisant ainsi le risque technique de départ.
+    \item Elle permettait un enrichissement progressif et incrémental : chaque fonctionnalité de régie (vote, countdown, annonces, baromètre) est indépendante et peut être validée séparément --- ce qui est compatible avec une logique en spirale.
+    \item Elle correspondait le mieux au contexte d'usage cible (séances pédagogiques animées, diffusion encadrée), validé par les clients KESSLER et BONNEFOY.
+\end{enumerate}
+
+La dimension sécurité a été conservée comme axe secondaire intégré (permissions individuelles, verrouillage de session). Ce cycle n'a produit aucune ligne de code fonctionnelle --- mais il a garanti que tout ce qui serait produit ensuite allait dans la bonne direction.
+
+\subsection{Cycle 2 -- Prototype et validation technique}
+
+Le risque majeur du cycle 2 était la \textbf{fiabilité de la synchronisation temps réel} en conditions multi-clients réelles. Le S5 avait montré que cette brique était faisable, mais pas encore stabilisée. Avant d'ajouter des fonctionnalités avancées de régie (vote, countdown, transitions), il fallait s'assurer que la base était solide.
+
+L'expérimentation du cycle 2 a donc porté exclusivement sur les briques critiques, sans s'étendre aux fonctionnalités secondaires :
+
+\begin{itemize}
+    \item \textbf{Régie v1} : lecture, pause, navigation temporelle, changement de vidéo, playlist --- briques sans lesquelles aucune fonctionnalité avancée n'a de sens.
+    \item \textbf{Supabase Realtime (broadcast)} : remplacement de Laravel Reverb, jugé trop coûteux en configuration pour les gains obtenus. Supabase Realtime simplifie l'architecture en intégrant diffusion d'événements et base de données dans un même service.
+    \item \textbf{Système de rôles} : professeur, régie, étudiant. Ce modèle a servi de fondation à toutes les permissions granulaires du cycle 3.
+\end{itemize}
+
+Les tests multi-clients réalisés à la fin du cycle 2 ont confirmé la faisabilité globale, avec des décalages résiduels documentés et un plan de correction pour le cycle 3.
+
+\subsection{Cycle 3 -- Finalisation et stabilisation}
+
+Le cycle 3 a transformé le prototype en version finale exploitable. Les contributions ont été réparties en fonction des \textbf{risques résiduels identifiés en sortie du cycle 2}, et non plus selon une logique de domaine ou de préférence personnelle :
+
+\begin{itemize}
+    \item \textbf{Lamia Taleb (risque pédagogique)} : absence de transition structurée entre visionnage et échange collectif → question post-vidéo, demandes de parole (lever la main), programme régie.
+    \item \textbf{Meriem Takdjerad (risque de contrôle fin et d'engagement)} : pilotage temporel insuffisant, guidage visuel limité, interaction faible → navigation rapide \texttt{-10s/+10s}, mode Director (annotations live), sondage interactif assisté par IA.
+    \item \textbf{Wissame Taleb (risque de traçabilité et de contrôle de séance)} : perte de repères, dérive du cadre, manque de communication prioritaire → marque-pages vidéo, verrouillage de session, baromètre de compréhension, historique régie, annonces prioritaires.
+    \item \textbf{Malek Ghabi (risques de désynchronisation, stabilité realtime et cohérence UX)} : désynchronisation multi-clients, erreurs réseau, incohérence d'états → vote vidéo temps réel, compte à rebours partagé, transitions vidéo, voix live WebRTC, annonces TTS, permissions individuelles en temps réel, synchronisation et reprise automatique, modes d'affichage (Cinema / Split / Party / Interlude), fonctions IA de contenu.
+    \item \textbf{Yanis Laftimi (risque de supervision et de traçabilité post-session)} : absence d'indicateurs d'engagement, manque de compte-rendu exportable → détection d'inactivité (actif / inactif / AFK avec debounce 30s), export PDF automatisé de la session via \texttt{jsPDF} et \texttt{html2canvas}.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\chapter{Comparaison des deux approches}
+
+\section{Tableau synthétique}
+
+\rowcolors{2}{tablerow}{white}
+\begin{longtable}{L{0.24\textwidth} L{0.35\textwidth} L{0.35\textwidth}}
+\toprule
+\rowcolor{tablehead}
+\textbf{Critère} & \textbf{Cascade / MVP (S5)} & \textbf{Spirale (S6)} \\
+\midrule
+Vitesse de démarrage & Très rapide : on code dès la fin de l'analyse & Plus lente : analyse des risques d'abord \\
+Gestion des risques & Implicite, découverte en développement & Explicite, centrale à chaque cycle \\
+Clarté des objectifs & Un objectif global (MVP) & Objectifs définis et révisés cycle par cycle \\
+Qualité des décisions & À la volée, sous contrainte de temps & Argumentées, appuyées sur une analyse \\
+Adaptabilité & Forte en début, faible quand les briques s'accumulent & Maintenue tout au long grâce aux points de décision \\
+Documentation & Minimale, produite en fin de projet & Progressive, intégrée à chaque cycle \\
+Coordination d'équipe & Parallélisation libre, risque de divergence & Répartition par risques, cohérence d'ensemble \\
+Résultat livré & Socle fonctionnel (MVP) & Produit finalisé, stabilisé, documenté \\
+Tests & Manuels, tardifs & Continus, multi-clients, par scénarios \\
+\bottomrule
+\end{longtable}
+
+\section{Ce que la spirale a changé concrètement}
+
+\subsection{Le risque comme critère de priorisation}
+
+En S5, les choix d'implémentation étaient guidés par ce qui était faisable rapidement. En S6, la question centrale est devenue : \textit{qu'est-ce qui risque de ne pas fonctionner, et comment le vérifier avant d'investir ?}
+
+Exemple concret : au cycle 2, le risque de désynchronisation multi-clients a été traité en priorité, avant d'ajouter toute fonctionnalité avancée. En S5, ce même risque n'avait été découvert qu'en démonstration, trop tard pour être résolu proprement. La synchronisation n'était que partiellement stabilisée à la fin du semestre.
+
+\subsection{Des cycles comme points de décision formels}
+
+En S5, aucun mécanisme ne permettait de remettre formellement en question l'orientation du projet en cours de route. En S6, la fin de chaque cycle constitue un moment explicite de validation et de recadrage. C'est à la fin du cycle 2, par exemple, qu'il a été décidé de ne pas étendre le WebRTC à toute l'équipe, mais de le confiner à la régie pour limiter le risque de régression.
+
+\subsection{Une répartition articulée autour des risques}
+
+En S5, la répartition était principalement géographique (Meriem : auth + pages légales ; Malek : interface salon + composants room). En S6, la répartition a été construite autour des risques par domaine : les fonctionnalités à fort risque de synchronisation (vote, countdown, transitions) ont été portées par le membre le plus familier avec le realtime (Malek), tandis que les outils pédagogiques (question post-vidéo, demandes de parole) ont été confiés à Lamia, directement concernée par l'usage pédagogique.
+
+\subsection{Une stabilité obtenue, pas juste espérée}
+
+En S5, la stabilité du produit final dépendait de l'absence de bugs trouvés en tests manuels. En S6, chaque fonctionnalité critique a été validée dans des scénarios multi-clients simulant des conditions réelles (reconnexions, coupures réseau, accès simultanés). Sur 15 scénarios testés, 13 ont été conformes, et 2 ont été explicitement documentés comme partiels (WebRTC vocal, prévisualisation playlist), ce qui constitue une traçabilité qualitative absente du S5.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\chapter{Prise de recul critique}
+
+\section{Les limites de la méthode en spirale dans notre contexte}
+
+La spirale n'est pas sans coût, notamment dans un cadre académique avec des contraintes de temps serrées.
+
+\begin{itemize}
+    \item \textbf{Coût de la phase d'analyse.} Le cycle 1 a mobilisé l'équipe sur la comparaison des pistes et la rédaction de matrices de risques sans produire de code. Pour un projet de quelques semaines, ce coût est réel. Il n'est justifié que si l'analyse évite ensuite un investissement dans la mauvaise direction --- ce qui a été le cas en S6, mais ce n'est pas garanti a priori.
+    \item \textbf{Formalisation des risques vs exercice formel.} Il existe un risque que la liste de risques devienne un document produit pour satisfaire la méthode, sans guider réellement les décisions. Dans notre expérience, ce risque a été contenu parce que les risques identifiés correspondaient à des problèmes réels rencontrés en S5 (synchronisation, permissions). Mais sans ce recul acquis en S5, l'identification des risques aurait été plus abstraite.
+    \item \textbf{La spirale suppose une vision produit suffisamment claire.} Le cycle 1 ne peut comparer des pistes que si l'équipe comprend les enjeux techniques et fonctionnels. Cette compréhension, nous l'avions parce que le S5 nous avait confrontés aux vraies difficultés de la plateforme.
+\end{itemize}
+
+\section{Ce que le MVP a apporté que la spirale seule n'aurait pas donné}
+
+L'approche MVP du S5 a produit un résultat que la spirale seule n'aurait pas fourni aussi rapidement : \textbf{une connaissance technique incarnée}. À la fin du S5, l'équipe savait exactement comment configurer Supabase, quelles étaient les limites du Realtime, pourquoi le CORS était un problème, comment structurer les composants React pour la room. Cette connaissance n'est pas documentable --- elle s'acquiert en construisant.
+
+Sans cette base, le cycle 2 du S6 aurait nécessité un temps d'apprentissage incompatible avec la durée du semestre. La spirale a pu opérer avec précision \textit{parce que} le MVP avait déjà défriché le terrain.
+
+\section{Un exemple technique illustrant la complémentarité}
+
+La gestion des permissions illustre bien l'apport cumulatif des deux approches :
+
+\begin{itemize}
+    \item \textbf{En S5 :} un système de permissions basique (admin vs participant) a été implémenté. Il fonctionnait, mais sans propagation temps réel et sans contrôle côté exécution. Les droits étaient vérifiés uniquement à la connexion.
+    \item \textbf{En S6, cycle 2 :} le risque d'une permission contournable côté client a été identifié et priorisé. Une architecture de propagation temps réel a été conçue.
+    \item \textbf{En S6, cycle 3 :} la fonctionnalité a été finalisée avec des permissions individuelles granulaires (chat, micro, droits d'action), propagées instantanément via Supabase Realtime à tous les clients, avec contrôle côté exécution.
+\end{itemize}
+
+Ce qui était une brique rudimentaire en S5 est devenu en S6 un module robuste, testé et traçable --- non pas parce que la spirale l'aurait inventé de zéro, mais parce qu'elle a systématisé l'amélioration d'une base existante.
+
+\section{Ce que nous aurions fait différemment}
+
+\begin{itemize}
+    \item \textbf{Introduire des tests automatisés dès le S5.} L'absence de tests unitaires et d'intégration a rendu les corrections de bugs plus coûteuses et les non-régressions difficiles à garantir. La spirale aurait bénéficié d'un socle de tests hérité du S5.
+    \item \textbf{Documenter les décisions d'architecture dès le S5.} Plusieurs choix techniques (passage de MySQL à PostgreSQL, abandon partiel de Laravel Reverb pour Supabase Realtime) ont été faits sans être formellement tracés. Retrouver les raisons de ces choix en début de S6 a nécessité des discussions supplémentaires.
+    \item \textbf{Mieux formaliser les contrats d'API dès le départ.} Les désaccords de format entre front-end et back-end en S5 auraient été évités par une définition plus rigoureuse des interfaces TypeScript partagées dès la phase de conception.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\chapter{Conclusion}
+
+Le projet \textit{WithYou} illustre de manière concrète la complémentarité entre une approche cascade orientée MVP et la méthode en spirale. Ces deux approches ne s'opposent pas : elles correspondent à deux phases de maturité différentes d'un même projet.
+
+Le S5 nous a permis d'exister en tant que produit et en tant qu'équipe : un premier livrable concret, une architecture validée, des technologies maîtrisées, et une connaissance réelle des difficultés de la plateforme. Le S6 nous a permis de progresser en tant qu'ingénieurs : une gestion formalisée des risques, des décisions argumentées cycle par cycle, et un produit finalisé plutôt que simplement fonctionnel.
+
+Ce que la méthode en spirale nous a principalement appris, c'est qu'identifier un risque \textit{avant} d'implémenter n'est pas une perte de temps : c'est ce qui permet d'implémenter la bonne chose, au bon moment, sans avoir à tout reprendre. Ce principe, une fois acquis, change durablement la façon d'aborder un projet technique --- et c'est probablement le résultat le plus durable de ce semestre.
+
+\end{document}
