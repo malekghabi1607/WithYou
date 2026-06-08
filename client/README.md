@@ -31,7 +31,7 @@ Il est conçu pour être entièrement modulable, réutilisable et scalable grâc
 ## 📁 Structure du Projet (Front-End)
 
 L'architecture suit une séparation claire des responsabilités :
-
+```bash
 client/                                              # Dossier racine du front-end WithYou
 │
 ├── src/                                             # Code source principal de l’application React
@@ -177,7 +177,7 @@ client/                                              # Dossier racine du front-e
 ├── tailwind.config.js                               # Configuration Tailwind CSS
 ├── vite.config.ts                                   # Configuration du bundler Vite
 └── README.md                                        # Documentation du projet
-
+```
 ---
 
 ## ✨ Fonctionnalités Front-End
